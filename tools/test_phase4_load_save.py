@@ -47,7 +47,13 @@ try:
         if e.peek(e.lab["modified"])[0] == 0:
             break
         time.sleep(0.2)
-    check("saved (modified flag cleared)", e.peek(e.lab["modified"])[0] == 0)
+    saved_ok = e.peek(e.lab["modified"])[0] == 0
+    check("saved (modified flag cleared)", saved_ok)
+    if not saved_ok:
+        print("   key log:", e.peek(MB + 53, 8).hex(), "count", e.count(),
+              "name len", e.peek(e.lab["file_name_len"])[0])
+        for r in e.screen_rows()[:14]:
+            print("   |", r)
 
     # 3. Load a file that is not there: error box, document unchanged
     before, _ = e.text()

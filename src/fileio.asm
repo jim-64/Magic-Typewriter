@@ -405,6 +405,8 @@ load_file
 ; name if it has none yet.
 !zone save_key
 save_key
+        jsr leave_cursor        ; tidy the codes at the cursor first, so
+                                ; none without effect go into the file
         lda file_name_len
         bne +
         jsr name_to_input       ; (empty)
@@ -478,9 +480,9 @@ save_file
         sta ptr
         lda gap_end+1
         sta ptr+1
-        lda #<BUF_END
+        lda text_end
         sta .end
-        lda #>BUF_END
+        lda text_end+1
         sta .end+1
         jsr .write
         bcs .stopped

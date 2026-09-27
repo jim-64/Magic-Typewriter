@@ -6,9 +6,9 @@
 ; character, lines ending in CR ($0d), color and reverse codes in between.
 ; It lives in a "gap buffer" from BUF_START to BUF_END:
 ;
-;   BUF_START        gap_start          gap_end             BUF_END
-;   | text before the |  (free space)   | text after the     |
-;   | cursor          |                 | cursor             |
+;   BUF_START      gap_start        gap_end          text_end      BUF_END
+;   | text before   |  (free space)  | text after     | clipboard   |
+;   | the cursor    |                | the cursor     |             |
 ;
 ; The cursor is always at the gap. Typing stores a byte at gap_start and
 ; moves gap_start up; deleting to the left moves it down. Moving the cursor
@@ -50,6 +50,7 @@ clr             = $12           ; color RAM of the row being drawn
 cptr            = $14           ; screen RAM of the cursor
 ccol            = $16           ; color RAM of the cursor
 work            = $18           ; 16-bit scratch
+text_end        = $1a           ; end of the text; the clipboard is above it
 
 ; ctype values: what a byte of text is
 CT_CHAR         = $80           ; a character
@@ -89,6 +90,10 @@ off             !word 0         ; an offset (argument / result)
 !zone editor_init
 editor_init
         jsr init_ctype
+        lda #<BUF_END           ; no clipboard yet: the text may use all
+        sta text_end            ; of the buffer
+        lda #>BUF_END
+        sta text_end+1
         ldx system_type
         lda tab_blink_frames,x
         sta blink_frames
@@ -103,12 +108,13 @@ empty_buffer
         sta gap_start
         lda #>BUF_START
         sta gap_start+1
-        lda #<BUF_END
+        lda text_end            ; (the clipboard above stays)
         sta gap_end
-        lda #>BUF_END
+        lda text_end+1
         sta gap_end+1
         lda #0
         sta modified
+        sta sel_on
         ; (falls into empty_view)
 
 ; empty_view - the top of the screen at the start of the text.
@@ -285,11 +291,11 @@ ptr_to_off
 !zone text_len
 text_len
         jsr get_cursor_off      ; before the gap ...
-        sec                     ; ... plus after it: BUF_END - gap_end
-        lda #<BUF_END
+        sec                     ; ... plus after it: text_end - gap_end
+        lda text_end
         sbc gap_end
         tax
-        lda #>BUF_END
+        lda text_end+1
         sbc gap_end+1
         tay
         txa
@@ -300,6 +306,25 @@ text_len
         adc work+1
         sta work+1
         rts
+
+; gap_at_end - carry set if there is no text after the gap (gap_end has
+; reached text_end).
+gap_at_end
+        lda gap_end+1
+        cmp text_end+1
+        bne +
+        lda gap_end
+        cmp text_end
++       rts
+
+; ptr_at_end - carry set if ptr has reached the end of the text.
+ptr_at_end
+        lda ptr+1
+        cmp text_end+1
+        bne +
+        lda ptr
+        cmp text_end
++       rts
 
 ; is_visible - A = a byte of text. Carry clear if it takes a place on the
 ; screen (a character or a line end), set if it is an invisible code.
@@ -321,9 +346,8 @@ is_visible
 ; Returns the byte in A; carry set if there was none (end of the text).
 !zone gap_right
 gap_right
-        lda gap_end+1
-        cmp #>BUF_END
-        bcs .end                ; gap_end = BUF_END: nothing after the gap
+        jsr gap_at_end
+        bcs .end                ; nothing after the gap
         ldy #0
         lda (gap_end),y
         sta (gap_start),y
@@ -366,8 +390,7 @@ gap_left
 ; just before the next visible byte (or at the end of the text).
 !zone skip_codes
 skip_codes
--       lda gap_end+1
-        cmp #>BUF_END
+-       jsr gap_at_end
         bcs +
         ldy #0
         lda (gap_end),y
@@ -531,8 +554,7 @@ cleanup
         lda #0
         sta .keep_color
         sta .keep_rvs
-        lda gap_end+1
-        cmp #>BUF_END
+        jsr gap_at_end
         bcs .compact            ; end of the text: keep neither
         lda .last_color+1
         beq +
@@ -855,6 +877,43 @@ redraw_all
 !zone redraw_from
 redraw_from
         stx .row
+        lda #0                  ; marked text: reversed on the screen
+        sta .in_sel
+        lda sel_on
+        beq .no_sel
+        jsr sel_range           ; the marked part, as addresses
+        lda sel_s
+        sta off
+        lda sel_s+1
+        sta off+1
+        jsr set_ptr
+        lda ptr
+        sta .sel_a
+        lda ptr+1
+        sta .sel_a+1
+        lda sel_e
+        sta off
+        lda sel_e+1
+        sta off+1
+        jsr set_ptr
+        lda ptr
+        sta .sel_b
+        lda ptr+1
+        sta .sel_b+1
+        ldx .row                ; does the first row start inside it?
+        lda row_off_lo,x        ; (sel_s <= row start < sel_e)
+        cmp sel_s
+        lda row_off_hi,x
+        sbc sel_s+1
+        bcc .no_sel
+        lda row_off_lo,x
+        cmp sel_e
+        lda row_off_hi,x
+        sbc sel_e+1
+        bcs .no_sel
+        lda #$80
+        sta .in_sel
+.no_sel ldx .row
         lda row_off_lo,x
         sta off
         lda row_off_hi,x
@@ -917,7 +976,25 @@ redraw_from
         lda #0
         sta .col
 
-.pos    lda ptr                 ; at the gap? jump over it
+.pos    lda sel_on              ; the start or end of the marked part?
+        beq .gap
+        lda ptr
+        cmp .sel_a
+        bne +
+        lda ptr+1
+        cmp .sel_a+1
+        bne +
+        lda #$80
+        sta .in_sel
++       lda ptr
+        cmp .sel_b
+        bne .gap
+        lda ptr+1
+        cmp .sel_b+1
+        bne .gap
+        lda #0
+        sta .in_sel
+.gap    lda ptr                 ; at the gap? jump over it
         cmp gap_start
         bne .read
         lda ptr+1
@@ -927,10 +1004,14 @@ redraw_from
         sta ptr
         lda gap_end+1
         sta ptr+1
-.read   lda ptr+1
-        cmp #>BUF_END
+.read   lda ptr+1           ; the end of the text?
+        cmp text_end+1
+        bcc +                   ; (quick: a whole page before it)
+        bne .to_eof
+        lda ptr
+        cmp text_end
         bcc +
-        jmp .eof
+.to_eof jmp .eof
 +       ldy #0
         lda (ptr),y
         inc ptr
@@ -947,6 +1028,7 @@ redraw_from
         txa                     ; a character: put it on the screen
         jsr petscii_to_screen
         ora .rvs
+        eor .in_sel             ; (marked: shown the other way round)
         ldy .col
         sta (scr),y
         lda .color
@@ -954,8 +1036,9 @@ redraw_from
         iny
         sty .col
         cpy #40
-        bcc .pos
-        ldx .row                ; 40 characters: the row is full
+        bcs +
+        jmp .pos
++       ldx .row                ; 40 characters: the row is full
         lda #40
         sta row_len,x
         jmp .next_row
@@ -968,7 +1051,12 @@ redraw_from
         tya
         sta row_len,x
         jsr .fill
-        lda #0                  ; a line end also ends reverse
+        lda .in_sel             ; a marked line end: a reversed space
+        beq +
+        ldy .col
+        lda #$a0
+        sta (scr),y
++       lda #0                  ; a line end also ends reverse
         sta .rvs
         jmp .next_row
 .not_eol
@@ -987,9 +1075,16 @@ redraw_from
 .next_row
         inc .row
         lda .row
-        cmp #MROWS
+        cmp redraw_stop         ; (normally MROWS: all the rows)
         bcs +
         jmp .new_row
++       cmp #MROWS              ; all rows done: eof_row is right as it is
+        bcs +
+        lda eof_row             ; stopped early (redraw_stop) before the end
+        cmp #$ff                ; of the text: it is where it was
+        bne +
+        lda .old_eof
+        sta eof_row
 +       rts
 
 .eof    ldx .row                ; end of the text, in this row
@@ -1067,6 +1162,12 @@ redraw_from
 .rvs    !byte 0
 .old_eof !byte 0
 .moved  !byte 0
+.in_sel !byte 0                 ; $80 while drawing marked text
+.sel_a  !word 0                 ; addresses where the marked part starts
+.sel_b  !word 0                 ; and ends
+
+redraw_stop     !byte MROWS     ; redraw_from draws up to (not including)
+                                ; this row
 
 can_stop        !byte 0         ; redraw_from may stop early (see above)
 edit_end        !word 0         ; old offset just after the edited part
@@ -1381,6 +1482,8 @@ after_edit
 ; leave_cursor - tidy the codes at the cursor before it moves away.
 !zone leave_cursor
 leave_cursor
+        lda no_cleanup          ; (not while marking text)
+        bne +
         jsr begin_edit
         jsr cleanup
         bcc +
@@ -1411,8 +1514,7 @@ overwrite_next
         sta ptr
         lda gap_end+1
         sta ptr+1
--       lda ptr+1               ; find the next visible byte
-        cmp #>BUF_END
+-       jsr ptr_at_end          ; find the next visible byte
         bcs .none
         ldy #0
         lda (ptr),y
@@ -1553,8 +1655,7 @@ codes_after
         sta ptr
         lda gap_end+1
         sta ptr+1
--       lda ptr+1
-        cmp #>BUF_END
+-       jsr ptr_at_end
         bcs .no
         ldy #0
         lda (ptr),y
@@ -1801,6 +1902,826 @@ home_key
         rts
 
 ;============================================================================
+; Marked text (the selection) and the clipboard
+;
+; Text is marked from sel_anchor (an offset) to the cursor, whichever comes
+; first; it shows reversed on the screen. Every operation on it moves the
+; cursor (the gap) to the start of the marked text first, so the marked
+; bytes lie together right after the gap, and then works through them
+; there.
+;
+; The clipboard sits at the top of the buffer, from text_end to BUF_END:
+; the text uses the room below it. clip_color and clip_rvs hold the color
+; and reverse state at the start of what was copied, so it pastes with the
+; same look.
+;============================================================================
+sel_on          !byte 0         ; 1 = text is marked
+sel_anchor      !word 0         ; where the marking started (offset)
+sel_s           !word 0         ; the marked part: from here ...
+sel_e           !word 0         ; ... up to (not including) here
+sel_len         !word 0
+sel_cur_start   !byte 0         ; 1 = the cursor was at its start
+sel_old_row     !byte 0         ; the cursor's screen row before
+st_color        !byte 0         ; the state at the cursor, for restore_after
+st_rvs          !byte 0
+clip_color      !byte 0         ; the state at the start of the clipboard
+clip_rvs        !byte 0
+no_cleanup      !byte 0         ; 1 = leave_cursor leaves the codes alone
+blk_count       !word 0         ; bytes for block_copy
+
+; sel_range - sel_s and sel_e: the marked part, in order.
+!zone sel_range
+sel_range
+        jsr get_cursor_off      ; work = cursor
+        lda sel_anchor
+        cmp work
+        lda sel_anchor+1
+        sbc work+1
+        bcc .anchor_first
+        lda work                ; the cursor comes first
+        sta sel_s
+        lda work+1
+        sta sel_s+1
+        lda sel_anchor
+        sta sel_e
+        lda sel_anchor+1
+        sta sel_e+1
+        rts
+.anchor_first
+        lda sel_anchor
+        sta sel_s
+        lda sel_anchor+1
+        sta sel_s+1
+        lda work
+        sta sel_e
+        lda work+1
+        sta sel_e+1
+        rts
+
+; sel_to_gap - get ready to work on the marked text: sel_s, sel_e and
+; sel_len; which end the cursor is at; the cursor (gap) moved to the start
+; of it, so the marked bytes are right after the gap; and the color and
+; reverse state in effect there (st_color, st_rvs).
+!zone sel_to_gap
+sel_to_gap
+        jsr sel_range
+        sec
+        lda sel_e
+        sbc sel_s
+        sta sel_len
+        lda sel_e+1
+        sbc sel_s+1
+        sta sel_len+1
+        lda cur_row
+        sta sel_old_row
+        jsr get_cursor_off
+        ldx #0
+        lda work
+        cmp sel_s
+        bne +
+        lda work+1
+        cmp sel_s+1
+        bne +
+        inx
++       stx sel_cur_start
+        lda sel_s
+        sta off
+        lda sel_s+1
+        sta off+1
+        jsr move_gap_to
+        lda gap_start
+        sta ptr
+        lda gap_start+1
+        sta ptr+1
+        jsr color_before
+        sta st_color
+        jsr rvs_before
+        sta st_rvs
+        rts
+
+; take_byte - take the next byte after the gap out of the text (A = it),
+; and count sel_len down by one.
+!zone take_byte
+take_byte
+        ldy #0
+        lda (gap_end),y
+        inc gap_end
+        bne +
+        inc gap_end+1
++       pha
+        lda sel_len
+        bne +
+        dec sel_len+1
++       dec sel_len
+        pla
+        rts
+
+; sel_left - Z clear if marked bytes are left to take
+sel_left
+        lda sel_len
+        ora sel_len+1
+        rts
+
+; restore_after - make the text after the cursor look as it should: A = its
+; color, X = its reverse state ($80 or 0). st_color / st_rvs = the state in
+; effect at the cursor now. Adds codes just after the cursor where they
+; differ - unless codes there already set them, or nothing follows.
+!zone restore_after
+restore_after
+        sta .c
+        stx .r
+        jsr gap_at_end
+        bcs .done               ; nothing after the cursor: no need
+        lda .r
+        cmp st_rvs
+        beq +
+        lda #1                  ; an RVS code there already?
+        jsr codes_after
+        bcs +
+        lda #$92                ; RVS OFF
+        ldx .r
+        beq ++
+        lda #$12                ; RVS ON
+++      jsr insert_after
++       lda .c
+        cmp st_color
+        beq .done
+        lda #0                  ; a color code there already?
+        jsr codes_after
+        bcs .done
+        ldx .c
+        lda color_codes,x
+        jsr insert_after
+.done   rts
+.c      !byte 0
+.r      !byte 0
+
+; show_cursor_at - redraw with the cursor on screen row X (or as near as the
+; start of the text allows).
+!zone show_cursor_at
+show_cursor_at
+        stx .n
+        lda gap_start
+        sta limit
+        lda gap_start+1
+        sta limit+1
+        jsr find_row_start      ; the row the cursor is in goes on top ...
+        jsr set_top_ptr
+-       lda .n                  ; ... then back up X rows
+        beq +
+        jsr scroll_up_one
+        bcs +
+        dec .n
+        jmp -
++       jsr redraw_all
+        jsr locate_cursor
+        lda cur_col             ; (aim for this column moving up/down)
+        sta want_col
+        rts
+.n      !byte 0
+
+; gap_size - work = the free space (the gap)
+gap_size
+        sec
+        lda gap_end
+        sbc gap_start
+        sta work
+        lda gap_end+1
+        sbc gap_start+1
+        sta work+1
+        rts
+
+;----------------------------------------------------------------------------
+; delete_selection - take out the marked text, codes and all. The cursor
+; ends up where it started; codes after it bring back the color and reverse
+; state the text after it had.
+;----------------------------------------------------------------------------
+!zone delete_selection
+delete_selection
+        jsr sel_to_gap
+        lda st_color            ; walk through it for the state at its end
+        sta .c
+        lda st_rvs
+        sta .r
+-       jsr sel_left
+        beq +
+        jsr take_byte
+        tax
+        lda ctype,x
+        bmi .not_color
+        sta .c
+        jmp -
+.not_color
+        cmp #CT_RVSON
+        bne ++
+        lda #$80
+        sta .r
+        jmp -
+++      cmp #CT_RVSOFF
+        beq ++
+        cmp #CT_EOL             ; (a line end also ends reverse)
+        bne -
+++      lda #0
+        sta .r
+        jmp -
++       lda .c
+        ldx .r
+        jsr restore_after
+        lda #0
+        sta sel_on
+        lda #1
+        sta modified
+        ldx sel_old_row
+        jmp show_cursor_at
+.c      !byte 0
+.r      !byte 0
+
+;----------------------------------------------------------------------------
+; recolor_selection - a color key with text marked: all of it gets that
+; color. A = the color. The color codes inside go, the new one goes at the
+; start, and one after the end brings back the color the text after it
+; had. The text stays marked.
+;----------------------------------------------------------------------------
+!zone recolor_selection
+recolor_selection
+        sta .k
+        jsr gap_size            ; (room for the two codes)
+        lda work+1
+        bne +
+        lda work
+        cmp #2
+        bcs +
+        jmp no_room
++       jsr sel_to_gap
+        ldx .k                  ; the new color at the start
+        lda color_codes,x
+        jsr insert_byte
+        lda st_color            ; the color at the end, before
+        sta .c
+-       jsr sel_left            ; go through it, dropping color codes
+        beq +
+        jsr take_byte
+        tax
+        lda ctype,x
+        bmi .keep
+        sta .c
+        jmp -
+.keep   txa
+        jsr insert_byte
+        jmp -
++       lda .k                  ; the text after it: its old color back
+        sta st_color
+        lda .c
+        ldx st_rvs              ; (reverse: unchanged)
+        stx .r
+        jsr restore_after
+        jmp sel_finish
+.k      !byte 0
+.c      !byte 0
+.r      !byte 0
+
+;----------------------------------------------------------------------------
+; reverse_selection - CTRL-9 (A = $80) or CTRL-0 (A = 0) with text marked:
+; reverse on or off for all of it. The RVS codes inside go; the new one
+; goes at the start, and again after each line end inside it (a line end
+; turns reverse off). A code after the end brings back the state the text
+; after it had. The text stays marked.
+;----------------------------------------------------------------------------
+!zone reverse_selection
+reverse_selection
+        sta .v
+        jsr sel_range           ; room: 2 codes + one per line end
+        lda sel_s
+        sta off
+        lda sel_s+1
+        sta off+1
+        jsr set_ptr
+        sec
+        lda sel_e
+        sbc sel_s
+        sta blk_count
+        lda sel_e+1
+        sbc sel_s+1
+        sta blk_count+1
+        lda #2
+        sta .need
+        lda #0
+        sta .need+1
+-       lda blk_count           ; (count the line ends)
+        ora blk_count+1
+        beq .counted
+        lda ptr                 ; (jump over the gap)
+        cmp gap_start
+        bne +
+        lda ptr+1
+        cmp gap_start+1
+        bne +
+        lda gap_end
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
++       ldy #0
+        lda (ptr),y
+        tax
+        lda ctype,x
+        cmp #CT_EOL
+        bne +
+        inc .need
+        bne +
+        inc .need+1
++       inc ptr
+        bne +
+        inc ptr+1
++       lda blk_count
+        bne +
+        dec blk_count+1
++       dec blk_count
+        jmp -
+.counted
+        jsr gap_size
+        lda work
+        cmp .need
+        lda work+1
+        sbc .need+1
+        bcs +
+        jmp no_room
+
++       jsr sel_to_gap
+        jsr .code               ; the new state at the start
+        jsr insert_byte
+        lda st_rvs              ; the state at the end, before
+        sta .r
+        lda #0
+        sta .last_eol
+-       jsr sel_left            ; go through it
+        beq .end
+        jsr take_byte
+        tax
+        lda ctype,x
+        cmp #CT_RVSON
+        bne +
+        lda #$80                ; (dropped)
+        sta .r
+        bne -
++       cmp #CT_RVSOFF
+        bne +
+        lda #0                  ; (dropped)
+        sta .r
+        beq -
++       sta .type
+        txa
+        jsr insert_byte
+        lda #0
+        sta .last_eol
+        lda .type
+        cmp #CT_EOL
+        bne -
+        lda #0                  ; a line end: reverse is off after it ...
+        sta .r
+        inc .last_eol
+        lda .v                  ; ... so turn it on again, if more of the
+        beq -                   ; marked text follows
+        jsr sel_left
+        beq -
+        jsr .code
+        jsr insert_byte
+        lda #0
+        sta .last_eol
+        jmp -
+.end    lda .v                  ; the state at the cursor now
+        ldx .last_eol
+        beq +
+        lda #0                  ; (after a line end: off)
++       sta st_rvs
+        lda st_color            ; the text after it: its old state back
+        ldx .r
+        jsr restore_after
+        jmp sel_finish
+
+; .code - A = RVS ON or RVS OFF, as .v says
+.code   lda #$12
+        ldx .v
+        bne +
+        lda #$92
++       rts
+.v      !byte 0
+.r      !byte 0
+.type   !byte 0
+.last_eol !byte 0
+.need   !word 0
+
+; sel_finish - after recoloring: the text from sel_s up to the cursor is
+; marked again, and the cursor goes back to the end it was at. Redraw.
+!zone sel_finish
+sel_finish
+        lda #1
+        sta modified
+        jsr get_cursor_off
+        lda sel_cur_start
+        beq .at_end
+        lda work                ; the cursor was at the start: mark from
+        sta sel_anchor          ; here (the end) back to sel_s
+        lda work+1
+        sta sel_anchor+1
+        lda sel_s
+        sta off
+        lda sel_s+1
+        sta off+1
+        jsr move_gap_to
+        jmp +
+.at_end lda sel_s               ; the cursor was at the end: mark from sel_s
+        sta sel_anchor
+        lda sel_s+1
+        sta sel_anchor+1
++       ldx sel_old_row
+        jmp show_cursor_at
+
+;----------------------------------------------------------------------------
+; Copy, cut, paste, mark all
+;----------------------------------------------------------------------------
+
+; copy_key - CTRL-C: copy the marked text to the clipboard.
+copy_key
+        lda sel_on
+        beq +
+        jsr copy_selection
++       rts
+
+; cut_selection - CTRL-X: copy the marked text, then take it out.
+cut_selection
+        lda sel_on
+        beq +
+        jsr copy_selection
+        bcs +                   ; (no room)
+        jmp delete_selection
++       rts
+
+; copy_selection - copy the marked text (codes and all) to the clipboard,
+; with the color and reverse state at its start. Carry set if there is not
+; enough room.
+!zone copy_selection
+copy_selection
+        jsr sel_range
+        sec                     ; its length
+        lda sel_e
+        sbc sel_s
+        sta .len
+        lda sel_e+1
+        sbc sel_s+1
+        sta .len+1
+        sec                     ; the clipboard's size now
+        lda #<BUF_END
+        sbc text_end
+        sta .old
+        lda #>BUF_END
+        sbc text_end+1
+        sta .old+1
+        lda .len                ; the same size: nothing to move
+        cmp .old
+        bne +
+        lda .len+1
+        cmp .old+1
+        bne +
+        jmp .room
++       lda .len                ; bigger than before: is the gap big
+        cmp .old                ; enough to give the difference?
+        lda .len+1
+        sbc .old+1
+        bcc .room               ; (smaller: always fits)
+        sec
+        lda .len
+        sbc .old
+        sta .d
+        lda .len+1
+        sbc .old+1
+        sta .d+1
+        jsr gap_size
+        lda work
+        cmp .d
+        lda work+1
+        sbc .d+1
+        bcs .room
+        jmp no_room
+
+.room   jsr get_cursor_off      ; (come back here afterwards)
+        lda work
+        sta .cursor
+        lda work+1
+        sta .cursor+1
+        lda sel_e               ; all of the marked text before the gap
+        sta off
+        lda sel_e+1
+        sta off+1
+        jsr move_gap_to
+        clc                     ; ptr = where it starts
+        lda sel_s
+        adc #<BUF_START
+        sta ptr
+        lda sel_s+1
+        adc #>BUF_START
+        sta ptr+1
+        jsr color_before
+        sta clip_color
+        jsr rvs_before
+        sta clip_rvs
+
+        ; Make the clipboard exactly .len bytes: move the text after the gap
+        ; down (clipboard bigger) or up (smaller).
+        sec                     ; blk_count = text after the gap
+        lda text_end
+        sbc gap_end
+        sta blk_count
+        lda text_end+1
+        sbc gap_end+1
+        sta blk_count+1
+        lda .len
+        cmp .old
+        lda .len+1
+        sbc .old+1
+        bcc .smaller
+        lda .len                ; (the same size: leave it)
+        cmp .old
+        bne +
+        lda .len+1
+        cmp .old+1
+        bne +
+        jmp .copy
++       sec                     ; bigger by .d: move it down .d bytes
+        lda .len
+        sbc .old
+        sta .d
+        lda .len+1
+        sbc .old+1
+        sta .d+1
+        lda gap_end
+        sta ptr
+        sec
+        sbc .d
+        sta ptr2
+        sta gap_end
+        lda gap_end+1
+        sta ptr+1
+        sbc .d+1
+        sta ptr2+1
+        sta gap_end+1
+        jsr block_copy_fwd
+        sec
+        lda text_end
+        sbc .d
+        sta text_end
+        lda text_end+1
+        sbc .d+1
+        sta text_end+1
+        jmp .copy
+.smaller
+        sec                     ; smaller by .d: move it up .d bytes
+        lda .old
+        sbc .len
+        sta .d
+        lda .old+1
+        sbc .len+1
+        sta .d+1
+        lda text_end            ; (copied from its end back)
+        sta ptr
+        clc
+        adc .d
+        sta ptr2
+        lda text_end+1
+        sta ptr+1
+        adc .d+1
+        sta ptr2+1
+        jsr block_copy_back
+        clc
+        lda gap_end
+        adc .d
+        sta gap_end
+        lda gap_end+1
+        adc .d+1
+        sta gap_end+1
+        clc
+        lda text_end
+        adc .d
+        sta text_end
+        lda text_end+1
+        adc .d+1
+        sta text_end+1
+
+.copy   clc                     ; the marked text into the clipboard
+        lda sel_s
+        adc #<BUF_START
+        sta ptr
+        lda sel_s+1
+        adc #>BUF_START
+        sta ptr+1
+        lda text_end
+        sta ptr2
+        lda text_end+1
+        sta ptr2+1
+        lda .len
+        sta blk_count
+        lda .len+1
+        sta blk_count+1
+        jsr block_copy_fwd
+        lda .cursor             ; the cursor back where it was
+        sta off
+        lda .cursor+1
+        sta off+1
+        jsr move_gap_to
+        clc
+        rts
+.len    !word 0
+.old    !word 0
+.d      !word 0
+.cursor !word 0
+
+; paste - CTRL-V: put the clipboard in at the cursor (in place of marked
+; text, if any). It keeps the look it had where it was copied; codes after
+; it bring back the state the text after the cursor had.
+!zone paste
+paste
+        sec                     ; the clipboard's size
+        lda #<BUF_END
+        sbc text_end
+        sta .len
+        lda #>BUF_END
+        sbc text_end+1
+        sta .len+1
+        ora .len
+        bne +
+        rts                     ; empty
++       lda sel_on
+        beq +
+        jsr delete_selection
++       jsr gap_size            ; room for it and 4 codes?
+        sec
+        lda work
+        sbc #4
+        tax
+        lda work+1
+        sbc #0
+        bcc .nr
+        cmp .len+1
+        bcc .nr
+        bne +
+        cpx .len
+        bcs +
+.nr     jmp no_room
++       jsr begin_edit
+        lda gap_start           ; the state here
+        sta ptr
+        lda gap_start+1
+        sta ptr+1
+        jsr color_before
+        sta .c0
+        jsr rvs_before
+        sta .r0
+        lda clip_color          ; the clipboard's look at its start
+        sta .c
+        cmp .c0
+        beq +
+        tax
+        lda color_codes,x
+        jsr insert_byte
++       lda clip_rvs
+        sta .r
+        cmp .r0
+        beq +
+        lda #$92
+        ldx .r
+        beq ++
+        lda #$12
+++      jsr insert_byte
++       lda text_end            ; then the clipboard, byte by byte
+        sta ptr
+        lda text_end+1
+        sta ptr+1
+-       jsr ptr_at_buf_end
+        bcs .done
+        ldy #0
+        lda (ptr),y
+        pha
+        jsr insert_byte
+        pla
+        tax                     ; (keep track of the state)
+        lda ctype,x
+        bpl .col                ; 0-15: a color code
+        cmp #CT_RVSON
+        bne +
+        lda #$80
+        sta .r
+        bne .next
++       cmp #CT_RVSOFF
+        beq +
+        cmp #CT_EOL
+        bne .next
++       lda #0
+        sta .r
+        beq .next
+.col    sta .c
+.next   inc ptr
+        bne -
+        inc ptr+1
+        bne -
+.done   lda .c                  ; the state at the cursor now
+        sta st_color
+        lda .r
+        sta st_rvs
+        lda .c0                 ; the text after it: its state back
+        ldx .r0
+        jsr restore_after
+        lda #1
+        sta modified
+        jmp after_edit
+.len    !word 0
+.c0     !byte 0
+.r0     !byte 0
+.c      !byte 0
+.r      !byte 0
+
+; ptr_at_buf_end - carry set if ptr has reached BUF_END
+ptr_at_buf_end
+        lda ptr+1
+        cmp #>BUF_END
+        rts
+
+; select_all - CTRL-A: mark the whole text (the cursor goes to its end).
+!zone select_all
+select_all
+        jsr text_len
+        lda work
+        ora work+1
+        bne +
+        rts
++       lda work
+        sta off
+        lda work+1
+        sta off+1
+        jsr move_gap_to
+        lda #0
+        sta sel_anchor
+        sta sel_anchor+1
+        lda #1
+        sta sel_on
+        ldx #ROWS-1             ; the end of the text on the bottom row
+        jmp show_cursor_at
+
+; no_room - tell the user there is not enough room in the buffer.
+no_room
+        lda #<msg_no_room
+        ldx #>msg_no_room
+        jsr message_box
+        sec
+        rts
+
+; block_copy_fwd - copy blk_count bytes from ptr to ptr2, first byte first
+; (for moving to lower addresses)
+!zone block_copy_fwd
+block_copy_fwd
+        ldy #0
+-       lda blk_count
+        ora blk_count+1
+        beq +
+        lda (ptr),y
+        sta (ptr2),y
+        inc ptr
+        bne ++
+        inc ptr+1
+++      inc ptr2
+        bne ++
+        inc ptr2+1
+++      lda blk_count
+        bne ++
+        dec blk_count+1
+++      dec blk_count
+        jmp -
++       rts
+
+; block_copy_back - copy blk_count bytes ending just before ptr to just
+; before ptr2, last byte first (for moving to higher addresses)
+!zone block_copy_back
+block_copy_back
+        ldy #0
+-       lda blk_count
+        ora blk_count+1
+        beq +
+        lda ptr
+        bne ++
+        dec ptr+1
+++      dec ptr
+        lda ptr2
+        bne ++
+        dec ptr2+1
+++      dec ptr2
+        lda (ptr),y
+        sta (ptr2),y
+        lda blk_count
+        bne ++
+        dec blk_count+1
+++      dec blk_count
+        jmp -
++       rts
+
+;============================================================================
 ; Other keys
 ;============================================================================
 
@@ -1865,37 +2786,80 @@ editor_key
         jmp quit
 +       rts
 
-.do_key lda .code
-        cmp #KEY_RIGHT
+.do_key lda .mods               ; CTRL + a letter: the commands
+        and #MOD_CTRL
+        beq .keys
+        lda .code
+        cmp #KEY_S              ; CTRL-S: save
+        bne +
+        jmp save_key
++       cmp #KEY_L              ; CTRL-L: load (for now; the Load menu
+        bne +                   ; takes over in phase 8)
+        jmp load_file
++       cmp #KEY_X              ; CTRL-X: cut
+        bne +
+        jmp cut_selection
++       cmp #KEY_C              ; CTRL-C: copy
+        bne +
+        jmp copy_key
++       cmp #KEY_V              ; CTRL-V: paste
+        bne +
+        jmp paste
++       cmp #KEY_A              ; CTRL-A: mark everything
+        bne .keys
+        jmp select_all
+.to_move
+        jmp .move
+
+.keys   lda .code
+        cmp #KEY_RIGHT          ; the keys that move the cursor
         bne +
         jsr .reverse
-        bcs ++
-        jmp cursor_right
-++      jmp cursor_left
+        lda #<cursor_right
+        ldx #>cursor_right
+        bcc .to_move
+        lda #<cursor_left
+        ldx #>cursor_left
+        bcs .to_move
 +       cmp #KEY_DOWN
         bne +
         jsr .reverse
-        bcs ++
-        jmp cursor_down
-++      jmp cursor_up
-+       cmp #KEY_RETURN
+        lda #<cursor_down
+        ldx #>cursor_down
+        bcc .to_move
+        lda #<cursor_up
+        ldx #>cursor_up
+        bcs .to_move
++       cmp #KEY_F3
         bne +
-        lda #$0d                ; RETURN and SHIFT + RETURN both store CR
-        jmp type_char
-+       cmp #KEY_DEL
+        lda #<page_up
+        ldx #>page_up
+        bne .to_move
++       cmp #KEY_F5
         bne +
-        lda .mods
-        and #MOD_SHIFT
-        beq ++
-        jmp insert_space
-++      jmp delete_left
+        lda #<page_down
+        ldx #>page_down
+        bne .to_move
 +       cmp #KEY_HOME
         bne +
         lda .mods
         and #MOD_SHIFT
         beq ++
-        jmp clear_all
-++      jmp home_key
+        jmp clear_all           ; SHIFT + CLR/HOME
+++      lda #<home_key
+        ldx #>home_key
+        bne .to_move
++       cmp #KEY_RETURN
+        bne +
+        lda #$0d                ; RETURN and SHIFT + RETURN both store CR
+        jmp .type
++       cmp #KEY_DEL
+        bne +
+        lda .mods
+        and #MOD_SHIFT
+        beq ++
+        jmp .inst
+++      jmp .del
 +       cmp #KEY_F7
         bne +
         lda .mods
@@ -1903,48 +2867,132 @@ editor_key
         beq ++
         jmp next_background
 ++      jmp toggle_mode
-+       cmp #KEY_F3
-        bne +
-        jmp page_up
-+       cmp #KEY_F5
-        bne +
-        jmp page_down
 +       cmp #KEY_F1
         bne +
         rts                     ; (opens the menu in phase 8)
-+       lda .mods               ; CTRL-S: save
-        and #MOD_CTRL
-        beq .not_ctrl
-        lda .code
-        cmp #KEY_S
-        bne +
-        jmp save_key
-+       cmp #KEY_L              ; CTRL-L: load (for now; the Load menu
-        bne .not_ctrl           ; takes over in phase 8)
-        jmp load_file
-.not_ctrl
 +       lda .code               ; any other key: what does it type?
         ldy .mods
         jsr key_to_petscii
-        bcs .nothing
-        tax
+        bcc +
+        rts                     ; types nothing
++       tax
         lda ctype,x
         bmi +
-        jmp color_key           ; a color key (A = the color)
+        jmp .color              ; a color key (A = the color)
 +       cmp #CT_RVSON
         bne +
         lda #$80
-        jmp rvs_key
+        jmp .rvs
 +       cmp #CT_RVSOFF
         bne +
         lda #0
-        jmp rvs_key
+        jmp .rvs
 +       cmp #CT_CHAR
         bne .nothing            ; other control codes: ignored
         txa
-        jmp type_char
+        jmp .type
 .nothing
         rts
+
+; .move - a key that moves the cursor (A/X = the routine that moves it).
+; With the mark key held it marks text from where the cursor was; without
+; it, any marking goes.
+.move   sta .target
+        stx .target+1
+        jsr .marking
+        bcc .plain
+        lda sel_on              ; start marking here?
+        bne +
+        jsr get_cursor_off
+        lda work
+        sta sel_anchor
+        lda work+1
+        sta sel_anchor+1
+        lda #1
+        sta sel_on
++       lda cur_row             ; remember where the cursor and the top of
+        sta .old_row            ; the screen were
+        lda row_off_lo
+        sta .old_top
+        lda row_off_hi
+        sta .old_top+1
+        lda #1                  ; (leave the codes alone while marking)
+        sta no_cleanup
+        jsr .call
+        lda #0
+        sta no_cleanup
+        jsr get_cursor_off      ; back where it started: nothing marked
+        lda work
+        cmp sel_anchor
+        bne +
+        lda work+1
+        cmp sel_anchor+1
+        bne +
+        lda #0
+        sta sel_on
++       lda row_off_lo          ; did the screen scroll?
+        cmp .old_top
+        bne .all
+        lda row_off_hi
+        cmp .old_top+1
+        bne .all
+        ldx .old_row            ; no: redraw the rows from the old cursor
+        lda cur_row             ; row to the new one
+        cmp .old_row
+        bcs +
+        tax                     ; (the new row is the upper one)
+        lda .old_row
++       clc
+        adc #1
+        sta redraw_stop
+        jsr redraw_from
+        lda #MROWS
+        sta redraw_stop
+        rts
+.all    jmp redraw_all
+
+.plain  lda sel_on              ; a move without the mark key: unmark
+        beq .call
+        lda #0
+        sta sel_on
+        jsr redraw_all
+.call   jmp (.target)
+
+; .marking - carry set if the mark key is held (left SHIFT, or C=,
+; whichever the mark key setting says).
+.marking
+        lda .mods
+        ldx mark_key
+        bne +
+        and #MOD_LSHIFT
+        jmp ++
++       and #MOD_CBM
+++      cmp #1
+        rts
+
+; What typing does when text is marked: it replaces it.
+.type   ldx sel_on              ; A = the character
+        beq +
+        pha
+        jsr delete_selection
+        pla
++       jmp type_char
+.del    lda sel_on              ; INST/DEL: delete the marked text, or the
+        beq +                   ; character left of the cursor
+        jmp delete_selection
++       jmp delete_left
+.inst   lda sel_on              ; SHIFT + INST/DEL: delete the marked text
+        beq +                   ; first, then a space
+        jsr delete_selection
++       jmp insert_space
+.color  ldx sel_on              ; a color key: color the marked text, or
+        beq +                   ; what is typed next
+        jmp recolor_selection
++       jmp color_key
+.rvs    ldx sel_on              ; CTRL-9/0: reverse for the marked text,
+        beq +                   ; or for what is typed next
+        jmp reverse_selection
++       jmp rvs_key
 
 ; .reverse - carry set if a cursor key should go the other way: right SHIFT
 ; (mark key = left SHIFT), or either SHIFT (mark key = C=).
@@ -1960,6 +3008,12 @@ editor_key
 
 .code   !byte 0
 .mods   !byte 0
+.target !word 0                 ; (JMP (.target) must not cross a page:)
+!if <.target = $ff {
+        !error "editor_key: .target straddles a page (6502 JMP () bug)"
+}
+.old_row !byte 0
+.old_top !word 0
 
 ;============================================================================
 ; petscii_to_screen - A = PETSCII code, returns A = screen code (not

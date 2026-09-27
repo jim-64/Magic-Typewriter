@@ -174,6 +174,8 @@ msg_too_long
         !scr "too long: only part loaded", 0
 msg_break
         !scr "break", 0
+msg_no_room
+        !scr "not enough room", 0
 
 ; Added to a file name when it is opened (PETSCII): sequential file, read
 ; or write

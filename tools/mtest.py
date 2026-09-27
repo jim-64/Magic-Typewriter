@@ -107,6 +107,11 @@ class Editor:
     def text(self):
         gs = int.from_bytes(self.peek(0x08, 2), "little")
         ge = int.from_bytes(self.peek(0x0a, 2), "little")
+        te = int.from_bytes(self.peek(0x1a, 2), "little")    # text_end
         before = self.peek(0x4000, gs - 0x4000) if gs > 0x4000 else b""
-        after = self.peek(ge, 0xd000 - ge) if ge < 0xd000 else b""
+        after = self.peek(ge, te - ge) if ge < te else b""
         return before + after, gs - 0x4000
+
+    def clipboard(self):
+        te = int.from_bytes(self.peek(0x1a, 2), "little")
+        return self.peek(te, 0xd000 - te) if te < 0xd000 else b""

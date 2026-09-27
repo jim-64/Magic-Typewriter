@@ -12,7 +12,10 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   no more color skipping (see Menus).
 - **Phase 4 done** (2026-09-27; Jim tested in VICE), merged into `main`. Fixed after his test: CLEAR ALL
   kept the old file name, so CTRL-S saved over the loaded file; it now starts an unnamed document.
-- Next: phase 5, selection and cut/copy/paste. (One branch per phase.)
+- **Phase 5 (marking, cut/copy/paste, recolor):** passes the automated checks; waiting for Jim's Human
+  Test. Work is on branch `phase5`; merge into `main` when Jim accepts it. (One branch per phase.)
+- **Memory is getting tight** (see Memory Map): ask Jim before phase 6 about letting the program
+  continue past the sprite blocks.
 
 ## Working with Jim
 
@@ -166,7 +169,10 @@ The bridge's `c64_disk` / `c64_drive` operations only work on the Ultimate: on V
 `x64sc` (scratch settings file, warp, disk image in drive 8, binary monitor on **port 6510** so it never
 clashes with the bridge on 6502) and speaks the binary monitor protocol; `mtest.py` drives the editor
 through the test mailbox (keys, screen text, buffer text, labels from `build/main.lbl`). Tests:
-`python tools/test_phase4_load_save.py [c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`.
+`python tools/test_phase3.py [c64|ntsc]` (editing regression), `python tools/test_phase4_load_save.py
+[c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`, `python tools/test_phase5.py [c64|ntsc]`.
+**Run them all after any change to the editor** — test_phase3 caught a real regression in phase 5.
+(One unexplained failure of test_phase4_load_save in ~12 runs during phase 5; not reproducible.)
 They work on a copy of the .d64 in `build/test/`, quit VICE cleanly (so it writes the image back) and check
 saved files with c1541 (`-read "name,s"` for SEQ files). Needs Python 3 (installed).
 
@@ -252,6 +258,13 @@ build.sh            same steps (Linux)
   (`$01 = $36`). **Keep the KERNAL and I/O banked in.**
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
 - Zero page: with BASIC out, $02–$8F is available; leave the KERNAL's area alone.
+
+**Space check (phase 5, 2026-09-27):** the debug build ends at about $357D (program + run-time tables),
+release about $33F8, and everything must stay below the sprite blocks at $3E80 — only ~2.3 KB left, with
+phases 6–11 still to come. PRG size: 11.0 KB debug, 10.6 KB release (over the 6–10 KB target).
+Proposed fix, **ask Jim first**: let the code continue after the sprite blocks (from $4000) and start
+the text buffer after the end of the program (as this section allows: "from the end of the program
+(or $4000)"), making the buffer a few KB smaller. Exomizer can still crunch the PRG file for release.
 
 ## Display
 
@@ -647,6 +660,26 @@ Editing rules:
   long lines scroll horizontally.
 - Clipboard in free buffer space (top-down), or in the REU when present.
 
+**As built (phase 5, "Marked text" section of `src/editor.asm`):**
+- Marking = `sel_anchor` (offset) to the cursor. Movement keys with the mark key held extend it:
+  cursor keys, F3/F5, and HOME **only when the mark key is C=** (SHIFT+HOME stays CLEAR ALL). While
+  marking, the cursor's codes are not tidied (`no_cleanup`), so offsets stay put. A move without the
+  mark key unmarks (full redraw); a marking move redraws only the rows between the old and new cursor
+  rows (`redraw_stop`). Marked characters draw with bit 7 flipped; a marked line end shows as a
+  reversed space.
+- Every operation on marked text first moves the gap to its start (`sel_to_gap`), so the marked bytes
+  lie right after the gap, then works through them there ("take" from after the gap, "insert" before
+  it). Codes needed afterwards go just after the cursor (`restore_after`), unless codes there already
+  set the same thing or nothing follows.
+- **Clipboard at the top of the buffer:** `text_end` (zero page $1A) is the end of the text; the
+  clipboard is `text_end`..`BUF_END`. Copying resizes it by moving the text after the gap. It survives
+  Load and CLEAR ALL. `clip_color` / `clip_rvs` = the state at the start of what was copied.
+- Recolor keeps the text marked (so a second color key simply changes it again) and puts the cursor
+  back at the end it was at. RVS recolor adds RVS ON after each line end inside the marked text.
+- After an operation on marked text the screen is redrawn with the cursor on the row it was on
+  (`show_cursor_at`); CTRL-A puts the end of the text on the bottom row.
+- CTRL-S first tidies the codes at the cursor (`leave_cursor`), so no codes without effect are saved.
+
 **As built (phase 3, `src/editor.asm`; read its header comment first):**
 - Gap buffer at **$4000–$CFFF** (36 KB), BASIC ROM banked out. The program and its run-time tables
   (ctype, per-row arrays, prompt save area; defined after `program_end` in `main.asm`) must stay below
@@ -911,6 +944,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
    SHIFT-CLR "CLEAR ALL Y/N". **Done 2026-09-27.**
 4. PETSCII SEQ load/save with device number and error channel. **Done 2026-09-27.**
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
+   (Automated checks passed 2026-09-27; Human Test pending.)
 6. Soft word wrap, horizontal scroll, marker tracking the real position.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,

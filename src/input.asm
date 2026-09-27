@@ -54,6 +54,10 @@ KEY_STOP        = 63
 KEY_Y           = 25
 KEY_S           = 13
 KEY_L           = 42
+KEY_X           = 23
+KEY_C           = 20
+KEY_V           = 31
+KEY_A           = 10
 KEY_N           = 39
 
 ; Events that are not a single key
@@ -578,6 +582,7 @@ test_document
         sta row_rvs
         sta modified
         sta want_col
+        sta sel_on
         lda text_color
         sta row_color
         jsr skip_codes          ; (the cursor goes after leading codes)
