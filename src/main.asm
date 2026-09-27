@@ -184,6 +184,7 @@ init_screen
         sta VIC_MEMPTR
         lda #BLUE               ; top strip color until the first split
         sta VIC_BORDER
+        lda #STRIP_BG
         sta VIC_BG0
 
         ; Clear 1000 screen cells to spaces in the text color.

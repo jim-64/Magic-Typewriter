@@ -6,8 +6,8 @@
 ; Sprite images. Only the rows that are used are stored; init_sprites
 ; copies them into empty 64-byte sprite blocks.
 ; Header: first row in the block (0-20), then the number of bytes that
-; follow (3 bytes per 24-pixel row). See init_sprites for why the top
-; badges and the menu icon sit at the bottom of their blocks.
+; follow (3 bytes per 24-pixel row). See the notes above init_sprites in
+; irq.asm for why the top badges and the menu icon sit low in their blocks.
 ;----------------------------------------------------------------------------
 
 ; Mouse pointer: 8x8 box, red
@@ -24,7 +24,7 @@ spr_pointer
 
 ; Menu icon "=F1" (23x7)
 spr_menu
-        !byte 21-7, 7*3
+        !byte 13, 7*3
         !byte $ff,$3c,$c0       ; XXXXXXXX..XXXX..XX......
         !byte $00,$31,$c0       ; ..........XX...XXX......
         !byte $00,$30,$c0       ; ..........XX....XX......
@@ -72,7 +72,7 @@ PTR_TEST_X = 24 + 37*8          ; phase 1: pointer parked on text column 37,
 PTR_TEST_Y = 51 + 22*8 - 1      ; row 22 (the mouse moves it in phase 7)
 spr_positions
         !byte <PTR_TEST_X,   PTR_TEST_Y         ; 0 pointer
-        !byte <SPR_MENU_X,   SPR_MENU_Y         ; 1 menu icon
+        !byte <SPR_MENU_X,   SPR_TOP_Y          ; 1 menu icon
         !byte <SPR_LEFT_X,   SPR_TOP_Y          ; 2 F3 left
         !byte <SPR_RIGHT_X,  SPR_TOP_Y          ; 3 F3 right
         !byte <SPR_LEFT_X,   SPR_BOT_Y          ; 4 F5 left

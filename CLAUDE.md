@@ -304,28 +304,44 @@ XXXXXXXX..XX...XXXX.....   $FF,$31,$E0
 ```
 Store only the rows above (13×3 or 7×3 bytes); expand into 64-byte sprite blocks at init and zero the rest.
 
+**Branch `side-border-badges` (experiment, 2026-09-27):** the badges sit in the side borders, as in
+Jim's mockup. Branch `phase1` keeps the earlier layout (badges above/below the text area, no
+side-border opening).
+
 Vertical placement (same on PAL and NTSC), as raster lines:
-- Top badges: raster 38–50, bottom row touching the text area.
-- Menu icon: raster 43–49.
-- Bottom badges: raster 251–263, top row touching the text area.
+- Top badges: raster 37–49 (the mockup has 38–50, touching the text area; see below).
+- Menu icon: raster 42–48 (same as the mockup).
+- Bottom badges: raster 252–264 (the mockup has 251–263).
+
+Why one line away from the text area: showing a sprite in the right border of line 50 means opening
+that border, and that also opens the **left** border of line 51, the first text line. There the VIC
+shows the text background ($D021, black) instead of the dark grey side color, and line 51 is a
+badline, so the CPU can't change the color in time. Same at the bottom with line 250. Matching the
+mockup exactly would need two more sprites (6 and 7) as dark grey patches over those two spots.
 
 Found in phase 1 (VICE): a sprite's first row shows on raster line **Y+1**, and the VIC always fetches
-all **21 rows** of a sprite, stealing CPU cycles at the end of each of those lines. So the top badges
-and the menu icon keep their pictures in the **bottom rows** of their blocks (badges: rows 8–20, Y = 29;
-icon: rows 14–20, Y = 28), which ends their fetches by line 50 and keeps the line 50/51 color split
-free of sprite fetches. The bottom badges use rows 0–12 with Y = 250. Also, the VIC compares sprite Y
-with only the low 8 bits of the raster line, so on PAL the top sprites would appear again at line
-256+Y; sprites 1–3 are switched off at line 254 and back on at line 10.
+all **21 rows** of a sprite, stealing CPU cycles at the end of each of those lines. The top badges and
+the menu icon share the same 21 fetched lines (29–49, Y = 28), with their pictures low in their blocks
+(badges rows 8–20, icon rows 13–19), so every line of the top strip loses the same cycles and the line
+50/51 color split has no sprite fetches. The bottom badges use rows 0–12 with Y = 251. Also, the VIC
+compares sprite Y with only the low 8 bits of the raster line, so on PAL the top sprites would appear
+again at line 256+Y; sprites 1–3 are switched off after the bottom strip and back on at line 10.
 - **NTSC caution:** some NTSC TVs start showing around raster 41, so the top badges' 3-row tip may be
   cut off there. Check on a real NTSC TV.
 
-**Horizontal placement (decided):** everything sits inside the opened top/bottom strips, directly
-above/below the text area, never over the side borders. No side-border opening.
-- Left badges (sprites 2 and 4): X = 24, flush with the left edge of the text area.
-- Right badges (sprites 3 and 5): X = 320, flush with the right edge (pixels 320–343). X > 255, so set
-  their bits in the sprite X MSB register $D010.
-- Menu icon (sprite 1): centered, X = 172. The icon is 23 pixels wide, so it sits half a pixel left of
-  true center.
+**Horizontal placement (side-border-badges branch, as in the mockup):**
+- Left badges (sprites 2 and 4): X = 0, in the left border, touching the text area (X = 24).
+- Right badges (sprites 3 and 5): X = 344, in the right border, touching the text area. X > 255, so
+  set their bits in the sprite X MSB register $D010.
+- Menu icon (sprite 1): X = 32, 8 pixels in from the text area's left edge.
+- The side borders are opened on lines 28–49 and 251–264 with the 38/40-column trick ($D016 written
+  in one exact cycle per line), from the two stable IRQs. An open side border shows $D021 (blue in
+  the strips) plus sprites.
+- CPU cost: the two strip IRQs run from line 25 to 51 and from 247 to about 265, roughly 14% of the
+  CPU on PAL and 17% on NTSC.
+
+(Branch `phase1` layout: badges at X = 24 and X = 320 above/below the text area, menu icon centered
+at X = 172, no side-border opening.)
 
 ### Page position marker
 
@@ -363,12 +379,15 @@ color split at line 50 (stable) → marker top →
 marker bottom → color split at line 250 (stable) → open-border IRQ ($F9) → housekeeping (keyboard scan, cursor blink, restore 25-row mode) → mouse read
 (separate, see Mouse).
 
-As built in phase 1 (see the table at the top of `src/irq.asm`): line 48 prepares the top split,
-line 50 does it; marker top/bottom; line 247 prepares the bottom split, line 249 opens the border and
-does the split at the end of line 250; line 254 housekeeping; line 10 turns sprites 1–3 back on (the
-mouse read goes there in phase 7). The stable-split wait counts are per video system; how they were
-found (the `SPLIT_TEST` build) is described in `src/irq.asm`. **The mouse pointer's sprite fetches can
-shift the split timing when it is near lines 50/51 or 250/251 — handle in phase 7.**
+As built (side-border-badges branch; see the table at the top of `src/irq.asm`): line 10 turns
+sprites 1–3 on (the mouse read goes there in phase 7); line 25 prepares the stable top IRQ; line 27
+stabilizes, opens the side borders on lines 28–49 and does the color split at the end of line 50;
+marker top/bottom; line 247 prepares the stable bottom IRQ; line 249 opens the top/bottom border, does
+the split at the end of line 250, opens the side borders on lines 251–264, then housekeeping. All wait
+counts are per video system; how they were found (`SPLIT_TEST` and `BORDER_TEST` builds) is described
+in `src/irq.asm`. **The mouse pointer's sprite fetches will shift this timing whenever the pointer is
+in or next to a strip — handle in phase 7** (for example, hide the pointer or use pre-tuned timings
+for those lines).
 
 ## Startup
 

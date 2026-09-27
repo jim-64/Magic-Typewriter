@@ -80,15 +80,15 @@ tab_cycles_per_line
 tab_blink_frames
         !byte 17, 20, 20, 17
 
-; Stable raster handlers for the two color splits (see irq.asm).
-tab_split_top_lo
-        !byte <split_top_pal, <split_top_ntsc, <split_top_oldntsc, <split_top_drean
-tab_split_top_hi
-        !byte >split_top_pal, >split_top_ntsc, >split_top_oldntsc, >split_top_drean
-tab_split_bot_lo
-        !byte <split_bot_pal, <split_bot_ntsc, <split_bot_oldntsc, <split_bot_drean
-tab_split_bot_hi
-        !byte >split_bot_pal, >split_bot_ntsc, >split_bot_oldntsc, >split_bot_drean
+; Stable raster handlers for the top and bottom strips (see irq.asm).
+tab_border_top_lo
+        !byte <border_top_pal, <border_top_ntsc, <border_top_oldntsc, <border_top_drean
+tab_border_top_hi
+        !byte >border_top_pal, >border_top_ntsc, >border_top_oldntsc, >border_top_drean
+tab_border_bot_lo
+        !byte <border_bot_pal, <border_bot_ntsc, <border_bot_oldntsc, <border_bot_drean
+tab_border_bot_hi
+        !byte >border_bot_pal, >border_bot_ntsc, >border_bot_oldntsc, >border_bot_drean
 
 ;----------------------------------------------------------------------------
 ; Math helpers

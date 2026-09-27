@@ -3,46 +3,71 @@
 ;
 ; Each frame runs these raster IRQs, in this order:
 ;
-;   line  48  irq_top_a      set up the stable top split
-;   line  50  split_top_...  end of line 50: $D020 = side color, $D021 = text bg
+;   line  10  irq_frame_top  sprites 1-3 back on (mouse read in phase 7)
+;   line  25  irq_top_a      set up the stable top IRQ
+;   line  27  border_top_... open the side borders on lines 28-49 (so the
+;                            F3 badges show there), then the color split
+;                            at the end of line 50
 ;   marker    irq_mark_top   side border -> grey    (skipped if not needed)
 ;   marker    irq_mark_bot   side border -> dark grey (skipped if not needed)
-;   line 247  irq_bot_a      set up the stable bottom split
-;   line 249  split_bot_...  24 rows (opens the border), then at the end of
-;                            line 250: $D020 = $D021 = blue
-;   line 254  irq_housekeep  back to 25 rows, sprites 1-3 off, frame
-;                            counter, marker update
-;   line  10  irq_frame_top  sprites 1-3 back on (mouse read in phase 7)
+;   line 247  irq_bot_a      set up the stable bottom IRQ
+;   line 249  border_bot_... 24 rows (opens the top/bottom border), color
+;                            split at the end of line 250, open the side
+;                            borders on lines 251-264 (F5 badges), then
+;                            housekeeping: back to 25 rows, sprites 1-3 off,
+;                            frame counter, marker update
 ;
 ; All IRQs come in through the KERNAL's IRQ entry at $FF48, which saves
 ; A, X and Y and jumps through ($0314). Each handler sets up the next one
 ; and leaves through irq_exit. We never call the KERNAL's own handler at
 ; $EA31 (it would scan the keyboard and blink the BASIC cursor).
 ;
-; Why the top and bottom borders open: the VIC turns the border on at line
+; Opening the top and bottom borders: the VIC turns the border on at line
 ; 251 in 25-row mode, but at line 247 in 24-row mode. Switching to 24 rows
 ; on line 249 means it misses both, so the border stays off for the rest of
-; the frame. We switch back to 25 rows at line 254, after the check.
+; the frame. We switch back to 25 rows after line 251.
+;
+; Opening the side borders: the VIC switches the side border on when the
+; beam reaches the right edge of the text area - X=344 in 40-column mode,
+; X=335 in 38-column mode. If we switch to 38 columns just after X=335 has
+; passed but before X=344, it misses both, and the border stays off until
+; the text area starts on the next line. That is one exact CPU cycle per
+; line, so it is done from a stable IRQ, one line at a time. An opened side
+; border shows the background color ($D021) and any sprites, which is how
+; the F3/F5 badges can sit in the corners.
 ;============================================================================
 
 FRAME_TOP_LINE   = 10
-SPLIT_TOP_A_LINE = 48
-SPLIT_TOP_LINE   = 50           ; the last line of the top strip
-SPLIT_BOT_A_LINE = 247
-SPLIT_BOT_LINE   = 249          ; one line before the last text line (250)
-HOUSEKEEP_LINE   = 254
+TOP_A_LINE       = 25
+TOP_STABLE_LINE  = 27           ; its compare is at the end of this line
+TOP_OPEN_LINES   = 22           ; side borders open on lines 28-49
+BOT_A_LINE       = 247
+BOT_STABLE_LINE  = 249          ; its compare is at the end of this line
+BOT_OPEN_LINES   = 14           ; side borders open on lines 251-264
 
-MARK_MIN_LINE   = 54            ; marker IRQs must lie between the splits
+MARK_MIN_LINE   = 54            ; marker IRQs must lie between the strips
 MARK_MAX_LINE   = 244
+
+CSEL_40         = $08           ; $D016: 40 columns, no X scroll
+CSEL_38         = $00           ; $D016: 38 columns
+
+; Background color of the top and bottom strips. A test build with
+; -DBORDER_TEST=1 makes it green, so a screenshot shows exactly which
+; lines of the side borders are open (blue = closed, green = open).
+!ifdef BORDER_TEST {
+STRIP_BG        = GREEN
+} else {
+STRIP_BG        = BLUE
+}
 
 ;----------------------------------------------------------------------------
 ; Stable raster timing
 ;
 ; A normal IRQ starts 0-7 cycles late, depending on which instruction the
-; CPU was in the middle of. The color splits must change $D020 and $D021
-; exactly in the horizontal blanking (the ~12 cycles between the right
+; CPU was in the middle of. Opening the side borders needs one exact cycle,
+; and the color splits need the blanking (the ~12 cycles between the right
 ; border of one line and the left border of the next), so we use the
-; "double IRQ" method to get an exact cycle:
+; "double IRQ" method:
 ;
 ; 1. The first IRQ (irq_top_a / irq_bot_a) points the IRQ vector at the
 ;    second handler, sets the raster compare two lines further on, then
@@ -52,45 +77,68 @@ MARK_MAX_LINE   = 244
 ;    $D012. If the line has not changed yet we were early, and the BEQ
 ;    takes one cycle more (3 instead of 2) - after that the timing is exact.
 ;
-; Lines are 63, 64 or 65 cycles long depending on the video system, and the
-; sprite fetches fall at different places in the line, so each second
-; handler is assembled once per system (see the macros below) and init_irq
-; picks the right copy.
+; The compare must fall on a line change with no sprite fetches (they would
+; stop the CPU right there): line 27/28 is before the top sprites start,
+; line 249/250 is before the bottom ones.
 ;
-; How the wait counts were found (VICE 3.9, x64sc): build with
-;   acme ... -DSPLIT_TEST=1 -DTOP_PAL_WAIT=10 ...
-; which records whether each compare saw the old line or the next one
-; (see the split_test macro). Only the right wait count gives both results
-; over many frames: one count lower is always "old line", one count higher
-; always "next line". The second bottom wait (..._WAIT2) was then set by
-; screenshots, so that $D020 changes in the blanking just after the sprite
-; fetches for the F5 badges.
+; From then on everything is counted in cycles, including the cycles the
+; sprite fetches steal at the end of each line. It is always the same
+; sprites on the same lines, so always the same number of cycles.
+;
+; Lines are 63, 64 or 65 cycles long depending on the video system, and the
+; sprite fetches fall at different places in the line, so each handler is
+; assembled once per system (see the macros below) and init_irq picks the
+; right copy.
+;
+; The mouse pointer (phase 7) adds sprite fetches wherever it is; in or
+; near the strips that will shift this timing and has to be handled then.
+;
+; How the wait counts were found (VICE 3.9, x64sc):
+; - ..._CMP: build with -DSPLIT_TEST=1, which records whether each compare
+;   saw the old line or the next one (see the split_test macro). Only the
+;   right count gives both results over many frames.
+; - ..._PRE and ..._LOOP: build with -DBORDER_TEST=1 and take a screenshot:
+;   every line of the side borders must be open. One cycle off and the
+;   border stays closed.
+; - ..._SPLIT: screenshots, so that $D020 changes inside the blanking.
 ;
 ; !ifndef lets a test build override any of them from the command line.
-;
-; Sprite fetches steal cycles at the end of a line, and the counts below
-; assume only the fixed border sprites. The mouse pointer (phase 7) can add
-; fetches near lines 50/51 and 250/251; that has to be handled then.
-;
-;                          top split     bottom split
-;                          WAIT          WAIT1   WAIT2
-; PAL (63 cycles)          10            5       53
-; NTSC (65 cycles)         13            7       54
-; old NTSC (64 cycles)     11            6       54
-; Drean (65 cycles)        13            7       54
 ;----------------------------------------------------------------------------
-!ifndef TOP_PAL_WAIT       { TOP_PAL_WAIT       = 10 }
-!ifndef TOP_NTSC_WAIT      { TOP_NTSC_WAIT      = 13 }
-!ifndef TOP_OLDNTSC_WAIT   { TOP_OLDNTSC_WAIT   = 11 }
-!ifndef TOP_DREAN_WAIT     { TOP_DREAN_WAIT     = 13 }
-!ifndef BOT_PAL_WAIT1      { BOT_PAL_WAIT1      = 5 }
-!ifndef BOT_PAL_WAIT2      { BOT_PAL_WAIT2      = 53 }
-!ifndef BOT_NTSC_WAIT1     { BOT_NTSC_WAIT1     = 7 }
-!ifndef BOT_NTSC_WAIT2     { BOT_NTSC_WAIT2     = 54 }
-!ifndef BOT_OLDNTSC_WAIT1  { BOT_OLDNTSC_WAIT1  = 6 }
-!ifndef BOT_OLDNTSC_WAIT2  { BOT_OLDNTSC_WAIT2  = 54 }
-!ifndef BOT_DREAN_WAIT1    { BOT_DREAN_WAIT1    = 7 }
-!ifndef BOT_DREAN_WAIT2    { BOT_DREAN_WAIT2    = 54 }
+!ifndef TOP_PAL_CMP        { TOP_PAL_CMP        = 13 }
+!ifndef TOP_PAL_PRE        { TOP_PAL_PRE        = 37 }
+!ifndef TOP_PAL_LOOP       { TOP_PAL_LOOP       = 41 }
+!ifndef TOP_PAL_SPLIT      { TOP_PAL_SPLIT      = 4 }
+!ifndef BOT_PAL_CMP        { BOT_PAL_CMP        = 3 }
+!ifndef BOT_PAL_SPLIT      { BOT_PAL_SPLIT      = 56 }
+!ifndef BOT_PAL_PRE        { BOT_PAL_PRE        = 36 }
+!ifndef BOT_PAL_LOOP       { BOT_PAL_LOOP       = 43 }
+
+!ifndef TOP_NTSC_CMP       { TOP_NTSC_CMP       = 15 }
+!ifndef TOP_NTSC_PRE       { TOP_NTSC_PRE       = 37 }
+!ifndef TOP_NTSC_LOOP      { TOP_NTSC_LOOP      = 43 }
+!ifndef TOP_NTSC_SPLIT     { TOP_NTSC_SPLIT     = 6 }
+!ifndef BOT_NTSC_CMP       { BOT_NTSC_CMP       = 5 }
+!ifndef BOT_NTSC_SPLIT     { BOT_NTSC_SPLIT     = 58 }
+!ifndef BOT_NTSC_PRE       { BOT_NTSC_PRE       = 36 }
+!ifndef BOT_NTSC_LOOP      { BOT_NTSC_LOOP      = 45 }
+
+!ifndef TOP_OLDNTSC_CMP    { TOP_OLDNTSC_CMP    = 14 }
+!ifndef TOP_OLDNTSC_PRE    { TOP_OLDNTSC_PRE    = 37 }
+!ifndef TOP_OLDNTSC_LOOP   { TOP_OLDNTSC_LOOP   = 42 }
+!ifndef TOP_OLDNTSC_SPLIT  { TOP_OLDNTSC_SPLIT  = 5 }
+!ifndef BOT_OLDNTSC_CMP    { BOT_OLDNTSC_CMP    = 4 }
+!ifndef BOT_OLDNTSC_SPLIT  { BOT_OLDNTSC_SPLIT  = 57 }
+!ifndef BOT_OLDNTSC_PRE    { BOT_OLDNTSC_PRE    = 36 }
+!ifndef BOT_OLDNTSC_LOOP   { BOT_OLDNTSC_LOOP   = 44 }
+
+!ifndef TOP_DREAN_CMP      { TOP_DREAN_CMP      = 15 }
+!ifndef TOP_DREAN_PRE      { TOP_DREAN_PRE      = 37 }
+!ifndef TOP_DREAN_LOOP     { TOP_DREAN_LOOP     = 43 }
+!ifndef TOP_DREAN_SPLIT    { TOP_DREAN_SPLIT    = 6 }
+!ifndef BOT_DREAN_CMP      { BOT_DREAN_CMP      = 5 }
+!ifndef BOT_DREAN_SPLIT    { BOT_DREAN_SPLIT    = 58 }
+!ifndef BOT_DREAN_PRE      { BOT_DREAN_PRE      = 36 }
+!ifndef BOT_DREAN_LOOP     { BOT_DREAN_LOOP     = 45 }
 
 ;----------------------------------------------------------------------------
 ; Macros
@@ -132,6 +180,36 @@ MARK_MAX_LINE   = 244
 .done   plp
 }
 
+; open_sides - a subroutine that opens the side borders on several lines
+; in a row. Call it with X = number of lines, Y = CSEL_38, A = CSEL_40,
+; timed so that the first STY writes in the right cycle. .wait makes each
+; pass of the loop take exactly one raster line (counting the cycles the
+; sprite fetches steal). Put +same_page with the same .wait in front of it.
+!macro open_sides .wait {
+.line   sty VIC_CTRL2           ; 38 columns, just after X=335: the side
+                                ; border stays open
+        sta VIC_CTRL2           ; back to 40 columns
+        +wait .wait
+        dex
+        bne .line
+        rts
+}
+
+; same_page - a branch to another page takes one cycle longer, which would
+; upset the timing. Goes in front of an open_sides routine (and its label):
+; if the routine would cross into the next page, start it on the next page.
+; The padding sits between routines, where it is never run.
+!macro same_page .wait {
+        !if .wait & 1 {
+                !set .len = 12 + (.wait - 3) / 2        ; bytes in the routine
+        } else {
+                !set .len = 10 + .wait / 2
+        }
+        !if (<*) + .len > 256 {
+                !align 255, 0
+        }
+}
+
 ; next_irq - set the raster line and handler of the next IRQ.
 ; (Every IRQ line we use is below 256, so bit 7 of $D011 stays 0.)
 !macro next_irq .line, .handler {
@@ -152,17 +230,17 @@ init_irq
         sta CIA1_ICR
         lda CIA1_ICR            ; and clear any that are waiting
 
-        ldx system_type         ; pick the split handlers for this system
-        lda tab_split_top_lo,x
-        sta split_top_vec
-        lda tab_split_top_hi,x
-        sta split_top_vec+1
-        lda tab_split_bot_lo,x
-        sta split_bot_vec
-        lda tab_split_bot_hi,x
-        sta split_bot_vec+1
+        ldx system_type         ; pick the stable handlers for this system
+        lda tab_border_top_lo,x
+        sta border_top_vec
+        lda tab_border_top_hi,x
+        sta border_top_vec+1
+        lda tab_border_bot_lo,x
+        sta border_bot_vec
+        lda tab_border_bot_hi,x
+        sta border_bot_vec+1
 
-        +next_irq SPLIT_TOP_A_LINE, irq_top_a
+        +next_irq FRAME_TOP_LINE, irq_frame_top
         lda #$01                ; enable the raster IRQ only
         sta VIC_IRQ_MASK
         lda #$ff                ; clear any old VIC IRQ flags
@@ -199,62 +277,80 @@ irq_exit
         rti
 
 ;============================================================================
-; Top color split
+; Top of the frame - line 10, before any sprite starts
+;============================================================================
+!zone irq_frame_top
+irq_frame_top
+        lda #$ff
+        sta VIC_IRQ_FLAGS
+        lda #SPR_ON_ALL         ; all six sprites back on
+        sta VIC_SPR_ENABLE
+        +next_irq TOP_A_LINE, irq_top_a
+        jmp irq_exit
+
+;============================================================================
+; Top strip: side borders open for the F3 badges, then the color split
 ;============================================================================
 
-; irq_top_a - line 48: prepare the stable IRQ for line 50.
+; irq_top_a - line 25: prepare the stable IRQ for line 27.
 !zone irq_top_a
 irq_top_a
-        lda split_top_vec       ; second IRQ goes to split_top_pal/ntsc/...
+        lda border_top_vec      ; second IRQ goes to border_top_pal/ntsc/...
         sta IRQ_VECTOR
-        lda split_top_vec+1
+        lda border_top_vec+1
         sta IRQ_VECTOR+1
-        lda #SPLIT_TOP_LINE
+        lda #TOP_STABLE_LINE
         sta VIC_RASTER
         lda #$ff                ; acknowledge this IRQ
         sta VIC_IRQ_FLAGS
         tsx                     ; remember the stack; the second IRQ
         stx saved_sp            ; will throw its own stack frame away
-        ldy text_bg             ; Y survives the KERNAL entry: the second
-                                ; handler uses it for $D021
         cli                     ; let the second IRQ in ...
         !for .i, 1, 45 {        ; ... while we run NOPs (90 cycles, more
-                nop             ; than enough to reach line 50)
+                nop             ; than enough to reach line 27)
         }
         jmp irq_exit            ; (never reached)
 
-; The second handler, one copy per video system. Enters on line 50 with
-; Y = text background color. It only has a few cycles to spare before the
-; end of line 50, so fixing the stack waits until the colors are set.
-; $D021 only shows in the middle of the line, so it can change any time
-; after the text of line 50 ends; $D020 must change in the blanking.
-!macro split_top .wait {
-        ldx #SPLIT_TOP_LINE
-        lda irq_color51         ; side border color for line 51 onward
-        +wait .wait
-        sty VIC_BG0             ; line 50, in the right border
-        cpx VIC_RASTER          ; read at the very end of line 50
+; The second handler, one copy per video system. Enters on line 27.
+!macro border_top .cmp, .pre, .loop, .split {
+        ldx saved_sp            ; drop the second IRQ's stack frame
+        txs
+        lda #TOP_STABLE_LINE
+        +wait .cmp
+        cmp VIC_RASTER          ; read at the very end of line 27
 !ifdef SPLIT_TEST {
         +split_test MB_TEST_TOP
 }
-        beq +                   ; still line 50: 1 cycle extra
-+       sta VIC_BORDER          ; start of line 51, in the blanking
-        ldx saved_sp            ; now drop the second IRQ's stack frame
-        txs
-        jmp split_top_done
+        beq +                   ; still line 27: 1 cycle extra
++       ldx #TOP_OPEN_LINES     ; from here on, exactly in step with the beam
+        ldy #CSEL_38
+        lda #CSEL_40
+        +wait .pre
+        jsr .open               ; open the side borders on lines 28-49
+
+        ; Color split at the end of line 50
+        ldx irq_color51         ; side border color from line 51
+        ldy text_bg
+        +wait .split
+        sty VIC_BG0             ; line 50, right border
+        stx VIC_BORDER          ; blanking
+        jmp border_top_done
+
+        +same_page .loop
+.open   +open_sides .loop
 }
 
-!zone split_top
-split_top_pal     +split_top TOP_PAL_WAIT
-split_top_ntsc    +split_top TOP_NTSC_WAIT
-split_top_oldntsc +split_top TOP_OLDNTSC_WAIT
-split_top_drean   +split_top TOP_DREAN_WAIT
+!zone border_top
+border_top_pal     +border_top TOP_PAL_CMP, TOP_PAL_PRE, TOP_PAL_LOOP, TOP_PAL_SPLIT
+border_top_ntsc    +border_top TOP_NTSC_CMP, TOP_NTSC_PRE, TOP_NTSC_LOOP, TOP_NTSC_SPLIT
+border_top_oldntsc +border_top TOP_OLDNTSC_CMP, TOP_OLDNTSC_PRE, TOP_OLDNTSC_LOOP, TOP_OLDNTSC_SPLIT
+border_top_drean   +border_top TOP_DREAN_CMP, TOP_DREAN_PRE, TOP_DREAN_LOOP, TOP_DREAN_SPLIT
 
-split_top_done
+border_top_done
         lda #$ff                ; acknowledge the IRQ
         sta VIC_IRQ_FLAGS
         lda irq_mark_top        ; next: marker top, marker bottom, or
-        beq +                   ; the bottom split, whichever is first
+        beq +                   ; the bottom strip, whichever is first
         sta VIC_RASTER
         lda #<irq_mark_top_h
         sta IRQ_VECTOR
@@ -285,7 +381,7 @@ mark_next                       ; set up irq_mark_bot, or the bottom split
         lda #>irq_mark_bot_h
         sta IRQ_VECTOR+1
         jmp irq_exit
-+       +next_irq SPLIT_BOT_A_LINE, irq_bot_a
++       +next_irq BOT_A_LINE, irq_bot_a
         jmp irq_exit
 
 irq_mark_bot_h
@@ -293,21 +389,22 @@ irq_mark_bot_h
         sta VIC_BORDER
         lda #$ff
         sta VIC_IRQ_FLAGS
-        +next_irq SPLIT_BOT_A_LINE, irq_bot_a
+        +next_irq BOT_A_LINE, irq_bot_a
         jmp irq_exit
 
 ;============================================================================
-; Bottom color split (and border opening)
+; Bottom strip: open the top/bottom border, color split, side borders open
+; for the F5 badges, then housekeeping
 ;============================================================================
 
 ; irq_bot_a - line 247: prepare the stable IRQ for line 249.
 !zone irq_bot_a
 irq_bot_a
-        lda split_bot_vec       ; second IRQ goes to split_bot_pal/ntsc/...
+        lda border_bot_vec      ; second IRQ goes to border_bot_pal/ntsc/...
         sta IRQ_VECTOR
-        lda split_bot_vec+1
+        lda border_bot_vec+1
         sta IRQ_VECTOR+1
-        lda #SPLIT_BOT_LINE
+        lda #BOT_STABLE_LINE
         sta VIC_RASTER
         lda #$ff
         sta VIC_IRQ_FLAGS
@@ -320,43 +417,44 @@ irq_bot_a
         jmp irq_exit            ; (never reached)
 
 ; The second handler, one copy per video system. Enters on line 249.
-!macro split_bot .w1, .w2 {
+!macro border_bot .cmp, .split, .pre, .loop {
         ldx saved_sp            ; drop the second IRQ's stack frame
         txs
         lda #CTRL1_24ROWS       ; 24 rows: the border will not close
         sta VIC_CTRL1
         ldx #BLUE
-        lda #SPLIT_BOT_LINE
-        +wait .w1
+        ldy #STRIP_BG
+        lda #BOT_STABLE_LINE
+        +wait .cmp
         cmp VIC_RASTER          ; read at the very end of line 249
 !ifdef SPLIT_TEST {
         +split_test MB_TEST_BOT
 }
         beq +                   ; still line 249: 1 cycle extra
-+       +wait .w2               ; on to the end of line 250
-        stx VIC_BG0             ; right border (the text is finished)
++       +wait .split            ; on to the end of line 250
+        sty VIC_BG0             ; right border (the text is finished)
         stx VIC_BORDER          ; blanking
-        jmp split_bot_done
+
+        ldx #BOT_OPEN_LINES
+        ldy #CSEL_38
+        lda #CSEL_40
+        +wait .pre
+        jsr .open               ; open the side borders on lines 251-264
+        jmp border_bot_done
+
+        +same_page .loop
+.open   +open_sides .loop
 }
 
-!zone split_bot
-split_bot_pal     +split_bot BOT_PAL_WAIT1, BOT_PAL_WAIT2
-split_bot_ntsc    +split_bot BOT_NTSC_WAIT1, BOT_NTSC_WAIT2
-split_bot_oldntsc +split_bot BOT_OLDNTSC_WAIT1, BOT_OLDNTSC_WAIT2
-split_bot_drean   +split_bot BOT_DREAN_WAIT1, BOT_DREAN_WAIT2
+!zone border_bot
+border_bot_pal     +border_bot BOT_PAL_CMP, BOT_PAL_SPLIT, BOT_PAL_PRE, BOT_PAL_LOOP
+border_bot_ntsc    +border_bot BOT_NTSC_CMP, BOT_NTSC_SPLIT, BOT_NTSC_PRE, BOT_NTSC_LOOP
+border_bot_oldntsc +border_bot BOT_OLDNTSC_CMP, BOT_OLDNTSC_SPLIT, BOT_OLDNTSC_PRE, BOT_OLDNTSC_LOOP
+border_bot_drean   +border_bot BOT_DREAN_CMP, BOT_DREAN_SPLIT, BOT_DREAN_PRE, BOT_DREAN_LOOP
 
-split_bot_done
-        lda #$ff
-        sta VIC_IRQ_FLAGS
-        +next_irq HOUSEKEEP_LINE, irq_housekeep
-        jmp irq_exit
-
-;============================================================================
-; Housekeeping - line 254, below the bottom border check
+; Housekeeping, below the bottom border check
 ; (Keyboard scan and cursor blink will go here in phases 2 and 3.)
-;============================================================================
-!zone irq_housekeep
-irq_housekeep
+border_bot_done
         lda #CTRL1_25ROWS       ; back to 25 rows for the next frame
         sta VIC_CTRL1
         lda #$ff
@@ -386,24 +484,12 @@ irq_housekeep
         +next_irq FRAME_TOP_LINE, irq_frame_top
         jmp irq_exit
 
-;============================================================================
-; Top of the frame - line 10, before any sprite starts
-;============================================================================
-!zone irq_frame_top
-irq_frame_top
-        lda #$ff
-        sta VIC_IRQ_FLAGS
-        lda #SPR_ON_ALL         ; all six sprites back on
-        sta VIC_SPR_ENABLE
-        +next_irq SPLIT_TOP_A_LINE, irq_top_a
-        jmp irq_exit
-
 ;----------------------------------------------------------------------------
 ; IRQ variables
 ;----------------------------------------------------------------------------
 saved_sp        !byte 0         ; stack pointer saved by the first IRQ
-split_top_vec   !word 0         ; second-IRQ handlers for this system
-split_bot_vec   !word 0
+border_top_vec  !word 0         ; second-IRQ handlers for this system
+border_bot_vec  !word 0
 frame_count     !word 0
 
 ; Marker values used by the IRQs (0 = no IRQ needed)
@@ -571,13 +657,17 @@ init_marker
 ; Sprite blocks live at $3e80-$3fff (blocks 250-255), in VIC bank 0.
 ; $3fff must stay $00: the VIC draws that byte in the opened borders.
 ;
-;
 ; A sprite's first row appears on raster line Y+1, and the VIC always
 ; fetches all 21 rows of a sprite, even blank ones. Those fetches steal CPU
-; cycles at the end of each line, which would upset the stable color split
-; at the end of line 50. So the top badges and the menu icon keep their
-; picture in the BOTTOM rows of their blocks: all 21 fetched lines then end
-; by line 50, and nothing is fetched at the line 50 -> 51 split.
+; cycles at the end of each line. To keep the timing the same on every
+; line of the top strip, the top badges and the menu icon share the same
+; 21 fetched lines (29-49): their pictures sit near the BOTTOM of their
+; blocks. Nothing is fetched at the line 50 -> 51 split.
+;
+; The badges sit in the side borders, touching the text area sideways.
+; Opening the side border on line 50 would also open the left border of
+; line 51 (the first text line), so the top badges end on line 49 and the
+; bottom badges start on line 252: one blank line from the text area.
 ;============================================================================
 SPRITE_BASE     = $3e80
 SPR_BLOCK_PTR   = 250           ; mouse pointer
@@ -585,16 +675,16 @@ SPR_BLOCK_MENU  = 251           ; "=F1" menu icon
 SPR_BLOCK_F3    = 252           ; F3 badge (sprites 2 and 3)
 SPR_BLOCK_F5    = 253           ; F5 badge (sprites 4 and 5)
 
-SPR_TOP_Y       = 50 - 21       ; F3 badges: block on lines 30-50,
-                                ; picture (rows 8-20) on lines 38-50
-SPR_MENU_Y      = 49 - 21       ; menu icon: block on lines 29-49,
-                                ; picture (rows 14-20) on lines 43-49
-SPR_BOT_Y       = 251 - 1       ; F5 badges: picture (rows 0-12) on 251-263
+SPR_TOP_Y       = 29 - 1        ; F3 badges and menu icon: blocks on lines
+                                ; 29-49; F3 picture (rows 8-20) on 37-49,
+                                ; menu picture (rows 13-19) on 42-48
+SPR_BOT_Y       = 252 - 1       ; F5 badges: picture (rows 0-12) on 252-264
 SPR_ON_ALL      = %00111111     ; sprites 0-5
-SPR_ON_BOTTOM   = %00110001     ; pointer and F5 badges only (see irq_housekeep)
-SPR_LEFT_X      = 24            ; left edge of the text area
-SPR_RIGHT_X     = 320           ; right edge (pixels 320-343), needs X bit 8
-SPR_MENU_X      = 172           ; centered
+SPR_ON_BOTTOM   = %00110001     ; pointer and F5 badges only (see border_bot_done)
+SPR_LEFT_X      = 0             ; left border, touching the text area (X=24)
+SPR_RIGHT_X     = 344           ; right border, from the text area's edge;
+                                ; needs X bit 8
+SPR_MENU_X      = 32            ; 8 pixels in from the text area's left edge
 
 !zone init_sprites
 init_sprites

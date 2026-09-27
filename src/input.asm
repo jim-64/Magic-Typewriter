@@ -102,6 +102,14 @@ mailbox_poll
         sta COLOR_RAM+10*40,x   ; 1 = white, 0 = black
         dex
         bpl -
+        ; Vary the length of the main loop, so the IRQs interrupt it at
+        ; every possible point (this makes every jitter case happen).
+        inc .vary
+        lda .vary
+        and #15
+        tax
+-       dex
+        bpl -
 }
         lda MB_MK_GO
         beq +
@@ -119,5 +127,9 @@ mailbox_poll
 .done   lda #0
         sta MB_MK_GO
 +       rts
+
+!ifdef SPLIT_TEST {
+.vary   !byte 0
+}
 
 }       ; end of !if DEBUG
