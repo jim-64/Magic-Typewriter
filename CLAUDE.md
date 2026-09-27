@@ -10,8 +10,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
 - **Phase 2 done** (2026-09-27), merged into `main`.
 - **Phase 3 done** (2026-09-27; Jim tested PAL and NTSC), merged into `main`. Change after his test:
   no more color skipping (see Menus).
-- **Phase 4 (PETSCII SEQ load/save):** passes the automated checks; waiting for Jim's Human Test. Work
-  is on branch `phase4`; merge into `main` when Jim accepts it. (One branch per phase.)
+- **Phase 4 done** (2026-09-27; Jim tested in VICE), merged into `main`. Fixed after his test: CLEAR ALL
+  kept the old file name, so CTRL-S saved over the loaded file; it now starts an unnamed document.
+- Next: phase 5, selection and cut/copy/paste. (One branch per phase.)
 
 ## Working with Jim
 
@@ -798,6 +799,7 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 
 **As built (phase 4, `src/fileio.asm`):**
 - CTRL-S saves (asks for a name if the document has none; the Save menu adds "save as" in phase 8).
+  CLEAR ALL makes a new document with no name (so CTRL-S asks again).
   **CTRL-L loads — temporary** until the Load menu (phase 8); asks "LOAD WITHOUT SAVING Y/N" first if
   there are changes. The name box ("LOAD:"/"SAVE:", `prompt_input` in `src/menu.asm`) shows the last
   name; RETURN accepts, RUN/STOP cancels, DEL rubs out.
@@ -907,8 +909,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 3. Gap buffer, typing, flashing cursor (both shapes, F7 toggle), colors and reverse (rendering, color
    keys, restore codes, clean-up), INST/DEL and SHIFT-INST, RETURN, cursor movement, redraw,
    SHIFT-CLR "CLEAR ALL Y/N". **Done 2026-09-27.**
-4. PETSCII SEQ load/save with device number and error channel. (Automated checks passed 2026-09-27;
-   Human Test pending.)
+4. PETSCII SEQ load/save with device number and error channel. **Done 2026-09-27.**
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
 6. Soft word wrap, horizontal scroll, marker tracking the real position.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.

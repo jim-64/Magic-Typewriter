@@ -1823,7 +1823,9 @@ next_background
         sta text_bg
         rts
 
-; clear_all - SHIFT + CLR/HOME: after asking, empty the document.
+; clear_all - SHIFT + CLR/HOME: after asking, start a new document: no
+; text, and no file name (so CTRL-S asks for one instead of saving over
+; the file that was loaded before).
 !zone clear_all
 clear_all
         lda #<msg_clear_all
@@ -1831,6 +1833,8 @@ clear_all
         jsr prompt_yes_no
         bcc +
         jsr empty_buffer
+        lda #0
+        sta file_name_len
         jsr redraw_all
         jsr locate_cursor
 +       rts

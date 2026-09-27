@@ -69,6 +69,15 @@ try:
                 break
             time.sleep(0.2)
         check("NOTE loaded back", e.text()[0] == b"HELLO DISK\r", e.text()[0])
+
+        # CLEAR ALL starts a new, unnamed document: CTRL-S must ask for a
+        # name (not save over NOTE)
+        e.keys([(KEY["HOME"], LS)])
+        e.keys([(KEY["Y"], 0)])
+        e.type_text("other")
+        e.keys([(KEY["S"], CTRL)])
+        check("after CLEAR ALL, CTRL-S asks for a name", "SAVE:" in box() and "note" not in box(), box())
+        e.keys([(KEY["STOP"], 0)])
 finally:
     try:
         e.m.quit()
