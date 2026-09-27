@@ -18,10 +18,11 @@
 ;                            borders on lines 251-264 (F5 badges), then
 ;                            back to 25 rows, frame counter, marker update
 ;
-; All IRQs come in through the KERNAL's IRQ entry at $FF48, which saves
-; A, X and Y and jumps through ($0314). Each handler sets up the next one
-; and leaves through irq_exit. We never call the KERNAL's own handler at
-; $EA31 (it would scan the keyboard and blink the BASIC cursor).
+; All IRQs come in through irq_entry, a copy of the KERNAL's IRQ entry at
+; $FF48 (the KERNAL ROM is switched out while we run), which saves A, X
+; and Y and jumps through ($0314). Each handler sets up the next one and
+; leaves through irq_exit. We never call the KERNAL's own handler at $EA31
+; (it would scan the keyboard and blink the BASIC cursor).
 ;
 ; Opening the top and bottom borders: the VIC turns the border on at line
 ; 251 in 25-row mode, but at line 247 in 24-row mode. Switching to 24 rows
@@ -264,6 +265,29 @@ restore_irq
         lda #$81                ; CIA1 timer A IRQ back on (60 Hz KERNAL tick)
         sta CIA1_ICR
         rts
+
+;----------------------------------------------------------------------------
+; irq_entry - where the CPU goes on an IRQ while the KERNAL ROM is switched
+; out (the vector at $fffe points here). It is the KERNAL's own entry code
+; from $FF48, instruction for instruction, so it takes exactly as many
+; cycles: the stable raster timing is the same as through the KERNAL.
+; While the KERNAL ROM is in (disk work), the CPU uses the ROM's entry.
+;----------------------------------------------------------------------------
+!if (<*) > 256 - 19 {           ; keep all 19 bytes in one page, so the BEQ
+        !align 255, 0           ; never takes the extra page-cross cycle
+}
+irq_entry
+        pha                     ; save A, X and Y
+        txa
+        pha
+        tya
+        pha
+        tsx
+        lda $0104,x             ; the status the CPU pushed: its B flag
+        and #$10                ; is set for a BRK instruction
+        beq +
+        jmp (BRK_VECTOR)        ; (we never use BRK)
++       jmp (IRQ_VECTOR)        ; the handler for this raster line
 
 ;----------------------------------------------------------------------------
 ; irq_exit - every handler leaves through here.

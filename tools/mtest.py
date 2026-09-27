@@ -74,7 +74,9 @@ class Editor:
         while self.count() != want:
             time.sleep(0.1)
             if time.time() - t0 > timeout:
-                raise TimeoutError("keys not handled")
+                raise TimeoutError("keys not handled: count %d, wanted %d (started at %d); "
+                                   "last keys handled (code, mods): %s"
+                                   % (self.count(), want, start, self.peek(MB + 53, 8).hex(" ")))
         time.sleep(settle)
 
     def type_text(self, text):

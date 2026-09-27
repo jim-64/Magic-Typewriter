@@ -14,8 +14,10 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   kept the old file name, so CTRL-S saved over the loaded file; it now starts an unnamed document.
 - **Phase 5 (marking, cut/copy/paste, recolor):** passes the automated checks; waiting for Jim's Human
   Test. Work is on branch `phase5`; merge into `main` when Jim accepts it. (One branch per phase.)
-- **Memory is getting tight** (see Memory Map): ask Jim before phase 6 about letting the program
-  continue past the sprite blocks.
+- **Phase 6** started on branch `phase6` (made from `phase5`, since phase 5 isn't merged yet). First
+  step done (2026-09-27): **the editor now runs under the KERNAL ROM** (Jim chose this "plan D" over
+  letting the code continue past the sprite blocks; see Memory Map). Also fixed then: Quit left BASIC's
+  zero page broken.
 
 ## Working with Jim
 
@@ -170,9 +172,14 @@ The bridge's `c64_disk` / `c64_drive` operations only work on the Ultimate: on V
 clashes with the bridge on 6502) and speaks the binary monitor protocol; `mtest.py` drives the editor
 through the test mailbox (keys, screen text, buffer text, labels from `build/main.lbl`). Tests:
 `python tools/test_phase3.py [c64|ntsc]` (editing regression), `python tools/test_phase4_load_save.py
-[c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`, `python tools/test_phase5.py [c64|ntsc]`.
+[c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`, `python tools/test_phase5.py [c64|ntsc]`,
+`python tools/test_quit.py [c64|ntsc]` (RESTORE, and a healthy BASIC after Quit).
 **Run them all after any change to the editor** — test_phase3 caught a real regression in phase 5.
-(One unexplained failure of test_phase4_load_save in ~12 runs during phase 5; not reproducible.)
+(Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5, once "keys not
+handled" right after start-up in phase 6; neither repeated in 20+ runs. `mtest.keys` now reports the key
+count and the mailbox's log of the last keys handled when it times out; look there next time.)
+`vicemon.py` reads and writes $E000–$FFFF in VICE's **"ram" bank** (the editor lives under the KERNAL
+ROM, which is switched in during disk work) and everything else in the "cpu" bank (I/O, color RAM).
 They work on a copy of the .d64 in `build/test/`, quit VICE cleanly (so it writes the image back) and check
 saved files with c1541 (`-read "name,s"` for SEQ files). Needs Python 3 (installed).
 
@@ -245,26 +252,46 @@ build.bat           assemble + make d64 (Windows)
 build.sh            same steps (Linux)
 ```
 
-## Memory Map (proposed — verify and adjust)
+## Memory Map
 
-- **VIC bank 0 ($0000–$3FFF)** so the VIC sees the **ROM character set** at $1000–$1FFF; no custom font.
-- Screen RAM at **$0400**. Color RAM at $D800 as usual.
-- Sprite blocks **250–255 at $3E80–$3FFF**: pointer, menu icon, F3 badge, F5 badge (the two F3 and the
-  two F5 sprites share one block each), plus spares.
-  **$3FFF must be $00** — it is the idle-graphics byte drawn in the opened borders (and the unused 64th
-  byte of sprite block 255).
-- Program code from **$0801** (BASIC SYS stub). The CPU can use $1000–$1FFF normally; only the VIC sees ROM there.
-- Text buffer from the end of the program (or $4000) up to **$CFFF**, with BASIC ROM banked out
-  (`$01 = $36`). **Keep the KERNAL and I/O banked in.**
+**As built (2026-09-27, "plan D", Jim's choice):** the editor's code runs in the RAM under the KERNAL
+ROM, so the text buffer keeps the full 36 KB on a stock C64.
+
+| Address | What |
+|---|---|
+| $02–$1B | zero page (list in `src/main.asm`); BASIC's too: start-up copies it, Quit puts it back |
+| $02C0–$02FE | debug test mailbox (debug builds only) |
+| $0400–$07FF | screen |
+| $0801– | the lower part of the program: start-up, IRQs, keyboard, boxes, disk, data; then the stored copy of the editor |
+| after the lower part | run-time tables (ctype, per-row arrays, prompt save area), **over the stored copy** once it is copied |
+| $3E80–$3FFF | sprite blocks 250–255 (**$3FFF must be $00**: the idle-graphics byte drawn in the opened borders) |
+| $4000–$CFFF | text buffer (36 KB), clipboard at its top |
+| $D000–$DFFF | I/O (the RAM under it is unused) |
+| $E000–$FFF9 | **the editor** (`src/editor.asm`, assembled with `!pseudopc $e000`; `copy_high` puts it there at start-up) |
+| $FFFA–$FFFF | NMI → `nmi_handler`, IRQ → `irq_entry`, used while the KERNAL ROM is out |
+
+- **VIC bank 0**, so the VIC sees the **ROM character set** at $1000–$1FFF; no custom font.
+- **While editing `$01 = $35`**: BASIC and KERNAL ROMs out, I/O in. The program has its own keyboard
+  scanner and screen code, so it only needs the KERNAL for disk work (later printer and tape).
+  `io_begin` switches the KERNAL ROM in (`$36`) and `io_end` switches it out again. Quit sets `$37`.
+- **The one rule:** between `io_begin` and `io_end` the RAM at $E000 is hidden behind the ROM, so
+  **nothing in `editor.asm` (code or variables) may be used there.** Disk code, and everything it calls
+  in that stretch, lives in the lower part (`petscii_to_screen` moved to `menu.asm` for this; loading
+  empties the buffer itself instead of calling `empty_buffer`). Boxes use the editor's cursor, so they
+  open before `io_begin` and close after `io_end`. New printer and tape code (phase 11) follows the same rule.
+- With the KERNAL ROM out the CPU takes its vectors from RAM at $FFFA–$FFFF. `irq_entry` (irq.asm) is an
+  instruction-for-instruction copy of the KERNAL's IRQ entry at $FF48 (same 29 cycles), so the stable
+  raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
+  (through the KERNAL's $FE43 and $0318 while the ROM is in).
+- The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
+- Space (debug build, phase 6 start): lower part $0801–$1DF8, tables to $2092; editor $E000–$F571, so
+  **~2.7 KB free under the KERNAL and ~7.5 KB below the sprite blocks**. PRG 11.1 KB debug, 10.5 KB
+  release. New code can go in either part; code that runs during disk work must go in the lower part.
+- **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
+  warm start. Restarting means loading the program again. (`SYS 2061` after Quit would crash too.)
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
-- Zero page: with BASIC out, $02–$8F is available; leave the KERNAL's area alone.
-
-**Space check (phase 5, 2026-09-27):** the debug build ends at about $357D (program + run-time tables),
-release about $33F8, and everything must stay below the sprite blocks at $3E80 — only ~2.3 KB left, with
-phases 6–11 still to come. PRG size: 11.0 KB debug, 10.6 KB release (over the 6–10 KB target).
-Proposed fix, **ask Jim first**: let the code continue after the sprite blocks (from $4000) and start
-the text buffer after the end of the program (as this section allows: "from the end of the program
-(or $4000)"), making the buffer a few KB smaller. Exomizer can still crunch the PRG file for release.
+- Zero page: we use $02–$1B (`ZP_END` in main.asm; move it up when adding zero page). Leave the KERNAL's
+  area alone.
 
 ## Display
 
@@ -685,11 +712,11 @@ Editing rules:
 - CTRL-S first tidies the codes at the cursor (`leave_cursor`), so no codes without effect are saved.
 
 **As built (phase 3, `src/editor.asm`; read its header comment first):**
-- Gap buffer at **$4000–$CFFF** (36 KB), BASIC ROM banked out. The program and its run-time tables
-  (ctype, per-row arrays, prompt save area; defined after `program_end` in `main.asm`) must stay below
-  the sprite blocks at $3E80; the build stops with an error if not.
-- Zero page $08–$19 belongs to the editor (main program only, never the IRQs): `gap_start` ($08) and
-  `gap_end` ($0A) are fixed addresses the test harness can read.
+- Gap buffer at **$4000–$CFFF** (36 KB), BASIC and KERNAL ROMs banked out. The editor itself runs at
+  $E000 (see Memory Map).
+- Zero page $08–$1B belongs to the editor (main program only, never the IRQs); it is listed in
+  `main.asm` (so ACME knows it is zero page before the lower part uses it). `gap_start` ($08),
+  `gap_end` ($0A) and `text_end` ($1A) are fixed addresses the test harness can read.
 - Positions are kept as **offsets** (bytes from the start of the text, not counting the gap), so they
   stay valid when the cursor moves. `set_ptr` / `ptr_to_off` convert.
 - For each screen row (plus one below the screen) the editor keeps its start offset, the color and RVS
@@ -816,6 +843,10 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 - **Quit:** if modified, ask "QUIT WITHOUT SAVING Y/N". Then restore everything the program changed (IRQ and
   NMI vectors, $01 = $37, VIC registers, sprites off, borders closed, default colors), do a BASIC NEW (the text
   buffer overwrote BASIC memory), clear the screen, and return to BASIC's READY prompt.
+  **As built (phase 6 start):** also puts back BASIC's zero page $02–$1B (copied at start-up); BASIC
+  keeps values there between commands ($13 = I/O channel, $18 = string stack) and without them forgot
+  the RETURN after a command and gave ?FORMULA TOO COMPLEX for `"A"+"B"`. Then NEW (`JSR $A644`) and
+  BASIC's warm start (`JMP ($A002)`, as RUN/STOP+RESTORE), which resets the rest and prints READY.
 
 ## Find (CTRL-F)
 
@@ -849,7 +880,8 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   could even corrupt the stack). So `io_begin` stops our raster IRQs, lets the KERNAL's own timer IRQ
   run (its cursor blink off via BLNSW), closes the borders and hides the sprites; the text and a
   "LOADING"/"SAVING" box stay. `io_end` restores everything and empties the KERNAL key buffer.
-  **Any new disk or printer code must use io_begin/io_end.**
+  **Any new disk or printer code must use io_begin/io_end.** They also switch the KERNAL ROM in and
+  out, so code between them must not touch `editor.asm` (see Memory Map, "the one rule").
 - Loading reads the file to the start of the buffer, then moves it to the end in one copy
   (`gap_to_start`), so the cursor starts at the top. A file bigger than the buffer loads partly, with
   "TOO LONG: ONLY PART LOADED". The first $0E / $8E picks the character set.
@@ -949,7 +981,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 4. PETSCII SEQ load/save with device number and error channel. **Done 2026-09-27.**
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
    (Automated checks passed 2026-09-27; Human Test pending.)
-6. Soft word wrap, horizontal scroll, marker tracking the real position.
+6. Soft word wrap, horizontal scroll, marker tracking the real position. (Started 2026-09-27 with the
+   memory change: editor under the KERNAL ROM.)
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,

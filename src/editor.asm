@@ -1,6 +1,11 @@
 ;============================================================================
 ; editor.asm - text buffer, cursor, typing, drawing the screen
 ;
+; This file runs at $e000, in the RAM under the KERNAL ROM (see the memory
+; map in main.asm). Its code and variables can only be used while the
+; KERNAL ROM is switched out - that is, always, except between io_begin
+; and io_end in fileio.asm.
+;
 ; THE TEXT BUFFER
 ; The document is kept exactly as it is in a PETSCII file: one byte per
 ; character, lines ending in CR ($0d), color and reverse codes in between.
@@ -40,17 +45,7 @@ BUF_END         = $d000         ; ... up to here (BASIC ROM banked out)
 ROWS            = 25            ; screen rows
 MROWS           = 26            ; rows we keep track of: the screen + 1
 
-; Zero page used by the editor (main program only, never the IRQs)
-gap_start       = $08           ; first free byte of the gap = the cursor
-gap_end         = $0a           ; first byte after the gap
-ptr             = $0c           ; walks through the text
-ptr2            = $0e           ; a second walking pointer
-scr             = $10           ; screen RAM of the row being drawn
-clr             = $12           ; color RAM of the row being drawn
-cptr            = $14           ; screen RAM of the cursor
-ccol            = $16           ; color RAM of the cursor
-work            = $18           ; 16-bit scratch
-text_end        = $1a           ; end of the text; the clipboard is above it
+; (The editor's zero page, gap_start and so on, is listed in main.asm.)
 
 ; ctype values: what a byte of text is
 CT_CHAR         = $80           ; a character
@@ -3015,53 +3010,3 @@ editor_key
 }
 .old_row !byte 0
 .old_top !word 0
-
-;============================================================================
-; petscii_to_screen - A = PETSCII code, returns A = screen code (not
-; reversed) and carry clear. For control codes, which print nothing,
-; returns carry set.
-;
-;   PETSCII        screen code
-;   $20-$3f   ->   $20-$3f    space, digits, punctuation
-;   $40-$5f   ->   $00-$1f    @, letters, [ pound ] up-arrow left-arrow
-;   $60-$7f   ->   $40-$5f    (same characters as $c0-$df)
-;   $a0-$bf   ->   $60-$7f    C= graphics
-;   $c0-$fe   ->   $40-$7e    SHIFT letters and graphics
-;   $ff       ->   $5e        pi
-;   $00-$1f, $80-$9f          control codes
-;============================================================================
-!zone petscii_to_screen
-petscii_to_screen
-        cmp #$20
-        bcc .control
-        cmp #$40
-        bcc .same
-        cmp #$60
-        bcc .minus40
-        cmp #$80
-        bcc .minus20
-        cmp #$a0
-        bcc .control
-        cmp #$c0
-        bcc .minus40
-        cmp #$ff
-        beq .pi
-        and #$7f                ; $c0-$fe -> $40-$7e
-.same   clc
-        rts
-.minus40
-        sec
-        sbc #$40
-        clc
-        rts
-.minus20
-        sec
-        sbc #$20
-        clc
-        rts
-.pi     lda #$5e
-        clc
-        rts
-.control
-        sec
-        rts

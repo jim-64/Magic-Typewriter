@@ -57,15 +57,33 @@ class Mon:
         self.s.sendall(struct.pack("<BBIIB", 0x02, 0x02, len(body), rid, ctype) + body)
         return self._response(rid)
 
+    def bank(self, name):
+        """the monitor's bank number for a name like "cpu" or "ram" """
+        if not hasattr(self, "banks"):
+            _, resp = self.cmd(0x82)
+            self.banks, i = {}, 2
+            for _ in range(struct.unpack("<H", resp[:2])[0]):
+                size = resp[i]
+                bid, nlen = struct.unpack("<HB", resp[i + 1:i + 4])
+                self.banks[resp[i + 4:i + 4 + nlen].decode()] = bid
+                i += 1 + size
+        return self.banks[name]
+
+    def _bank_for(self, addr):
+        # $e000-$ffff: always the RAM there (the editor lives under the
+        # KERNAL ROM, which is switched in during disk work); else what the
+        # CPU sees (I/O, color RAM)
+        return self.bank("ram") if addr >= 0xe000 else self.bank("cpu")
+
     def read(self, addr, length):
-        body = struct.pack("<BHHBH", 0, addr, addr + length - 1, 0, 0)
+        body = struct.pack("<BHHBH", 0, addr, addr + length - 1, 0, self._bank_for(addr))
         _, resp = self.cmd(0x01, body)
         n = struct.unpack("<H", resp[:2])[0]
         return resp[2:2 + n]
 
     def write(self, addr, data):
         data = bytes(data)
-        body = struct.pack("<BHHBH", 0, addr, addr + len(data) - 1, 0, 0) + data
+        body = struct.pack("<BHHBH", 0, addr, addr + len(data) - 1, 0, self._bank_for(addr)) + data
         self.cmd(0x02, body)
 
     def resume(self):

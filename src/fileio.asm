@@ -54,12 +54,22 @@ name_len        !byte 0
 ; while a file is open, our IRQs step aside: the KERNAL's own timer IRQ
 ; runs instead (with its cursor blink off), the borders close, and the
 ; sprites go. The text and the box on it stay. io_end puts it all back.
+;
+; io_begin also switches the KERNAL ROM in, and io_end switches it out.
+; While it is in, the editor's code and variables at $e000 are hidden
+; behind it, so between io_begin and io_end only lower-part code that does
+; not use the editor may run: this file, petscii_to_screen, the messages
+; in data.asm, zero page and the text buffer. (The boxes use the editor's
+; cursor, so they open before io_begin and close after io_end.) Call
+; io_begin and io_end only from the lower part.
 ;============================================================================
 
-; io_begin - plain display, KERNAL IRQ
+; io_begin - KERNAL ROM in, plain display, KERNAL IRQ
 !zone io_begin
 io_begin
         sei
+        lda #ROMS_KERNAL        ; the KERNAL ROM in (its IRQ handler and
+        sta CPU_PORT            ; the disk routines)
         lda #0                  ; no raster IRQs
         sta VIC_IRQ_MASK
         lda #$ff
@@ -85,8 +95,10 @@ io_begin
         cli
         rts
 
-; io_end - our IRQs and the full display again
+; io_end - KERNAL ROM out, our IRQs and the full display again
 io_end  sei
+        lda #ROMS_EDIT          ; the KERNAL ROM out: the editor at $e000
+        sta CPU_PORT            ; is back
         lda #0                  ; forget keys the KERNAL collected
         sta NDX
         jsr init_irq            ; (switches the timer IRQ off again)
@@ -295,8 +307,18 @@ load_file
         bcc +
         jmp .fail
 
-        ; The file is there: from here on it replaces the document.
-+       jsr empty_buffer
+        ; The file is there: from here on it replaces the document. Empty
+        ; the text: the gap covers the whole buffer below the clipboard.
+        ; (Done here, not with the editor's empty_buffer, which is out of
+        ; reach while the KERNAL ROM is in; .show does the rest.)
++       lda #<BUF_START
+        sta gap_start
+        lda #>BUF_START
+        sta gap_start+1
+        lda text_end
+        sta gap_end
+        lda text_end+1
+        sta gap_end+1
         lda #0
         sta .charset
         ldx #FILE_LFN
@@ -379,7 +401,10 @@ load_file
         jmp message_box
 
 ; .show - show the loaded document from the top, cursor at the start
-.show   jsr gap_to_start
+; (after io_end: this uses the editor)
+.show   lda #0                  ; nothing marked
+        sta sel_on
+        jsr gap_to_start
         jsr empty_view
         lda .charset
         beq +
