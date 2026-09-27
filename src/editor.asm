@@ -71,7 +71,8 @@ CURSOR_INSERT   = $79           ; screen code 121: lower 3/8 block
 ; Editor variables (the big tables are at the end of main.asm)
 ;----------------------------------------------------------------------------
 edit_mode       !byte MODE_INSERT ; insert or overwrite (setting, F7)
-mark_key        !byte MARK_LSHIFT ; setting
+mark_key        !byte MARK_CBM  ; setting (default C=: left SHIFT can't
+                                ; mark up/left in VICE - see CLAUDE.md)
 modified        !byte 0         ; 1 = changed since loaded or saved
 cur_row         !byte 0         ; cursor place on the screen
 cur_col         !byte 0

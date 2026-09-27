@@ -509,7 +509,11 @@ Ignore it, or treat it like RUN/STOP.
 
 ### Cursor movement and selection
 
-The **mark key** is set in the main menu: **left SHIFT** (default) or **C=**.
+The **mark key** is set in the main menu: **C=** (default, Jim 2026-09-27) or **left SHIFT**.
+Why C= is the default: in VICE, PC Up/Left arrive as right SHIFT + CRSR, but with PC Left Shift held VICE
+drops that right SHIFT, so left SHIFT + Up marks *downward* (see Open Questions). With C= (**Tab** in VICE)
+all four arrow keys mark correctly. **User instructions must say: the left SHIFT mark key doesn't work
+for marking up/left in VICE — use C= (Tab).**
 
 With mark key = left SHIFT:
 - **Right SHIFT only reverses direction**: CRSR DOWN → up, CRSR RIGHT → left.
@@ -736,7 +740,7 @@ Editing rules:
 | C | Print → Print menu | |
 | D | Wordwrap | **on**, off |
 | E | Mode | **insert**, overwrite (same as F7) |
-| F | Mark key | **left shift**, commodore |
+| F | Mark key | **commodore**, left shift |
 | G | Background | 16 C64 colors, default **black**; also SHIFT-F7 |
 | H | Text color | 16 C64 colors, default **light grey**; also the menu text color |
 | I | Stats → shows a stats box | |
@@ -965,8 +969,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
   Jim (phase 5):** PC Up alone = CRSR DOWN + a *virtual right* SHIFT (`!VSHIFT RSHIFT` in every VICE 3.9
   keymap) = cursor up, as designed. But VICE only adds that virtual SHIFT when no SHIFT is held: **PC Left
   Shift + Up arrives as left SHIFT + CRSR DOWN — the same as Shift + Down — so it marks downward**, and the
-  editor cannot tell them apart. In VICE, mark up/left with **both PC Shift keys + Down/Right** (PC Right
-  Shift = C64 right SHIFT), exactly as on a real C64; or, once the mark-key menu exists, mark key = C=
-  (**Tab** in VICE's symbolic keymap) + PC Up works naturally. Put this in the user notes. Still check
-  TheC64, MEGA65 and the BlingBox in phase 12.
+  editor cannot tell them apart. Two SHIFTs + Down/Right would work but Jim found it awkward, so
+  **decided: the mark key defaults to C=** (**Tab** in VICE: Tab + any arrow marks correctly); left SHIFT
+  stays a menu choice for real keyboards, with a note in the user instructions that it can't mark
+  up/left in VICE. Still check TheC64, MEGA65 and the BlingBox in phase 12.
 - SHIFT LOCK engages left SHIFT, so it forces marking. Document this in the user notes.
