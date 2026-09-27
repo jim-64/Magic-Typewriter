@@ -8,8 +8,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
 - **Phase 1 done** (2026-09-27), on branch `main`. Jim chose the side-border badge layout (see Border
   icons). Branch `phase1` keeps the earlier layout (badges above/below the text area) for reference only.
 - **Phase 2 done** (2026-09-27), merged into `main`.
-- **Phase 3 (the editor):** passes the automated checks; waiting for Jim's Human Test. Work is on branch
-  `phase3`; merge into `main` when Jim accepts it. (One branch per phase.)
+- **Phase 3 done** (2026-09-27; Jim tested PAL and NTSC), merged into `main`. Change after his test:
+  no more color skipping (see Menus).
+- Next: phase 4, PETSCII SEQ load/save. (One branch per phase.)
 
 ## Working with Jim
 
@@ -565,6 +566,14 @@ movement keys** — C= + digit still selects a color.
 - **With text selected:** typing a character replaces the whole selection with that character, and
   INST/DEL deletes the selection (cursor lands where it started). SHIFT + INST/DEL also first deletes the
   selection. Any cursor move without the mark key clears the selection.
+- **Color and RVS keys with text selected recolor the selection** (Jim, 2026-09-27; build in phase 5),
+  so colors can be rearranged: e.g. mark a block, press CTRL-3, and all of it turns red.
+  - Color key: remove every color code inside the selection, insert the new color code at the
+    selection start, and at the selection end insert a code that brings back the color that was in
+    effect there before (so the text after the selection keeps its look). Then clean up.
+  - CTRL-9 / CTRL-0: the same with RVS ON / RVS OFF. A CR ends reverse, so for a selection over several
+    lines RVS ON also goes after each CR inside it; at the end, restore the state that followed.
+  - The selection stays marked afterwards, so a second color key simply changes it again.
 - **Gap buffer.** Text stored internally as the **PETSCII stream** exactly as it appears in a file: one byte
   per character, lines ending in **CR ($0D)**, with color and reverse codes inline. Compact (1 byte/char).
 - Convert PETSCII → screen codes only when drawing.
@@ -729,8 +738,11 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 - **Load:** whatever the Format setting, if the file starts with the Magic Typewriter signature it is loaded
   as magic and its settings applied.
 - **Color items** show the color name (e.g. `G BACKGROUND: BLACK`) and step to the next of the 16 colors
-  each time they're chosen. Background and text color can never be the same: stepping skips the value
-  equal to the other setting, so menus and text always stay readable.
+  each time they're chosen. **No colors are skipped** (Jim, 2026-09-27): skipping the text color never
+  protected the other colors a document uses, so the user simply steps on if the background hides some
+  text. Same for SHIFT-F7. To keep menus and prompts readable, they are drawn in the default text color
+  unless it equals the background; then in black or white, whichever reads better on that background
+  (`readable_color` / `contrast_color`).
 - Settings last until the program exits, unless saved with **Save defaults**.
 
 ### Menu item behavior
@@ -860,9 +872,9 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 2. Keyboard scanner: both SHIFTs, CTRL, C=, RUN/STOP, ←, key repeat, NMI trap. **Done 2026-09-27.**
 3. Gap buffer, typing, flashing cursor (both shapes, F7 toggle), colors and reverse (rendering, color
    keys, restore codes, clean-up), INST/DEL and SHIFT-INST, RETURN, cursor movement, redraw,
-   SHIFT-CLR "CLEAR ALL Y/N". (Automated checks passed 2026-09-27; Human Test pending.)
+   SHIFT-CLR "CLEAR ALL Y/N". **Done 2026-09-27.**
 4. PETSCII SEQ load/save with device number and error channel.
-5. Selection (mark key: left SHIFT or C=) and cut/copy/paste.
+5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
 6. Soft word wrap, horizontal scroll, marker tracking the real position.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,

@@ -145,6 +145,13 @@ color_codes
         !byte $90, $05, $1c, $9f, $9c, $1e, $1f, $9e
         !byte $81, $95, $96, $97, $98, $99, $9a, $9b
 
+; A color that reads well on each background color (black on the light
+; ones, white on the dark ones), for prompts when the text color is the
+; same as the background.
+contrast_color
+        !byte WHITE, BLACK, WHITE, BLACK, WHITE, BLACK, WHITE, BLACK
+        !byte WHITE, WHITE, BLACK, WHITE, BLACK, BLACK, BLACK, BLACK
+
 ; Questions for prompt_yes_no. Written in lower case: that gives screen
 ; codes 1-26, which the prompt shows as capitals in either character set.
 msg_quit

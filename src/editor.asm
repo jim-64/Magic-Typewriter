@@ -1765,18 +1765,16 @@ toggle_mode
         sta edit_mode
         rts
 
-; next_background - SHIFT + F7: the next text background color, never the
-; same as the text color. The top strip IRQ sets $D021 from text_bg.
+; next_background - SHIFT + F7: the next text background color, through all
+; 16. (Text in the same color as the background disappears, as in BASIC;
+; the user just steps on.) The top strip IRQ sets $D021 from text_bg.
 !zone next_background
 next_background
-        ldx text_bg
--       inx
-        txa
+        lda text_bg
+        clc
+        adc #1
         and #15
-        tax
-        cpx text_color
-        beq -
-        stx text_bg
+        sta text_bg
         rts
 
 ; clear_all - SHIFT + CLR/HOME: after asking, empty the document.
@@ -1919,6 +1917,8 @@ prompt_yes_no
         lda cursor_shown        ; show the cursor again afterwards only if
         sta .had_cursor         ; it was showing now
         jsr cursor_hide
+        jsr readable_color      ; the box's color
+        sta .color
         ldy #0                  ; length of the question
 -       lda (zp_ptr2),y
         beq +
@@ -2022,10 +2022,10 @@ prompt_yes_no
         lda .b
         ; (falls into .put)
 
-; .put - A at column Y of the box row (zp_ptr / zp_ptr...), in the text
-; color; Y moves on by one
+; .put - A at column Y of the box row (zp_ptr, work), in .color;
+; Y moves on by one
 .put    sta (zp_ptr),y
-        lda text_color
+        lda .color
         sta (work),y
         iny
         rts
@@ -2044,6 +2044,17 @@ prompt_yes_no
         adc #>(COLOR_RAM - SCREEN)
         sta work+1
         rts
+
+; readable_color - A = the color for prompts and menus: the default text
+; color, unless the background is set to that same color - then black or
+; white, whichever shows up better on it.
+readable_color
+        lda text_color
+        cmp text_bg
+        bne +
+        ldx text_bg
+        lda contrast_color,x
++       rts
 
 ; .capitals - letters (screen codes 1-26) as capitals in the character set
 ; that is on: in the upper/lower set, capitals are 65-90.
@@ -2108,6 +2119,7 @@ prompt_yes_no
         rts
 
 .had_cursor !byte 0
+.color  !byte 0
 .len    !byte 0
 .width  !byte 0
 .left   !byte 0
