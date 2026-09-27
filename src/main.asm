@@ -226,6 +226,8 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 !source "src/irq.asm"
 !source "src/input.asm"
 !source "src/editor.asm"
+!source "src/menu.asm"
+!source "src/fileio.asm"
 !source "src/data.asm"
 
 ;----------------------------------------------------------------------------

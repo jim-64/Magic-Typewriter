@@ -109,12 +109,58 @@ empty_buffer
         sta gap_end+1
         lda #0
         sta modified
+        ; (falls into empty_view)
+
+; empty_view - the top of the screen at the start of the text.
+empty_view
+        lda #0
         sta want_col
         sta row_off_lo          ; top = offset 0
         sta row_off_hi
         sta row_rvs
         lda text_color          ; the default text color, reverse off
         sta row_color
+        rts
+
+; gap_to_start - put the cursor at the start of the text by copying all of
+; it to the end of the buffer in one go (used after loading, when the
+; text is all before the gap).
+!zone gap_to_start
+gap_to_start
+        lda gap_start           ; ptr copies from here down ...
+        sta ptr
+        lda gap_start+1
+        sta ptr+1
+        lda gap_end             ; ... to here down
+        sta ptr2
+        lda gap_end+1
+        sta ptr2+1
+        ldy #0
+-       lda ptr
+        cmp #<BUF_START
+        bne +
+        lda ptr+1
+        cmp #>BUF_START
+        beq .done
++       lda ptr
+        bne +
+        dec ptr+1
++       dec ptr
+        lda ptr2
+        bne +
+        dec ptr2+1
++       dec ptr2
+        lda (ptr),y
+        sta (ptr2),y
+        jmp -
+.done   lda ptr2
+        sta gap_end
+        lda ptr2+1
+        sta gap_end+1
+        lda #<BUF_START
+        sta gap_start
+        lda #>BUF_START
+        sta gap_start+1
         rts
 
 ; init_ctype - fill in the ctype table (256 bytes, one per byte value).
@@ -1862,6 +1908,17 @@ editor_key
 +       cmp #KEY_F1
         bne +
         rts                     ; (opens the menu in phase 8)
++       lda .mods               ; CTRL-S: save
+        and #MOD_CTRL
+        beq .not_ctrl
+        lda .code
+        cmp #KEY_S
+        bne +
+        jmp save_key
++       cmp #KEY_L              ; CTRL-L: load (for now; the Load menu
+        bne .not_ctrl           ; takes over in phase 8)
+        jmp load_file
+.not_ctrl
 +       lda .code               ; any other key: what does it type?
         ldy .mods
         jsr key_to_petscii
@@ -1899,234 +1956,6 @@ editor_key
 
 .code   !byte 0
 .mods   !byte 0
-
-;============================================================================
-; Yes/no questions
-;============================================================================
-
-; prompt_yes_no - ask a question in a box in the middle of the screen.
-; A/X = the question: screen codes ending in 0, written in lower case
-; (screen codes 1-26), which shows as capitals in either character set.
-; Waits for Y, or N / RUN/STOP. Returns carry set for Y.
-; Puts back what was under the box.
-PROMPT_ROW      = 11            ; the box uses rows 11-13
-!zone prompt_yes_no
-prompt_yes_no
-        sta zp_ptr2
-        stx zp_ptr2+1
-        lda cursor_shown        ; show the cursor again afterwards only if
-        sta .had_cursor         ; it was showing now
-        jsr cursor_hide
-        jsr readable_color      ; the box's color
-        sta .color
-        ldy #0                  ; length of the question
--       lda (zp_ptr2),y
-        beq +
-        iny
-        bne -
-+       sty .len
-        tya                     ; box width: question + a space each side
-        clc                     ; + the two sides
-        adc #4
-        sta .width
-        lda #40                 ; centered
-        sec
-        sbc .width
-        lsr
-        sta .left
-
-        jsr .save
-        ; Top and bottom edges
-        ldx #PROMPT_ROW
-        lda #$70                ; top left corner
-        ldy #$6e                ; top right corner
-        jsr .edge
-        ldx #PROMPT_ROW+2
-        lda #$6d                ; bottom left corner
-        ldy #$7d                ; bottom right corner
-        jsr .edge
-        ; The middle row: side, space, question, space, side
-        ldx #PROMPT_ROW+1
-        jsr .row_at_left
-        ldy #0
-        lda #$5d                ; side
-        jsr .put
-        lda #$20
-        jsr .put
-        ldx #0
--       stx .i
-        txa
-        tay
-        lda (zp_ptr2),y
-        beq +
-        jsr .capitals
-        ldy .i
-        iny
-        iny
-        jsr .put
-        ldx .i
-        inx
-        bne -
-+       ldy .width              ; a space, then the right side
-        dey
-        dey
-        lda #$20
-        jsr .put
-        lda #$5d
-        jsr .put
-
-.wait
-!if DEBUG {
-        jsr mailbox_poll
-}
-        jsr get_key
-        bcs .wait
-!if DEBUG {
-        jsr mailbox_log_key
-}
-        cmp #KEY_Y
-        beq .yes
-        cmp #KEY_N
-        beq .no
-        cmp #KEY_STOP
-        beq .no
-        cmp #KEY_RESTORE
-        beq .no
-        bne .wait
-.yes    jsr .restore
-        jsr .cursor_back
-        sec
-        rts
-.no     jsr .restore
-        jsr .cursor_back
-        clc
-        rts
-.cursor_back
-        lda .had_cursor
-        beq +
-        jmp cursor_show
-+       rts
-
-; .edge - X = row, A = left corner, Y = right corner: a horizontal edge
-.edge   sta .a
-        sty .b
-        jsr .row_at_left
-        ldy #0
-        lda .a
-        jsr .put
--       lda #$40                ; horizontal line
-        jsr .put
-        cpy .width
-        bcc -
-        dey
-        lda .b
-        ; (falls into .put)
-
-; .put - A at column Y of the box row (zp_ptr, work), in .color;
-; Y moves on by one
-.put    sta (zp_ptr),y
-        lda .color
-        sta (work),y
-        iny
-        rts
-
-; .row_at_left - zp_ptr = screen, work = color RAM at row X, column .left
-.row_at_left
-        lda row_lo,x
-        clc
-        adc .left
-        sta zp_ptr
-        sta work
-        lda row_hi,x
-        adc #0
-        sta zp_ptr+1
-        clc
-        adc #>(COLOR_RAM - SCREEN)
-        sta work+1
-        rts
-
-; readable_color - A = the color for prompts and menus: the default text
-; color, unless the background is set to that same color - then black or
-; white, whichever shows up better on it.
-readable_color
-        lda text_color
-        cmp text_bg
-        bne +
-        ldx text_bg
-        lda contrast_color,x
-+       rts
-
-; .capitals - letters (screen codes 1-26) as capitals in the character set
-; that is on: in the upper/lower set, capitals are 65-90.
-.capitals
-        cmp #1
-        bcc +
-        cmp #27
-        bcs +
-        tax
-        lda VIC_MEMPTR
-        and #%00000010
-        beq ++                  ; upper/graphics set: 1-26 are capitals
-        txa
-        ora #$40
-        rts
-++      txa
-+       rts
-
-; .save / .restore - what is under the box (3 rows of .width)
-.save   ldx #0                  ; index into prompt_save
-        lda #PROMPT_ROW
-        sta .r
--       stx .i
-        ldx .r
-        jsr .row_at_left
-        ldx .i
-        ldy #0
---      lda (zp_ptr),y
-        sta prompt_save,x
-        lda (work),y
-        sta prompt_save+120,x
-        inx
-        iny
-        cpy .width
-        bcc --
-        inc .r
-        lda .r
-        cmp #PROMPT_ROW+3
-        bcc -
-        rts
-.restore
-        ldx #0
-        lda #PROMPT_ROW
-        sta .r
--       stx .i
-        ldx .r
-        jsr .row_at_left
-        ldx .i
-        ldy #0
---      lda prompt_save,x
-        sta (zp_ptr),y
-        lda prompt_save+120,x
-        sta (work),y
-        inx
-        iny
-        cpy .width
-        bcc --
-        inc .r
-        lda .r
-        cmp #PROMPT_ROW+3
-        bcc -
-        rts
-
-.had_cursor !byte 0
-.color  !byte 0
-.len    !byte 0
-.width  !byte 0
-.left   !byte 0
-.i      !byte 0
-.r      !byte 0
-.a      !byte 0
-.b      !byte 0
 
 ;============================================================================
 ; petscii_to_screen - A = PETSCII code, returns A = screen code (not

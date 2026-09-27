@@ -52,6 +52,8 @@ KEY_SPACE       = 60
 KEY_CBM         = 61
 KEY_STOP        = 63
 KEY_Y           = 25
+KEY_S           = 13
+KEY_L           = 42
 KEY_N           = 39
 
 ; Events that are not a single key

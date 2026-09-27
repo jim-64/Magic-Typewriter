@@ -10,7 +10,8 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
 - **Phase 2 done** (2026-09-27), merged into `main`.
 - **Phase 3 done** (2026-09-27; Jim tested PAL and NTSC), merged into `main`. Change after his test:
   no more color skipping (see Menus).
-- Next: phase 4, PETSCII SEQ load/save. (One branch per phase.)
+- **Phase 4 (PETSCII SEQ load/save):** passes the automated checks; waiting for Jim's Human Test. Work
+  is on branch `phase4`; merge into `main` when Jim accepts it. (One branch per phase.)
 
 ## Working with Jim
 
@@ -156,6 +157,17 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
 3. `get_registers` for PC/A/X/Y; `c64_memory` → `read` for state variables; `disassemble` around PC.
 4. `step` / `step_return` to walk through; `continue_execution` to resume.
 5. If VICE hangs, `c64_debug` → `nuclear_reset` restarts it.
+
+### Disk tests: tools/ (our own VICE, not the bridge's)
+
+The bridge's `c64_disk` / `c64_drive` operations only work on the Ultimate: on VICE, `mount` and
+`power_on` fail ("firmware reported failure"). So disk tests use **`tools/`**: `vicemon.py` starts its own
+`x64sc` (scratch settings file, warp, disk image in drive 8, binary monitor on **port 6510** so it never
+clashes with the bridge on 6502) and speaks the binary monitor protocol; `mtest.py` drives the editor
+through the test mailbox (keys, screen text, buffer text, labels from `build/main.lbl`). Tests:
+`python tools/test_phase4_load_save.py [c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`.
+They work on a copy of the .d64 in `build/test/`, quit VICE cleanly (so it writes the image back) and check
+saved files with c1541 (`-read "name,s"` for SEQ files). Needs Python 3 (installed).
 
 ### Human Test protocol
 
@@ -784,6 +796,28 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 
 ### Disk (devices 8–14)
 
+**As built (phase 4, `src/fileio.asm`):**
+- CTRL-S saves (asks for a name if the document has none; the Save menu adds "save as" in phase 8).
+  **CTRL-L loads — temporary** until the Load menu (phase 8); asks "LOAD WITHOUT SAVING Y/N" first if
+  there are changes. The name box ("LOAD:"/"SAVE:", `prompt_input` in `src/menu.asm`) shows the last
+  name; RETURN accepts, RUN/STOP cancels, DEL rubs out.
+- Channel 15 stays open while a file is in use; its status line is read after each step and any code
+  of 20 or more is shown in a box as the drive sent it (e.g. "62, FILE NOT FOUND,00,00"). A drive that
+  doesn't answer gives "DEVICE NOT PRESENT". A failed load leaves the document untouched (the status is
+  checked before the buffer is emptied). RUN/STOP during the transfer gives "BREAK".
+- **Plain display during disk access:** the KERNAL serial routines keep IRQs off for long stretches
+  while they wait for the drive, which our exact-timed strip IRQs cannot survive (a late stable IRQ
+  could even corrupt the stack). So `io_begin` stops our raster IRQs, lets the KERNAL's own timer IRQ
+  run (its cursor blink off via BLNSW), closes the borders and hides the sprites; the text and a
+  "LOADING"/"SAVING" box stay. `io_end` restores everything and empties the KERNAL key buffer.
+  **Any new disk or printer code must use io_begin/io_end.**
+- Loading reads the file to the start of the buffer, then moves it to the end in one copy
+  (`gap_to_start`), so the cursor starts at the top. A file bigger than the buffer loads partly, with
+  "TOO LONG: ONLY PART LOADED". The first $0E / $8E picks the character set.
+- Settings `load_dev` / `save_dev` (default 8) are there for the Load/Save menus.
+- Test files in `test/` (made once and committed): `sample` (mixed case, $0E, colors, reverse, a long
+  line), `upper` ($8E, graphics), `long` (60 lines). build.bat/build.sh put them on the .d64 as SEQ.
+
 - KERNAL only: SETLFS, SETNAM, OPEN, CHKIN/CHKOUT, CHRIN/CHROUT, READST, CLOSE, CLRCHN.
 - Read and show drive error channel (15) messages on failure.
 - Saving over an existing file: **scratch then write**, not `@0:` (the 1541 save-with-replace bug).
@@ -873,7 +907,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 3. Gap buffer, typing, flashing cursor (both shapes, F7 toggle), colors and reverse (rendering, color
    keys, restore codes, clean-up), INST/DEL and SHIFT-INST, RETURN, cursor movement, redraw,
    SHIFT-CLR "CLEAR ALL Y/N". **Done 2026-09-27.**
-4. PETSCII SEQ load/save with device number and error channel.
+4. PETSCII SEQ load/save with device number and error channel. (Automated checks passed 2026-09-27;
+   Human Test pending.)
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
 6. Soft word wrap, horizontal scroll, marker tracking the real position.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.

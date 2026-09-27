@@ -1,2 +1,8 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Keep these files exactly as they are (no line-ending changes)
+*.seq  binary
+*.prg  binary
+*.d64  binary
+*.png  binary
+# Scripts: the right line endings for each system
+*.sh   text eol=lf
+*.bat  text eol=crlf

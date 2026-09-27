@@ -1,5 +1,6 @@
 # git ignores
 *~
+__pycache__
 build
 .vscode/c_cpp_properties.json
 .vscode/settings.json

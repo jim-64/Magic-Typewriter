@@ -158,3 +158,26 @@ msg_quit
         !scr "quit y/n", 0
 msg_clear_all
         !scr "clear all y/n", 0
+msg_load_unsaved
+        !scr "load without saving y/n", 0
+msg_load
+        !scr "load:", 0
+msg_save
+        !scr "save:", 0
+msg_loading
+        !scr "loading", 0
+msg_saving
+        !scr "saving", 0
+msg_no_device
+        !scr "device not present", 0
+msg_too_long
+        !scr "too long: only part loaded", 0
+msg_break
+        !scr "break", 0
+
+; Added to a file name when it is opened (PETSCII): sequential file, read
+; or write
+suffix_read
+        !byte $2c, $53, $2c, $52        ; ,S,R
+suffix_write
+        !byte $2c, $53, $2c, $57        ; ,S,W
