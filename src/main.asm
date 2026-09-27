@@ -8,9 +8,10 @@
 ;
 ; Build: run build.bat (Windows) or build.sh (Linux), or use VS64's build.
 ;
-; Phase 1 (current): system detect, raster IRQ chain (open top/bottom
-; borders, color splits, page marker), the six border sprites, and the
-; debug test mailbox. RUN/STOP quits back to BASIC for now.
+; Done so far: phase 1 (system detect, raster IRQ chain, open borders,
+; color splits, page marker, border sprites, debug test mailbox) and
+; phase 2 (keyboard scanner). The main loop shows a keyboard test screen
+; until the editor arrives in phase 3. RUN/STOP quits back to BASIC.
 ;============================================================================
 
 ; DEBUG=1 builds include the test mailbox (see input.asm).
@@ -52,6 +53,7 @@ COLOR_RAM       = $d800
 SPRITE_PTRS     = SCREEN + $3f8
 
 IRQ_VECTOR      = $0314         ; KERNAL jumps here from its IRQ entry
+NMI_VECTOR      = $0318         ; ... and here from its NMI entry (RESTORE)
 KERNAL_IRQ      = $ea31         ; the KERNAL's normal IRQ handler
 KERNAL_CLRSCR   = $e544         ; clear the screen, home the cursor
 LAST_DEVICE     = $ba           ; last device number the KERNAL used
@@ -98,6 +100,8 @@ start                           ; must be at $080d = 2061
         ; device the program was loaded from (used for MAGIC T DEFAULTS).
         lda LAST_DEVICE
         sta load_device
+        tsx                     ; remember the stack, so quit can get back
+        stx entry_sp            ; to BASIC from anywhere
 
         sei                     ; no interrupts while we set things up
         cld
@@ -115,6 +119,7 @@ start                           ; must be at $080d = 2061
         jsr init_screen
         jsr init_sprites
         jsr init_marker
+        jsr init_keyboard
         jsr init_irq
         cli
 
@@ -125,40 +130,66 @@ main_loop
 !if DEBUG {
         jsr mailbox_poll        ; let the test harness move the page marker
 }
-        jsr check_quit          ; temporary for phase 1: RUN/STOP quits
-        jmp main_loop
-
-;----------------------------------------------------------------------------
-; check_quit - temporary until the keyboard scanner (phase 2) exists.
-; Looks at the RUN/STOP key directly and returns to BASIC if it is down.
-;----------------------------------------------------------------------------
-!zone check_quit
-check_quit
 !ifdef QUIT_TEST {
         lda frame_count+1       ; test builds (-DQUIT_TEST=1): quit by
         bne quit                ; themselves after 256 frames
 }
-        lda #$7f                ; select keyboard column 7
-        sta CIA1_PRA
-        lda CIA1_PRB
-        bpl quit                ; bit 7 low = RUN/STOP pressed
+        jsr show_held           ; phase 2 test: show the held modifier keys
+        jsr get_key             ; any key event?
+        bcs main_loop
+!if DEBUG {
+        jsr mailbox_log_key     ; tell the test harness
+}
+        jsr handle_key
+        jmp main_loop
+
+;----------------------------------------------------------------------------
+; handle_key - A = key code, Y = modifiers (from get_key).
+; Phase 2: RUN/STOP and RESTORE quit; everything else goes to the test
+; screen. (The editor takes over in phase 3.)
+;----------------------------------------------------------------------------
+!zone handle_key
+handle_key
+        cmp #KEY_STOP
+        beq quit
+        cmp #KEY_RESTORE
+        beq quit
+        cmp #KEY_CHARSET
+        beq toggle_charset
+        sta last_code
+        sty last_mods
+        jsr show_last_key
+        jmp echo_key
+
+;----------------------------------------------------------------------------
+; toggle_charset - switch between the upper/graphics and the upper/lower
+; character set, like C= + SHIFT in BASIC.
+;----------------------------------------------------------------------------
+toggle_charset
+        lda VIC_MEMPTR
+        eor #%00000010          ; $15 <-> $17: bit 1 picks the ROM set
+        sta VIC_MEMPTR
         rts
 
 ;----------------------------------------------------------------------------
 ; quit - undo everything we changed and return to BASIC's READY prompt.
+; Can be jumped to from anywhere: it resets the stack first.
 ;----------------------------------------------------------------------------
 quit
-        pla                     ; drop check_quit's return address;
-        pla                     ; the SYS return address is under it
--       lda CIA1_PRB            ; wait until RUN/STOP is let go, so BASIC
-        bpl -                   ; doesn't see it and print BREAK
+        ldx entry_sp            ; the stack as it was at start-up: the top
+        txs                     ; is the SYS command's return address
+-       lda key_now+7           ; wait until RUN/STOP is let go, so BASIC
+        bmi -                   ; doesn't see it and print BREAK
 
         sei
         jsr restore_irq
+        jsr restore_keyboard
         lda #0
         sta VIC_SPR_ENABLE
         lda #CTRL1_25ROWS
         sta VIC_CTRL1
+        lda #CSEL_40
+        sta VIC_CTRL2
         lda #MEMPTR_UPPER
         sta VIC_MEMPTR
         lda #LIGHT_BLUE         ; BASIC's power-on colors
@@ -178,7 +209,7 @@ quit
 init_screen
         lda #CTRL1_25ROWS
         sta VIC_CTRL1
-        lda #$08                ; 40 columns, no X scroll, no multicolor
+        lda #CSEL_40            ; 40 columns, no X scroll, no multicolor
         sta VIC_CTRL2
         lda #MEMPTR_LOWER       ; default: upper/lower case set
         sta VIC_MEMPTR
@@ -202,33 +233,266 @@ init_screen
         inx
         bne -
 
-        ; Phase 1 test text (screen codes, see data.asm)
-        ldx #0
--       lda test_text,x
-        beq +
-        sta SCREEN+2*40+2,x
-        inx
-        bne -
-+
-        ; Show which video system was detected on row 4.
+        ; Phase 2 test screen (texts in data.asm)
+        lda #<test_texts
+        sta zp_ptr2
+        lda #>test_texts
+        sta zp_ptr2+1
+        jsr print_list
+
+        ; Show which video system was detected on row 2.
         ldx system_type
         lda system_name_offset,x
         tax
         ldy #0
 -       lda system_names,x
         beq +
-        sta SCREEN+4*40+2,y
+        sta SCREEN+2*40+1,y
         inx
         iny
         bne -
-+       rts
++       lda #ECHO_TOP
+        sta echo_row
+        rts
+
+;----------------------------------------------------------------------------
+; print_list - print a list of texts. zp_ptr2 points to the list:
+; for each text a row, a column, the screen codes and a 0; $ff ends it.
+;----------------------------------------------------------------------------
+!zone print_list
+print_list
+        ldy #0
+        lda (zp_ptr2),y         ; row, or $ff = end of the list
+        cmp #$ff
+        beq .end
+        tax
+        iny
+        lda (zp_ptr2),y         ; column
+        clc                     ; zp_ptr = start of the row + column
+        adc row_lo,x
+        sta zp_ptr
+        lda row_hi,x
+        adc #0
+        sta zp_ptr+1
+        lda zp_ptr2             ; step over row and column
+        clc
+        adc #2
+        sta zp_ptr2
+        bcc +
+        inc zp_ptr2+1
++       ldy #0
+-       lda (zp_ptr2),y         ; copy the text
+        beq +
+        sta (zp_ptr),y
+        iny
+        bne -
++       iny                     ; step over the text and its 0
+        tya
+        clc
+        adc zp_ptr2
+        sta zp_ptr2
+        bcc print_list
+        inc zp_ptr2+1
+        bne print_list          ; (always)
+.end    rts
+
+;============================================================================
+; Phase 2 test screen (the editor replaces this in phase 3)
+;============================================================================
+ECHO_TOP        = 12            ; typed text goes on rows 12-23
+ECHO_BOTTOM     = 23
+
+; show_held - the "Held:" labels on row 8 show reversed while held.
+!zone show_held
+show_held
+        ldx #0                  ; index into held_labels (3 bytes each)
+        ldy #0                  ; index into held_text
+.label  lda held_labels+2,x     ; the modifier bit for this label
+        and key_mods
+        beq +
+        lda #$80                ; held: reversed characters
++       sta .rvs
+        lda held_labels,x       ; column
+        sta .col
+        lda held_labels+1,x     ; length
+        sta .len
+        stx .x
+.char   lda held_text,y
+        ora .rvs
+        ldx .col
+        sta SCREEN+8*40,x
+        inc .col
+        iny
+        dec .len
+        bne .char
+        ldx .x
+        inx
+        inx
+        inx
+        cpx #4*3
+        bne .label
+        rts
+.rvs    !byte 0
+.col    !byte 0
+.len    !byte 0
+.x      !byte 0
+
+; show_last_key - row 9: key code in hex, the character it types, and the
+; modifiers that came with it.
+!zone show_last_key
+show_last_key
+        lda #$24                ; "$"
+        sta SCREEN+9*40+11
+        lda last_code
+        jsr hex_digits
+        stx SCREEN+9*40+12
+        sta SCREEN+9*40+13
+
+        lda last_code           ; the character it types
+        ldy last_mods
+        jsr key_to_petscii
+        bcs .blank
+        jsr petscii_to_screen
+        bcc +
+.blank  lda #$20
++       sta SCREEN+9*40+15
+
+        lda last_mods           ; LS RS CT C=: a name for each bit that is
+        sta .bits               ; set, spaces for the others
+        ldx #0
+.mod    lsr .bits               ; next modifier bit into carry
+        ldy #3
+-       lda #$20
+        bcc +
+        lda mod_names,x
++       sta SCREEN+9*40+18,x
+        inx
+        dey
+        bne -
+        cpx #4*3
+        bne .mod
+
+        ldx #2                  ; REP for a repeat
+-       lda #$20
+        bit last_mods
+        bpl +
+        lda mod_repeat,x
++       sta SCREEN+9*40+31,x
+        dex
+        bpl -
+        rts
+.bits   !byte 0
+
+; hex_digits - A = a byte. Returns X = screen code of the high hex digit,
+; A = screen code of the low one.
+!zone hex_digits
+hex_digits
+        pha
+        lsr
+        lsr
+        lsr
+        lsr
+        jsr .digit
+        tax
+        pla
+        and #$0f
+.digit  cmp #10
+        bcc +
+        sbc #9                  ; 10-15 -> 1-6, the screen codes of A-F
+        rts                     ; (carry is set here)
++       ora #$30                ; 0-9 -> screen codes of "0"-"9"
+        rts
+
+; echo_key - type the last key's character on rows 12-23. RETURN starts a
+; new line, DEL rubs out; other control codes are not shown.
+!zone echo_key
+echo_key
+        lda last_code
+        ldy last_mods
+        jsr key_to_petscii
+        bcs .done               ; types nothing
+        cmp #$0d                ; RETURN
+        beq .newline
+        cmp #$8d                ; SHIFT + RETURN
+        beq .newline
+        cmp #$14                ; DEL
+        beq .delete
+        jsr petscii_to_screen
+        bcs .done               ; other control codes
+        pha
+        jsr .point
+        pla
+        ldy echo_col
+        sta (zp_ptr),y
+        lda text_color
+        sta (zp_ptr2),y
+        inc echo_col
+        lda echo_col
+        cmp #40
+        bcc .done
+.newline
+        lda #0
+        sta echo_col
+        inc echo_row
+        lda echo_row
+        cmp #ECHO_BOTTOM+1
+        bcc .done
+        jmp clear_echo          ; full: clear and start at the top again
+.done   rts
+
+.delete lda echo_col
+        beq .done               ; already at the start of the line
+        dec echo_col
+        jsr .point
+        ldy echo_col
+        lda #$20
+        sta (zp_ptr),y
+        rts
+
+; .point - zp_ptr = echo_row in screen RAM, zp_ptr2 = the same in color RAM
+.point  ldx echo_row
+        lda row_lo,x
+        sta zp_ptr
+        sta zp_ptr2
+        lda row_hi,x
+        sta zp_ptr+1
+        clc
+        adc #>(COLOR_RAM - SCREEN)
+        sta zp_ptr2+1
+        rts
+
+; clear_echo - clear rows 12-23 and start typing at the top.
+clear_echo
+        lda #ECHO_TOP
+        sta echo_row
+-       jsr .point
+        ldy #39
+        lda #$20
+.clear  sta (zp_ptr),y
+        dey
+        bpl .clear
+        inc echo_row
+        lda echo_row
+        cmp #ECHO_BOTTOM+1
+        bcc -
+        lda #ECHO_TOP
+        sta echo_row
+        lda #0
+        sta echo_col
+        rts
 
 ;----------------------------------------------------------------------------
 ; Variables
 ;----------------------------------------------------------------------------
 load_device     !byte 0         ; $BA at start-up
+entry_sp        !byte 0         ; stack pointer at start-up (for quit)
 text_bg         !byte BLACK     ; text background color (setting)
 text_color      !byte LIGHT_GREY ; default text color (setting)
+
+last_code       !byte 0         ; phase 2 test screen
+last_mods       !byte 0
+echo_row        !byte 0
+echo_col        !byte 0
 
 ;----------------------------------------------------------------------------
 ; The other source files
@@ -236,6 +500,7 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 !source "src/system.asm"
 !source "src/irq.asm"
 !source "src/input.asm"
+!source "src/editor.asm"
 !source "src/data.asm"
 
 ; The program must end before the sprite blocks at $3e80.

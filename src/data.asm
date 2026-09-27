@@ -81,11 +81,100 @@ spr_positions
 SPR_XMSB_BITS = (>PTR_TEST_X) | ((>SPR_MENU_X) << 1) | ((>SPR_LEFT_X) << 2) | ((>SPR_RIGHT_X) << 3) | ((>SPR_LEFT_X) << 4) | ((>SPR_RIGHT_X) << 5)
 
 ;----------------------------------------------------------------------------
+; Screen row addresses: row n starts at SCREEN + 40*n (low and high bytes).
+; Color RAM rows are at the same offsets from COLOR_RAM.
+;----------------------------------------------------------------------------
+row_lo
+!for .r, 0, 24 {
+        !byte <(SCREEN + 40 * .r)
+}
+row_hi
+!for .r, 0, 24 {
+        !byte >(SCREEN + 40 * .r)
+}
+
+;----------------------------------------------------------------------------
+; Keyboard tables: key code (row * 8 + bit, see input.asm) -> PETSCII.
+; Copied from the C64 KERNAL, so every key types what it types in BASIC.
+; $01-$04 stand for the modifier keys and RUN/STOP; $ff = no character.
+;----------------------------------------------------------------------------
+keytab_normal                   ; no modifier (KERNAL $EB81)
+        !byte $14, $0d, $1d, $88, $85, $86, $87, $11   ; DEL RETURN CRSR-RT F7 F1 F3 F5 CRSR-DN
+        !byte $33, $57, $41, $34, $5a, $53, $45, $01   ; 3 W A 4 Z S E L-SHIFT
+        !byte $35, $52, $44, $36, $43, $46, $54, $58   ; 5 R D 6 C F T X
+        !byte $37, $59, $47, $38, $42, $48, $55, $56   ; 7 Y G 8 B H U V
+        !byte $39, $49, $4a, $30, $4d, $4b, $4f, $4e   ; 9 I J 0 M K O N
+        !byte $2b, $50, $4c, $2d, $2e, $3a, $40, $2c   ; + P L - . : @ ,
+        !byte $5c, $2a, $3b, $13, $01, $3d, $5e, $2f   ; pound * ; HOME R-SHIFT = up-arrow /
+        !byte $31, $5f, $04, $32, $20, $02, $51, $03   ; 1 <- CTRL 2 SPACE C= Q RUN/STOP
+keytab_shift                    ; SHIFT (KERNAL $EBC2)
+        !byte $94, $8d, $9d, $8c, $89, $8a, $8b, $91   ; DEL RETURN CRSR-RT F7 F1 F3 F5 CRSR-DN
+        !byte $23, $d7, $c1, $24, $da, $d3, $c5, $01   ; 3 W A 4 Z S E L-SHIFT
+        !byte $25, $d2, $c4, $26, $c3, $c6, $d4, $d8   ; 5 R D 6 C F T X
+        !byte $27, $d9, $c7, $28, $c2, $c8, $d5, $d6   ; 7 Y G 8 B H U V
+        !byte $29, $c9, $ca, $30, $cd, $cb, $cf, $ce   ; 9 I J 0 M K O N
+        !byte $db, $d0, $cc, $dd, $3e, $5b, $ba, $3c   ; + P L - . : @ ,
+        !byte $a9, $c0, $5d, $93, $01, $3d, $de, $3f   ; pound * ; HOME R-SHIFT = up-arrow /
+        !byte $21, $5f, $04, $22, $a0, $02, $d1, $83   ; 1 <- CTRL 2 SPACE C= Q RUN/STOP
+keytab_cbm                      ; C= (KERNAL $EC03)
+        !byte $94, $8d, $9d, $8c, $89, $8a, $8b, $91   ; DEL RETURN CRSR-RT F7 F1 F3 F5 CRSR-DN
+        !byte $96, $b3, $b0, $97, $ad, $ae, $b1, $01   ; 3 W A 4 Z S E L-SHIFT
+        !byte $98, $b2, $ac, $99, $bc, $bb, $a3, $bd   ; 5 R D 6 C F T X
+        !byte $9a, $b7, $a5, $9b, $bf, $b4, $b8, $be   ; 7 Y G 8 B H U V
+        !byte $29, $a2, $b5, $30, $a7, $a1, $b9, $aa   ; 9 I J 0 M K O N
+        !byte $a6, $af, $b6, $dc, $3e, $5b, $a4, $3c   ; + P L - . : @ ,
+        !byte $a8, $df, $5d, $93, $01, $3d, $de, $3f   ; pound * ; HOME R-SHIFT = up-arrow /
+        !byte $81, $5f, $04, $95, $a0, $02, $ab, $83   ; 1 <- CTRL 2 SPACE C= Q RUN/STOP
+keytab_ctrl                     ; CTRL (KERNAL $EC78)
+        !byte $ff, $ff, $ff, $ff, $ff, $ff, $ff, $ff   ; DEL RETURN CRSR-RT F7 F1 F3 F5 CRSR-DN
+        !byte $1c, $17, $01, $9f, $1a, $13, $05, $ff   ; 3 W A 4 Z S E L-SHIFT
+        !byte $9c, $12, $04, $1e, $03, $06, $14, $18   ; 5 R D 6 C F T X
+        !byte $1f, $19, $07, $9e, $02, $08, $15, $16   ; 7 Y G 8 B H U V
+        !byte $12, $09, $0a, $92, $0d, $0b, $0f, $0e   ; 9 I J 0 M K O N
+        !byte $ff, $10, $0c, $ff, $ff, $1b, $00, $ff   ; + P L - . : @ ,
+        !byte $1c, $ff, $1d, $ff, $ff, $1f, $1e, $ff   ; pound * ; HOME R-SHIFT = up-arrow /
+        !byte $90, $06, $ff, $05, $ff, $ff, $11, $ff   ; 1 <- CTRL 2 SPACE C= Q RUN/STOP
+
+;----------------------------------------------------------------------------
 ; Strings (screen codes; !scr turns lower case into the letters of the
 ; upper/lower character set and upper case into its capitals)
 ;----------------------------------------------------------------------------
-test_text
-        !scr "Magic Typewriter - phase 1 test", 0
+
+; Phase 2 test screen: row, column, text, 0 ... then $ff
+test_texts
+        !byte 1, 1
+        !scr "Magic Typewriter - phase 2 test", 0
+        !byte 4, 1
+        !scr "Type anything: it shows up below.", 0
+        !byte 5, 1
+        !scr "C= + SHIFT switches the character set.", 0
+        !byte 6, 1
+        !scr "RUN/STOP or RESTORE quits.", 0
+        !byte 8, 1
+        !scr "Held:", 0
+        !byte 9, 1
+        !scr "Last key:", 0
+        !byte 11, 0
+        !scr "----------------------------------------", 0
+        !byte $ff
+
+; "Held:" labels: column on row 8, length, modifier bit
+held_labels
+        !byte 7, 6, MOD_LSHIFT
+        !byte 15, 6, MOD_RSHIFT
+        !byte 23, 4, MOD_CTRL
+        !byte 29, 2, MOD_CBM
+held_text                       ; the labels, in the same order
+        !scr "LSHIFT"
+        !scr "RSHIFT"
+        !scr "CTRL"
+        !scr "C="
+
+; "Last key:" modifier names, 3 characters each, in MOD_ bit order
+mod_names
+        !scr "LS RS CT C= "
+mod_repeat
+        !scr "REP"
 
 system_name_offset
         !byte .pal-system_names, .ntsc-system_names

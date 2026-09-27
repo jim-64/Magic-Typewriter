@@ -7,15 +7,16 @@
 ;   line  25  irq_top_a      set up the stable top IRQ
 ;   line  27  border_top_... open the side borders on lines 28-49 (so the
 ;                            F3 badges show there), then the color split
-;                            at the end of line 50
+;                            at the end of line 50; then housekeeping
+;                            (sprites 1-3 off, keyboard scan) with IRQs
+;                            allowed, so the marker IRQs can cut in
 ;   marker    irq_mark_top   side border -> grey    (skipped if not needed)
 ;   marker    irq_mark_bot   side border -> dark grey (skipped if not needed)
 ;   line 247  irq_bot_a      set up the stable bottom IRQ
 ;   line 249  border_bot_... 24 rows (opens the top/bottom border), color
 ;                            split at the end of line 250, open the side
 ;                            borders on lines 251-264 (F5 badges), then
-;                            housekeeping: back to 25 rows, sprites 1-3 off,
-;                            frame counter, marker update
+;                            back to 25 rows, frame counter, marker update
 ;
 ; All IRQs come in through the KERNAL's IRQ entry at $FF48, which saves
 ; A, X and Y and jumps through ($0314). Each handler sets up the next one
@@ -349,15 +350,31 @@ border_top_drean   +border_top TOP_DREAN_CMP, TOP_DREAN_PRE, TOP_DREAN_LOOP, TOP
 border_top_done
         lda #$ff                ; acknowledge the IRQ
         sta VIC_IRQ_FLAGS
-        lda irq_mark_top        ; next: marker top, marker bottom, or
-        beq +                   ; the bottom strip, whichever is first
-        sta VIC_RASTER
-        lda #<irq_mark_top_h
-        sta IRQ_VECTOR
-        lda #>irq_mark_top_h
-        sta IRQ_VECTOR+1
+        jsr top_next            ; next: marker top, marker bottom, or the
+                                ; bottom strip, whichever comes first
+
+; Housekeeping, while the beam draws the text area. The exact timing work
+; of this frame is done, so let the next IRQs (the page marker) interrupt
+; us from here on: they must not be late. This is the place for the jobs
+; that take a while - the keyboard scan now, the cursor blink in phase 3.
+        cli
+!if DEBUG {
+        lda VIC_RASTER          ; where housekeeping starts (test harness)
+        sta MB_HK_START
+}
+        ; The VIC compares sprite Y with the low 8 bits of the raster line,
+        ; so on PAL (312 lines) the top badges and the menu icon would show
+        ; a second time at lines 256+Y, low in the bottom border. Their last
+        ; line is done now: switch them off until irq_frame_top.
+        lda #SPR_ON_BOTTOM
+        sta VIC_SPR_ENABLE
+
+        jsr scan_keyboard
+!if DEBUG {
+        lda VIC_RASTER          ; and where it ends
+        sta MB_HK_END
+}
         jmp irq_exit
-+       jmp mark_next
 
 ;============================================================================
 ; Page position marker
@@ -372,16 +389,7 @@ irq_mark_top_h
         sta VIC_BORDER
         lda #$ff
         sta VIC_IRQ_FLAGS
-mark_next                       ; set up irq_mark_bot, or the bottom split
-        lda irq_mark_bot
-        beq +
-        sta VIC_RASTER
-        lda #<irq_mark_bot_h
-        sta IRQ_VECTOR
-        lda #>irq_mark_bot_h
-        sta IRQ_VECTOR+1
-        jmp irq_exit
-+       +next_irq BOT_A_LINE, irq_bot_a
+        jsr mark_top_next
         jmp irq_exit
 
 irq_mark_bot_h
@@ -391,6 +399,32 @@ irq_mark_bot_h
         sta VIC_IRQ_FLAGS
         +next_irq BOT_A_LINE, irq_bot_a
         jmp irq_exit
+
+; top_next - set up the first IRQ after the top strip: the marker top if
+; it has one, otherwise whatever comes after it.
+top_next
+        lda irq_mark_top
+        beq mark_top_next
+        sta VIC_RASTER
+        lda #<irq_mark_top_h
+        sta IRQ_VECTOR
+        lda #>irq_mark_top_h
+        sta IRQ_VECTOR+1
+        rts
+
+; mark_top_next - set up the IRQ after the marker top: the marker bottom
+; if it has one, otherwise the bottom strip.
+mark_top_next
+        lda irq_mark_bot
+        beq +
+        sta VIC_RASTER
+        lda #<irq_mark_bot_h
+        sta IRQ_VECTOR
+        lda #>irq_mark_bot_h
+        sta IRQ_VECTOR+1
+        rts
++       +next_irq BOT_A_LINE, irq_bot_a
+        rts
 
 ;============================================================================
 ; Bottom strip: open the top/bottom border, color split, side borders open
@@ -452,20 +486,15 @@ border_bot_ntsc    +border_bot BOT_NTSC_CMP, BOT_NTSC_SPLIT, BOT_NTSC_PRE, BOT_N
 border_bot_oldntsc +border_bot BOT_OLDNTSC_CMP, BOT_OLDNTSC_SPLIT, BOT_OLDNTSC_PRE, BOT_OLDNTSC_LOOP
 border_bot_drean   +border_bot BOT_DREAN_CMP, BOT_DREAN_SPLIT, BOT_DREAN_PRE, BOT_DREAN_LOOP
 
-; Housekeeping, below the bottom border check
-; (Keyboard scan and cursor blink will go here in phases 2 and 3.)
+; End of the frame, below the bottom border check. Only short jobs here:
+; on NTSC the side-border loop above ends around line 1 of the next frame,
+; and the top strip IRQ comes at line 25. Longer jobs go in the
+; housekeeping after the top strip (border_top_done).
 border_bot_done
         lda #CTRL1_25ROWS       ; back to 25 rows for the next frame
         sta VIC_CTRL1
         lda #$ff
         sta VIC_IRQ_FLAGS
-
-        ; The VIC compares sprite Y with the low 8 bits of the raster line,
-        ; so on PAL (312 lines) the top badges and the menu icon would show
-        ; a second time at lines 256+Y, low in the bottom border. Switch them
-        ; off until irq_frame_top.
-        lda #SPR_ON_BOTTOM
-        sta VIC_SPR_ENABLE
 
         inc frame_count         ; 16-bit frame counter
         bne +
@@ -480,6 +509,8 @@ border_bot_done
         sta MB_FRAMES
         lda frame_count+1
         sta MB_FRAMES+1
+        lda VIC_RASTER          ; and where this ends: on NTSC it must stay
+        sta MB_BOT_END          ; well before line 25 (the top strip IRQ)
 }
         +next_irq FRAME_TOP_LINE, irq_frame_top
         jmp irq_exit

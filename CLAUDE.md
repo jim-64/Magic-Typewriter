@@ -7,7 +7,8 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
 
 - **Phase 1 done** (2026-09-27), on branch `main`. Jim chose the side-border badge layout (see Border
   icons). Branch `phase1` keeps the earlier layout (badges above/below the text area) for reference only.
-- Next: phase 2, keyboard scanner.
+- **Phase 2 (keyboard scanner):** passes the automated checks; waiting for Jim's Human Test. Work is on
+  branch `phase2`; merge into `main` when Jim accepts it. (One branch per phase from here on.)
 
 ## Working with Jim
 
@@ -51,7 +52,7 @@ at a fixed RAM address: a queue of fake key events (matrix row/column + modifier
 events that the scanner and mouse driver read before the hardware. Claude writes events into it with
 `c64_memory` → `write`. The mailbox is also the only way to test the mouse, since the MCP can't move
 VICE's emulated 1351. Release builds leave the mailbox out entirely.
-The mailbox lives at **$02C0–$02F3** (unused KERNAL RAM); its layout is documented at the top of
+The mailbox lives at **$02C0–$02FE** (unused KERNAL RAM); its layout is documented in
 `src/input.asm`. It also reports the frame counter, detected system, and page-marker results, and lets
 Claude move the page marker (write first/total lines, then 1 to `+12`).
 
@@ -113,11 +114,16 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   Ultimate it was `"a"`, not `"drive8"`.
 - **Use full paths** in PowerShell build commands and MCP calls. The project path contains spaces, so
   quote it.
-- **Mouse buttons at the hardware level:** `c64_input` → `joystick` on VICE uses the real Binary Monitor
-  joyport command (fixed in 1.0.1). The 1351 left button shares the port 1 fire line and the right
-  button shares the up line, so joystick port 1 fire/up can press the "mouse buttons" for real. That
-  tests Mouse Gotcha 2 (buttons showing up in the keyboard scan) without the mailbox. Untested; try it
-  in phase 7.
+- **Mouse buttons at the hardware level:** `c64_input` → `joystick` on VICE is meant to use the Binary
+  Monitor joyport command, and the 1351 buttons share the port 1 fire/up lines. **Tried in phase 2: it
+  had no effect** — $DC01 stayed $FF with fire+up "pressed" on port 1 (JoyPort1Device = 1, joystick).
+  So port 1 input (Mouse Gotcha 2) can only be checked by Jim for now (VICE keyset joystick on port 1).
+- **After changing `MachineVideoStandard`, do `c64_system` → `reset` before `run_prg`.** Otherwise
+  VICE's pending reset cold-starts BASIC after the load, which zeroes $0801–$0802, and RUN does nothing.
+  Values: 1 = PAL, 2 = NTSC (3 = old NTSC, 4 = PAL-N/Drean, unverified). `run_prg` itself works fine
+  after a quit to READY.
+- **The CPU mostly runs only between MCP calls' monitor sessions**, so frame counts advance slowly while
+  Claude polls. Give injected key events time: read the mailbox again rather than assuming they are done.
 - **Watchpoints:** since 1.0.1, checkpoints honor the exact load/store/exec mask requested, so a
   store-only watchpoint on a state variable works.
 - **Checkpoints were unreliable in phase 1:** after `create_checkpoint` the CPU stayed stopped in the
@@ -400,9 +406,17 @@ marker bottom → color split at line 250 (stable) → open-border IRQ ($F9) →
 
 As built (see the table at the top of `src/irq.asm`): line 10 turns
 sprites 1–3 on (the mouse read goes there in phase 7); line 25 prepares the stable top IRQ; line 27
-stabilizes, opens the side borders on lines 28–49 and does the color split at the end of line 50;
-marker top/bottom; line 247 prepares the stable bottom IRQ; line 249 opens the top/bottom border, does
-the split at the end of line 250, opens the side borders on lines 251–264, then housekeeping. All wait
+stabilizes, opens the side borders on lines 28–49 and does the color split at the end of line 50,
+**then runs the housekeeping with IRQs allowed** (sprites 1–3 off, keyboard scan; cursor blink in
+phase 3), so the page-marker IRQs can cut in on time; marker top/bottom; line 247 prepares the stable
+bottom IRQ; line 249 opens the top/bottom border, does the split at the end of line 250, opens the
+side borders on lines 251–264, then only short jobs (25 rows back, frame counter, marker update).
+
+Why the housekeeping moved to the top (phase 2): on NTSC the bottom strip IRQ ends around line 1–3 of
+the next frame, leaving only ~22 lines before the top strip IRQ at line 25. Measured (debug build):
+housekeeping runs from line 52 to about 64 with no key pressed, about 71 in a frame with a key press;
+the bottom strip IRQ ends at line 266 on PAL and line 3 on NTSC. The mailbox reports these (+15, +61,
++62). Long jobs belong in the top housekeeping, never at the bottom. All wait
 counts are per video system; how they were found (`SPLIT_TEST` and `BORDER_TEST` builds) is described
 in `src/irq.asm`. **The mouse pointer's sprite fetches will shift this timing whenever the pointer is
 in or next to a strip — handle in phase 7** (for example, hide the pointer or use pre-tuned timings
@@ -437,6 +451,26 @@ Key matrix positions (verify against a matrix chart):
 
 **RESTORE:** Trap the NMI vector so RUN/STOP+RESTORE can't warm-start BASIC and lose the document.
 Ignore it, or treat it like RUN/STOP.
+
+**As built (phase 2, `src/input.asm`):**
+- Key codes are `row * 8 + bit` with row = the $DC00 line (the same numbers the KERNAL uses; table at
+  the top of `src/input.asm`). The scanner turns each new press into an **event**: key code + the
+  modifier bits held at that moment (left SHIFT, right SHIFT, CTRL, C=, plus a repeat flag). Modifier
+  keys make no events of their own; their live state is `key_mods`. The main program reads events with
+  `get_key` and turns them into PETSCII with `key_to_petscii` (CTRL wins, then C=, then SHIFT).
+- The four key tables (normal, SHIFT, C=, CTRL) are copies of the KERNAL's, in `src/data.asm`, so every
+  key types what it types in BASIC. The CTRL table gives CTRL-1…8 = color codes, CTRL-9/0 = RVS on/off,
+  CTRL-letters = control codes ($01 for CTRL-A …); the C= table gives C= 1…8 = the other 8 colors.
+- **All non-modifier keys repeat** (a modern editor habit; the KERNAL only repeats a few). First repeat
+  after about 0.4 s, then about 15 per second (timing table). **Ask Jim if this feels right.**
+- Port 1 lines held low (joystick, mouse buttons) are read with $DC00 = $FF and masked out of the scan.
+  $DC00 is left at $7F afterwards (row 7, and the SID paddles on port 1 for the mouse).
+- Character set toggle rule as built: fires when C= and a SHIFT are both let go, provided no other key
+  was down at any time while both were held.
+- RESTORE: the NMI handler only counts presses; the scanner turns that into a `KEY_RESTORE` event, which
+  the program treats like RUN/STOP. Quit puts the original NMI vector back.
+- Test mailbox key events (see `src/input.asm`): key code (or $FF for modifiers only), then modifiers in
+  bits 0–3 and hold time in bits 4–7 (steps of 8 frames). They go through the same code as real keys.
 
 ### Cursor movement and selection
 
@@ -809,5 +843,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 - Find: add Replace later? Case-sensitive option?
 - SpeedScript return marker and load address (check real files).
 - Emulator arrow keys: VICE and some modern keyboards fake SHIFT + CRSR for Up/Left. If they fake **left**
-  SHIFT, Up would mark text. Test early; adjust keymap or scanner.
+  SHIFT, Up would mark text. **VICE: answered (phase 2)** — every VICE 3.9 keymap has `!VSHIFT RSHIFT`,
+  so Up/Left arrive as **right** SHIFT + CRSR: they only reverse direction and never mark, and PC
+  Shift+Up (left SHIFT + right SHIFT + CRSR) marks upward, as designed. Still check TheC64, MEGA65 and
+  the BlingBox in phase 12.
 - SHIFT LOCK engages left SHIFT, so it forces marking. Document this in the user notes.

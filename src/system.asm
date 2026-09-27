@@ -80,6 +80,12 @@ tab_cycles_per_line
 tab_blink_frames
         !byte 17, 20, 20, 17
 
+; Key repeat: first repeat after about 0.4 second, then about 15 per second.
+tab_repeat_delay
+        !byte 20, 24, 24, 20
+tab_repeat_rate
+        !byte 3, 4, 4, 3
+
 ; Stable raster handlers for the top and bottom strips (see irq.asm).
 tab_border_top_lo
         !byte <border_top_pal, <border_top_ntsc, <border_top_oldntsc, <border_top_drean
