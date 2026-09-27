@@ -363,12 +363,14 @@ HIGH_SIZE       = program_end - high_load
 ;----------------------------------------------------------------------------
 tables          = high_load
 ctype           = tables                ; 256: what each byte of text is
-row_off_lo      = ctype + 256           ; per screen row (MROWS each):
+scrcode         = ctype + 256           ; 256: the screen code of each byte
+row_off_lo      = scrcode + 256         ; per screen row (MROWS each):
 row_off_hi      = row_off_lo + MROWS    ;   where it starts in the text,
 row_color       = row_off_hi + MROWS    ;   the color there,
 row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
-row_len         = row_rvs + MROWS       ;   how many cursor places it has
-dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
+row_len_lo      = row_rvs + MROWS       ;   how many cursor places it has
+row_len_hi      = row_len_lo + MROWS    ;   (a whole line with word wrap off)
+dummy_row       = row_len_hi + MROWS    ; 40: row 25 is "drawn" here
 prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
 tables_end      = prompt_save + 240
 

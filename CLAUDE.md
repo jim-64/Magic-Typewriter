@@ -14,10 +14,11 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   kept the old file name, so CTRL-S saved over the loaded file; it now starts an unnamed document.
 - **Phase 5 (marking, cut/copy/paste, recolor):** passes the automated checks; waiting for Jim's Human
   Test. Work is on branch `phase5`; merge into `main` when Jim accepts it. (One branch per phase.)
-- **Phase 6** started on branch `phase6` (made from `phase5`, since phase 5 isn't merged yet). First
-  step done (2026-09-27): **the editor now runs under the KERNAL ROM** (Jim chose this "plan D" over
-  letting the code continue past the sprite blocks; see Memory Map). Also fixed then: Quit left BASIC's
-  zero page broken.
+- **Phase 6 (word wrap, sideways scrolling, page marker):** passes the automated checks; waiting for
+  Jim's Human Test. On branch `phase6` (made from `phase5`, since phase 5 isn't merged yet; Jim said
+  "let's move on" after phase 5). Also in this branch: **the editor runs under the KERNAL ROM** (Jim
+  chose this "plan D"; see Memory Map), Quit fixed (it left BASIC's zero page broken), the character
+  set saved with the document, and a lot of speed work for big documents (see Text Model, phase 6).
 
 ## Working with Jim
 
@@ -63,7 +64,8 @@ events that the scanner and mouse driver read before the hardware. Claude writes
 VICE's emulated 1351. Release builds leave the mailbox out entirely.
 The mailbox lives at **$02C0–$02FE** (unused KERNAL RAM); its layout is documented in
 `src/input.asm`. It also reports the frame counter, detected system, and page-marker results, and lets
-Claude move the page marker (write first/total lines, then 1 to `+12`).
+Claude move the page marker (write first/total lines, then 1 to `+12`; the band shows 25 lines). Since
+phase 6 the editor sets the marker after every redraw, so a harness setting lasts until the next key.
 
 ### Test builds
 
@@ -75,7 +77,6 @@ Extra ACME `-D` options for Claude's automated checks (never in Jim's builds):
 | `-DSPLIT_TEST=1` | Records whether each stable-raster compare saw the old or the next line; shows the flags as four white/black blocks on row 10. Also varies the main loop's length so every IRQ jitter case happens. The right wait count is the only one that gives both results. |
 | `-DBORDER_TEST=1` | Strip background green instead of blue, so a debug-borders screenshot shows which side-border lines are open |
 | `-DQUIT_TEST=1` | Quits to BASIC by itself after 256 frames (tests the restore path) |
-| `-DFAKE_FIRST=n -DFAKE_TOTAL=n` | Start-up page marker position (phase 1 fake marker) |
 | `-DTOP_PAL_CMP=n` etc. | Override any stable-raster wait count (list and method at the top of `src/irq.asm`) |
 
 ## C64 Bridge MCP (VICE)
@@ -173,7 +174,9 @@ clashes with the bridge on 6502) and speaks the binary monitor protocol; `mtest.
 through the test mailbox (keys, screen text, buffer text, labels from `build/main.lbl`). Tests:
 `python tools/test_phase3.py [c64|ntsc]` (editing regression), `python tools/test_phase4_load_save.py
 [c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`, `python tools/test_phase5.py [c64|ntsc]`,
-`python tools/test_quit.py [c64|ntsc]` (RESTORE, and a healthy BASIC after Quit).
+`python tools/test_quit.py [c64|ntsc]` (RESTORE, and a healthy BASIC after Quit),
+`python tools/test_phase6.py [c64|ntsc]` (word wrap checked against a Python model of the wrap rule,
+paging both ways, reflow, wrap off, marker, and timings in a 30 KB document).
 **Run them all after any change to the editor** — test_phase3 caught a real regression in phase 5.
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5, once "keys not
 handled" right after start-up in phase 6; neither repeated in 20+ runs. `mtest.keys` now reports the key
@@ -284,9 +287,10 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, phase 6 start): lower part $0801–$1DF8, tables to $2092; editor $E000–$F571, so
-  **~2.7 KB free under the KERNAL and ~7.5 KB below the sprite blocks**. PRG 11.1 KB debug, 10.5 KB
-  release. New code can go in either part; code that runs during disk work must go in the lower part.
+- Space (debug build, end of phase 6): lower part $0801–$1E37, tables to $21EB; editor $E000–$FBB2, so
+  **~1.1 KB free under the KERNAL and ~7.3 KB below the sprite blocks**. New code goes in the lower
+  part from now on (the mouse driver runs in the IRQ; menus, formats, printer and tape fit there too);
+  code that runs during disk work must go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
   warm start. Restarting means loading the program again. (`SYS 2061` after Quit would crash too.)
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
@@ -437,6 +441,15 @@ again at line 256+Y; sprites 1–3 are switched off after the bottom strip and b
   bottom line.
 - Map the band into lines 51–250: `top = 51 + 200*firstLine/totalLines`,
   `height = max(8, 200*25/totalLines)`. 16-bit math.
+- **As built (phase 6):** positions are **byte offsets**, not lines: top = 51 + 200 × (offset of the top
+  row) / (text length), bottom = 51 + 200 × (offset just below the screen, or the length if the end is
+  on the screen) / length, at least 8 lines tall (`update_marker` in editor.asm, called at the end of
+  every `redraw_from`; `marker_set` in irq.asm takes first/last/total). Why bytes: they are known
+  already and cost nothing to keep up to date (counting lines would need bookkeeping in every edit, and
+  with word wrap "lines" means screen rows, which would need a layout of the whole document); they
+  work the same with wrap on and off. For ordinary text the difference from lines is small.
+  **When the whole document fits on the screen, the band is the whole side (all grey)**, like a
+  scrollbar thumb that fills its track — ask Jim in the Human Test whether he'd rather hide it then.
 - Write $D020 while the beam is in the **text-area part of the line**, and **avoid badlines** for band
   edges (lines $30–$F7 where `(raster & 7) == YSCROLL`). Snap to the nearest safe line.
 - Display-only; the pointer can't be seen in the side border beside the text.
@@ -527,6 +540,9 @@ Ignore it, or treat it like RUN/STOP.
   (1/60 s) after the press, then every 4 ticks (15/s). We scan once per frame, so `key_timer` counts in
   1/300 s steps: 6 per PAL frame, 5 per NTSC frame (timing table), giving the same speed on every system.
   Checked: a 48-frame hold gives 10 repeats on PAL and 8 on NTSC, as calculated.
+- **A repeat is only added when the event queue is empty** (phase 6): if a key's job takes longer than
+  the repeat time (scrolling a big document), repeats no longer pile up and carry on for seconds after
+  the key is let go. At most one step follows the release.
 - Port 1 lines held low (joystick, mouse buttons) are read with $DC00 = $FF and masked out of the scan.
   $DC00 is left at $7F afterwards (row 7, and the SID paddles on port 1 for the mouse).
 - Character set toggle rule as built: fires when C= and a SHIFT are both let go, provided no other key
@@ -724,14 +740,47 @@ Editing rules:
 - Positions are kept as **offsets** (bytes from the start of the text, not counting the gap), so they
   stay valid when the cursor moves. `set_ptr` / `ptr_to_off` convert.
 - For each screen row (plus one below the screen) the editor keeps its start offset, the color and RVS
-  state there, and its number of cursor places. **Rows break after 40 characters for now** (plain
-  character wrap); phase 6 replaces this with word wrap / horizontal scroll.
+  state there, and its number of cursor places (16-bit: with word wrap off a row is a whole line).
 - After an edit, the redraw **stops as soon as a row starts where it did before, moved by the size of
-  the edit, in the same state** — the rest of the screen is unchanged. Measured (debug build, PAL):
-  typing a letter < 1 frame; RETURN at the top of the screen (every row moves) 4 frames; cursor moves
-  without scrolling < 1 frame. Scrolling redraws the whole screen.
-- The color at a position is found by scanning backward to the last color code. In a long document
-  with few color codes this can scan far; fine for 36 KB, **revisit for REU documents (phase 9)**.
+  the edit, in the same state** — the rest of the screen is unchanged. (This holds with word wrap too:
+  a row's layout depends only on where it starts.)
+
+**As built (phase 6, `src/editor.asm`; its header comment describes the rule):**
+- **Word wrap on (default; `wrap_on`):** a row takes up to 40 characters; if the line goes on, the row
+  ends after its last space ($20 only — shifted space $A0 does not break) and the next word starts the
+  next row; a word longer than 40 is cut at 40. A line end needs a cursor place of its own, so a line of
+  exactly 40 characters wraps its last word too. `redraw_from` (drawing) and `row_next` (walking one
+  row without drawing) follow the same rule and **must be kept the same**; tools/test_phase6.py checks
+  the screen against a Python model of it.
+- **Word wrap off:** each line is one row; the screen shows 40 columns from `hscroll`. When the cursor
+  would leave the screen sideways, the view jumps so the cursor is in column 20 (or `hscroll` = 0 when
+  it is within 20 of the line start). Columns are 16-bit (`cur_lcol`, `want_col`, `row_len`).
+  `cur_col` is always the screen column. `locate_cursor` returns A = 2 for "off to the side".
+- **CTRL-W toggles word wrap — temporary** until the main menu (phase 8) has the Wordwrap item. The
+  cursor keeps its screen row.
+- **Finding rows upward:** layout depends on where a paragraph starts, so `find_row_start` walks the
+  paragraph from its start (`line_start`). `rows_back` (used for cursor up at the top, F3,
+  show_cursor_at, big jumps) goes back a line at a time and notes the last 25 row starts in a ring, so
+  each paragraph is walked once. After edits in word wrap mode the top row can start where a fresh
+  layout wouldn't (a word could now fit on the hidden row above); scrolling up heals it.
+- **Speed work (a 30 KB document of long paragraphs was the test):**
+  - `color_count` counts the color codes in the text (kept by insert_byte/insert_after/take_byte/
+    cleanup; `count_colors` after loading). With none, `color_before` answers at once. Before, finding
+    the color at the top row scanned back through the whole document: 1–3 s per scroll.
+  - `set_top_ptr` works the new top's color out from the old top row (`top_known`) and the codes in
+    between. **Anything that changes text above the top row must clear `top_known`** (selection
+    operations do, in `sel_to_gap`). **Phase 8: changing the default text color also makes
+    row_color stale — clear top_known and redraw everything.**
+  - `move_gap_to` and the block copies copy a page at a time (HOME to the top of 30 KB: 211 → 46
+    frames). Drawing uses a 256-byte `scrcode` table instead of calling petscii_to_screen.
+  - Scrolling one row (`view_down` / `view_up`) moves the screen and the row tables by a row and draws
+    only the new row. view_up then lets redraw_from check (can_stop) that the old top still starts
+    where the layout says, and redraws more if not.
+  - Measured (debug, PAL, 30 KB of long paragraphs, frames): type a letter 1, cursor move 0, F5 12,
+    F3 26, cursor up at the top 8–10, jump to the end 24, HOME to the top 46. A full screen of dense
+    text takes about 8 frames to draw.
+  - Still slow in a document with no RETURNs at all (one huge paragraph): every row search walks it
+    from the start. Not handled; such files (e.g. ASCII with LF endings) get line ends in phase 10.
 - Cursor blink runs from the **main loop** (not the IRQ), so it can never clash with a screen redraw.
   Blink period from the timing table.
 - Color keys insert the new color code before the cursor and a restore code after it; typing goes in
@@ -1017,8 +1066,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 4. PETSCII SEQ load/save with device number and error channel. **Done 2026-09-27.**
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
    (Automated checks passed 2026-09-27; Human Test pending.)
-6. Soft word wrap, horizontal scroll, marker tracking the real position. (Started 2026-09-27 with the
-   memory change: editor under the KERNAL ROM.)
+6. Soft word wrap, horizontal scroll, marker tracking the real position. (Automated checks passed
+   2026-09-27, with the memory change and speed work; Human Test pending.)
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,

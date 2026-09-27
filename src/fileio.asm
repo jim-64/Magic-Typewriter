@@ -421,6 +421,7 @@ load_file
         sta sel_on
         jsr gap_to_start
         jsr empty_view
+        jsr count_colors
         lda .charset
         beq +
         ldx #MEMPTR_UPPER       ; $8e: upper case/graphics

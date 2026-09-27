@@ -35,9 +35,21 @@
 ; THE SCREEN
 ; Row 0 shows the document from "the top" (row_off[0]). For each screen
 ; row we remember where it starts (offset), the color and reverse state
-; there, and how many cursor places it has. Rows wrap after 40
-; characters (word wrap and sideways scrolling come in phase 6). One extra
-; row, below the screen, is measured but not drawn.
+; there, and how many cursor places it has. One extra row, below the
+; screen, is measured but not drawn.
+;
+; How the text is split into rows (wrap_on, a setting):
+; - Word wrap on: a row takes up to 40 characters. If the line goes on
+;   past that, the row ends after its last space and the word that did
+;   not fit starts the next row; a word longer than 40 characters is cut
+;   at 40. A line end needs a cursor place of its own, so a line of
+;   exactly 40 characters wraps its last word too. redraw_from and
+;   row_next both follow this rule, and must stay the same.
+; - Word wrap off: each line is one row, however long. The screen shows
+;   40 columns of it, starting "hscroll" columns in; when the cursor
+;   would leave the screen sideways, the view jumps so the cursor is in
+;   the middle again (or back to column 0 near the start of the line).
+; The text itself never changes: wrapping is only how it is shown.
 ;============================================================================
 
 BUF_START       = $4000         ; the text buffer ...
@@ -69,11 +81,17 @@ edit_mode       !byte MODE_INSERT ; insert or overwrite (setting, F7)
 mark_key        !byte MARK_CBM  ; setting (default C=: left SHIFT can't
                                 ; mark up/left in VICE - see CLAUDE.md)
 modified        !byte 0         ; 1 = changed since loaded or saved
+wrap_on         !byte 1         ; setting: 1 = word wrap, 0 = long lines
+                                ; scroll sideways (CTRL-W for now)
+hscroll         !word 0         ; wrap off: columns scrolled off the left
 cur_row         !byte 0         ; cursor place on the screen
 cur_col         !byte 0
+cur_lcol        !word 0         ; the cursor's column counted from the
+                                ; start of its row (wrap off: its line)
 cur_color       !byte 0         ; typing color at the cursor
 cur_rvs         !byte 0         ; $80 = reverse on at the cursor
-want_col        !byte 0         ; column to aim for when moving up/down
+want_col        !word 0         ; column to aim for when moving up/down
+                                ; (counted like cur_lcol)
 eof_row         !byte 0         ; screen row holding the end of the text,
                                 ; $ff if it is below the screen
 off             !word 0         ; an offset (argument / result)
@@ -86,6 +104,12 @@ off             !word 0         ; an offset (argument / result)
 !zone editor_init
 editor_init
         jsr init_ctype
+        ldx #0                  ; scrcode: each byte's screen code, so
+-       txa                     ; drawing needs only a table look-up
+        jsr petscii_to_screen
+        sta scrcode,x
+        inx
+        bne -
         lda #<BUF_END           ; no clipboard yet: the text may use all
         sta text_end            ; of the buffer
         lda #>BUF_END
@@ -111,17 +135,24 @@ empty_buffer
         lda #0
         sta modified
         sta sel_on
+        sta color_count
+        sta color_count+1
         ; (falls into empty_view)
 
 ; empty_view - the top of the screen at the start of the text.
 empty_view
         lda #0
         sta want_col
+        sta want_col+1
+        sta hscroll
+        sta hscroll+1
         sta row_off_lo          ; top = offset 0
         sta row_off_hi
         sta row_rvs
         lda text_color          ; the default text color, reverse off
         sta row_color
+        lda #1                  ; (a state set_top_ptr can work from)
+        sta top_known
         rts
 
 ; gap_to_start - put the cursor at the start of the text by copying all of
@@ -420,23 +451,64 @@ move_left
         sec                     ; back where they were
         rts
 
-; move_gap_to - move the cursor to offset "off".
+; move_gap_to - move the cursor to offset "off": the bytes between the
+; cursor and there move across the gap, in one block copy.
 !zone move_gap_to
 move_gap_to
--       jsr get_cursor_off
-        lda work+1
-        cmp off+1
-        bcc .right
-        bne .left
-        lda work
-        cmp off
-        bcc .right
-        beq .done
-.left   jsr gap_left
-        jmp -
-.right  jsr gap_right
-        jmp -
+        jsr get_cursor_off      ; work = the cursor now
+        sec                     ; how far to the right?
+        lda off
+        sbc work
+        sta blk_count
+        lda off+1
+        sbc work+1
+        sta blk_count+1
+        bcc .left               ; (to the left)
+        ora blk_count
+        beq .done               ; there already
+        lda gap_end             ; right: bytes from after the gap go to
+        sta ptr                 ; before it
+        lda gap_end+1
+        sta ptr+1
+        lda gap_start
+        sta ptr2
+        lda gap_start+1
+        sta ptr2+1
+        jsr block_copy_fwd
+        lda ptr
+        sta gap_end
+        lda ptr+1
+        sta gap_end+1
+        lda ptr2
+        sta gap_start
+        lda ptr2+1
+        sta gap_start+1
 .done   rts
+.left   sec                     ; left: bytes from before the gap go to
+        lda work                ; after it
+        sbc off
+        sta blk_count
+        lda work+1
+        sbc off+1
+        sta blk_count+1
+        lda gap_start
+        sta ptr
+        lda gap_start+1
+        sta ptr+1
+        lda gap_end
+        sta ptr2
+        lda gap_end+1
+        sta ptr2+1
+        jsr block_copy_back
+        lda ptr
+        sta gap_start
+        lda ptr+1
+        sta gap_start+1
+        lda ptr2
+        sta gap_end
+        lda ptr2+1
+        sta gap_end+1
+        rts
 
 ;============================================================================
 ; Tidying codes
@@ -607,14 +679,15 @@ cleanup
         bne .keep               ; other codes stay
 .c_color
         lda .keep_color
-        beq .skip
+        beq .drop_c
         lda ptr                 ; keep only the last color code
         cmp .last_color
-        bne .skip
+        bne .drop_c
         lda ptr+1
         cmp .last_color+1
-        bne .skip
         beq .keep
+.drop_c jsr color_gone          ; a color code goes
+        jmp .skip
 .c_rvs  lda .keep_rvs
         beq .skip
         lda ptr
@@ -662,8 +735,13 @@ cleanup
 ; color_before - A = the color in effect just before address ptr (which
 ; must be at or before the cursor): the last color code before it, or the
 ; default text color. Keeps ptr.
+; (With no color codes in the text at all, that is the default text color
+; at once - no need to look back through a big document.)
 !zone color_before
 color_before
+        lda color_count
+        ora color_count+1
+        beq .default
         lda ptr
         sta ptr2
         lda ptr+1
@@ -687,6 +765,80 @@ color_before
 .default
         lda text_color
         rts
+
+;----------------------------------------------------------------------------
+; Counting the color codes in the text. color_before needs no search when
+; there are none. Every byte put into the text goes through insert_byte or
+; insert_after, and every code taken out through take_byte or cleanup;
+; they keep the count. After loading, count_colors counts them all.
+;----------------------------------------------------------------------------
+color_count     !word 0
+
+; count_color - A = a byte put into the text: one more if it is a color
+; code. Keeps A.
+count_color
+        pha
+        tax
+        lda ctype,x
+        bmi +
+        inc color_count
+        bne +
+        inc color_count+1
++       pla
+        rts
+
+; uncount_color - A = a byte taken out of the text: one fewer if it is a
+; color code. Keeps A.
+uncount_color
+        pha
+        tax
+        lda ctype,x
+        bmi +
+        jsr color_gone
++       pla
+        rts
+
+; color_gone - one color code fewer (never below 0)
+color_gone
+        lda color_count
+        ora color_count+1
+        beq +
+        lda color_count
+        bne ++
+        dec color_count+1
+++      dec color_count
++       rts
+
+; count_colors - count all the color codes in the text
+!zone count_colors
+count_colors
+        lda #0
+        sta color_count
+        sta color_count+1
+        lda #<BUF_START
+        sta ptr
+        lda #>BUF_START
+        sta ptr+1
+.loop   lda ptr                 ; at the gap? jump over it
+        cmp gap_start
+        bne +
+        lda ptr+1
+        cmp gap_start+1
+        bne +
+        lda gap_end
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
++       jsr ptr_at_end
+        bcs .done
+        ldy #0
+        lda (ptr),y
+        jsr count_color
+        inc ptr
+        bne .loop
+        inc ptr+1
+        jmp .loop
+.done   rts
 
 ; rvs_before - A = $80 if reverse is on just before address ptr (at or
 ; before the cursor), else 0. A line end turns reverse off. Keeps ptr.
@@ -723,25 +875,20 @@ rvs_before
         rts
 
 ;============================================================================
-; Finding rows (for moving up the text)
+; Finding rows
 ;============================================================================
 
-; find_row_start - ptr = the start of the screen row that holds the place
-; at address "limit" (which is at or before the cursor, so all of this is
-; before the gap). That is the last row start at or before it.
-!zone find_row_start
-find_row_start
-        ; The line holding it starts after the last line end before it.
-        lda limit
-        sta ptr
-        lda limit+1
-        sta ptr+1
+; line_start - ptr = an address before the gap. Moves ptr back to the
+; start of the line holding the byte at ptr: just after the line end before
+; it, or the start of the text.
+!zone line_start
+line_start
 -       lda ptr
         cmp #<BUF_START
         bne +
         lda ptr+1
         cmp #>BUF_START
-        beq .line_start
+        beq .done
 +       lda ptr
         bne +
         dec ptr+1
@@ -753,24 +900,37 @@ find_row_start
         cmp #CT_EOL
         bne -
         inc ptr                 ; the line starts after the line end
-        bne .line_start
+        bne .done
         inc ptr+1
-.line_start
-        ; Walk the line row by row, the way redraw splits it, until the
-        ; row that holds "limit".
-.row    lda ptr                 ; this row starts here
-        sta .row_start
-        lda ptr+1
-        sta .row_start+1
+.done   rts
+
+; row_next - ptr = the start of a screen row (an address; it may be at the
+; gap). Walks over the row, split the way redraw_from splits rows, and
+; returns ptr = the start of the next row. Carry set if the text ends in
+; this row, so there is no next row.
+; (For speed it checks one address per byte: .seg, the end of the stretch
+; of text it is in - the gap, or the end of the text.)
+!zone row_next
+row_next
         lda #0
         sta .chars
-.walk   lda ptr                 ; reached the limit: it is in this row
-        cmp limit
-        bne +
+        sta .brk_col
+        jsr .stretch
+.loop   lda ptr                 ; the end of the stretch?
+        cmp .seg
+        bne .byte
         lda ptr+1
-        cmp limit+1
-        beq .found
-+       ldy #0
+        cmp .seg+1
+        bne .byte
+        lda .seg                ; the end of the text: this row is the last
+        cmp text_end
+        bne +
+        lda .seg+1
+        cmp text_end+1
+        beq .end                ; (carry set: equal)
++       jsr .stretch            ; the gap: jump over it
+        jmp .loop
+.byte   ldy #0
         lda (ptr),y
         inc ptr
         bne +
@@ -778,79 +938,487 @@ find_row_start
 +       tax
         lda ctype,x
         cmp #CT_EOL
-        beq .row                ; (can't happen before the limit: the line
-                                ; ends after it)
+        beq .next               ; a line end ends the row
         cmp #CT_CHAR
-        bne .walk
+        bne .loop               ; codes take no place
+        lda wrap_on
+        beq .loop               ; wrap off: the row is the whole line
         inc .chars
+        cpx #$20                ; a space: the row may end after it
+        bne +
         lda .chars
+        sta .brk_col
+        lda ptr
+        sta .brk
+        lda ptr+1
+        sta .brk+1
++       lda .chars
         cmp #40
-        bcc .walk
-        bcs .row                ; 40 characters: the next row starts here
-.found  lda .row_start
+        bcc .loop
+        lda .brk_col            ; full: it ends after its last space ...
+        beq .next               ; (no space: the word is cut at 40)
+        cmp #40
+        bcs .next               ; (the 40th character is the space)
+        lda .brk
         sta ptr
-        lda .row_start+1
+        lda .brk+1
+        sta ptr+1
+.next   clc
+.end    rts
+
+; .stretch - if ptr is at the gap, jump over it. .seg = where the stretch
+; of text that ptr is in ends: the gap, or the end of the text.
+.stretch
+        lda ptr
+        cmp gap_start
+        bne +
+        lda ptr+1
+        cmp gap_start+1
+        bne +
+        lda gap_end
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
++       lda ptr+1               ; before the gap?
+        cmp gap_start+1
+        bcc .before
+        bne .after
+        lda ptr
+        cmp gap_start
+        bcc .before
+.after  lda text_end
+        sta .seg
+        lda text_end+1
+        sta .seg+1
+        rts
+.before lda gap_start
+        sta .seg
+        lda gap_start+1
+        sta .seg+1
+        rts
+
+.chars  !byte 0
+.brk_col !byte 0
+.brk    !word 0
+.seg    !word 0
+
+; find_row_start - ptr = the start of the screen row that holds the place
+; at address "limit" (which is at or before the cursor, so before the
+; gap): the last row start at or before it.
+!zone find_row_start
+find_row_start
+        lda limit
+        sta ptr
+        lda limit+1
+        sta ptr+1
+        jsr ptr_to_off          ; the limit as an offset
+        lda off
+        sta .lim
+        lda off+1
+        sta .lim+1
+        jsr line_start          ; the line holding it
+        lda wrap_on
+        bne .row
+        rts                     ; wrap off: the row is the whole line
+.row    lda ptr                 ; a row starts here
+        sta .start
+        lda ptr+1
+        sta .start+1
+        jsr row_next
+        bcs .found              ; the text ends in it: this is the one
+        jsr ptr_to_off          ; the next row starts at "off": after the
+        lda .lim                ; limit?
+        cmp off
+        lda .lim+1
+        sbc off+1
+        bcs .row                ; no: on to the next row
+.found  lda .start
+        sta ptr
+        lda .start+1
         sta ptr+1
         rts
-.row_start      !word 0
-.chars          !byte 0
+.start  !word 0
+.lim    !word 0
 
 limit           !word 0         ; argument of find_row_start
 
-; set_top_ptr - make the screen row that starts at address ptr (before the
-; cursor) the top row: its offset and the color and reverse state there.
+; set_top_ptr - make the screen row that starts at address ptr (at or
+; before the cursor) the top row: its offset, and the color and reverse
+; state there.
+; The color there is set by the last color code before it. Looking back
+; for that can take a second in a big document, so where it can, this
+; works it out from the old top row instead (whose state is known, unless
+; top_known is 0): only the codes between the old top and the new one
+; matter. (With no color codes in the text at all, color_before is quick.)
 !zone set_top_ptr
 set_top_ptr
+        lda ptr                 ; the new top
+        sta .new
+        lda ptr+1
+        sta .new+1
         jsr ptr_to_off
         lda off
-        sta row_off_lo
+        sta .off
         lda off+1
-        sta row_off_hi
+        sta .off+1
+        jsr rvs_before          ; reverse: from the start of the line
+        sta .rvs
+        lda top_known
+        beq .look_back
+        lda color_count
+        ora color_count+1
+        beq .look_back          ; (quick then anyway)
+        lda row_off_lo          ; the old top, as an address
+        sta off
+        lda row_off_hi
+        sta off+1
+        jsr set_ptr
+        lda .off                ; new top before the old one?
+        cmp row_off_lo
+        lda .off+1
+        sbc row_off_hi
+        bcs .down
+        lda ptr                 ; up: codes from the new top to the old one
+        sta .stop               ; don't change the color at the new top;
+        lda ptr+1               ; if there are none, it is the old top's
+        sta .stop+1
+        lda .new
+        sta ptr
+        lda .new+1
+        sta ptr+1
+        jsr .colors
+        cmp #$ff
+        bne .look_back          ; there are: look back after all
+        lda row_color
+        jmp .store
+.down   lda .new                ; down: the old top's color, changed by the
+        sta .stop               ; codes between it and the new top
+        lda .new+1
+        sta .stop+1
+        jsr .colors
+        cmp #$ff
+        bne .store
+        lda row_color
+        jmp .store
+.look_back
+        lda .new
+        sta ptr
+        lda .new+1
+        sta ptr+1
         jsr color_before
-        sta row_color
-        jsr rvs_before
+.store  sta row_color
+        lda .rvs
         sta row_rvs
+        lda .off
+        sta row_off_lo
+        lda .off+1
+        sta row_off_hi
+        lda .new                ; (ptr back as it came)
+        sta ptr
+        lda .new+1
+        sta ptr+1
+        lda #1
+        sta top_known
         rts
 
-; scroll_up_one - move the top of the screen up one row (does not redraw).
-; Carry set if the top is already the start of the text.
-!zone scroll_up_one
-scroll_up_one
+; .colors - look at the bytes from ptr up to address .stop (jumping the
+; gap): A = the color of the last color code among them, $ff if none.
+.colors lda #$ff
+        sta .last
+-       lda ptr
+        cmp .stop
+        bne +
+        lda ptr+1
+        cmp .stop+1
+        beq .c_done
++       lda ptr                 ; at the gap? jump over it
+        cmp gap_start
+        bne +
+        lda ptr+1
+        cmp gap_start+1
+        bne +
+        lda gap_end
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
+        jmp -
++       ldy #0
+        lda (ptr),y
+        tax
+        lda ctype,x
+        bmi +
+        sta .last
++       inc ptr
+        bne -
+        inc ptr+1
+        jmp -
+.c_done lda .last
+        rts
+
+.new    !word 0
+.off    !word 0
+.rvs    !byte 0
+.stop   !word 0
+.last   !byte 0
+
+top_known       !byte 1         ; 1 = row_color/row_rvs of the top row are
+                                ; right (see set_top_ptr)
+
+; rows_back - move the top of the screen up A rows (1-255), or as far as
+; the start of the text allows. Does not redraw. Carry set if it could not
+; move at all (the top is the start of the text already). The top must be
+; at or before the cursor.
+; It works back a line at a time: it counts the rows of the line before
+; the top that lie above the top. If they are enough, the new top is one
+; of them; if not, it takes them all and goes on with the line before.
+; (So a long paragraph is walked once, not once for every row.)
+!zone rows_back
+rows_back
+        sta .need
+        lda row_off_lo          ; .top: how far up it has got so far (the
+        sta .top                ; top row itself stays as it is until the
+        lda row_off_hi          ; end: set_top_ptr works from it)
+        sta .top+1
+        ora .top
+        bne .line
+        sec                     ; the start of the text already
+        rts
+.line   lda .top
+        sta off
+        lda .top+1
+        sta off+1
+        ora .top
+        bne +
+        jmp .at_start           ; reached the start of the text
++       jsr set_ptr
+        lda ptr                 ; the line holding the byte before the top
+        bne +
+        dec ptr+1
++       dec ptr
+        jsr line_start
+        lda ptr
+        sta .lstart
+        lda ptr+1
+        sta .lstart+1
+        lda #0                  ; count its rows above the top, noting the
+        sta .k                  ; starts of the last RING of them
+        sta .k+1
+        sta .ri
+-       ldx .ri                 ; (a row starts at ptr)
+        lda ptr
+        sta .ring_lo,x
+        lda ptr+1
+        sta .ring_hi,x
+        inx
+        cpx #RING
+        bcc +
+        ldx #0
++       stx .ri
+        inc .k
+        bne +
+        inc .k+1
++       jsr row_next
+        bcs +                   ; (the text cannot end before the top)
+        jsr ptr_to_off
+        lda off                 ; does the next row start before the top?
+        cmp .top
+        lda off+1
+        sbc .top+1
+        bcc -                   ; yes: one more row
++       lda .k+1                ; enough rows?
+        bne .enough
+        lda .k
+        cmp .need
+        bcs .enough
+        lda .need               ; no: take them all, and go on with the
+        sec                     ; line before
+        sbc .k
+        sta .need
+        lda .lstart
+        sta ptr
+        lda .lstart+1
+        sta ptr+1
+        jsr ptr_to_off
+        lda off
+        sta .top
+        lda off+1
+        sta .top+1
+        jmp .line
+.enough lda .need                ; yes: the new top is row k - need of it,
+        cmp #RING               ; noted in the ring: RING slots after row k
+        bcs .walk               ; would go, minus need
+        lda .ri
+        sec
+        sbc .need
+        bcs +
+        adc #RING
++       tax
+        lda .ring_lo,x
+        sta ptr
+        lda .ring_hi,x
+        sta ptr+1
+        jmp .set
+.walk   sec                     ; (need is too big for the ring: walk to
+        lda .k                  ; that row from the line start)
+        sbc .need
+        sta .k
+        lda .k+1
+        sbc #0
+        sta .k+1
+        lda .lstart
+        sta ptr
+        lda .lstart+1
+        sta ptr+1
+-       lda .k
+        ora .k+1
+        beq .set
+        jsr row_next
+        lda .k
+        bne +
+        dec .k+1
++       dec .k
+        jmp -
+.at_start
+        jsr set_ptr             ; (off = 0: the start of the text)
+.set    jsr set_top_ptr         ; the color and reverse state there too
+        clc
+        rts
+.need   !byte 0
+.top    !word 0
+.lstart !word 0
+.k      !word 0
+RING    = 25                    ; row starts noted (one more than 24 rows)
+.ri     !byte 0                 ; the next slot
+.ring_lo !fill RING, 0
+.ring_hi !fill RING, 0
+
+;----------------------------------------------------------------------------
+; Scrolling one row: what is on the screen moves over by a row, and only
+; the new row is drawn - far quicker than drawing all 25 rows again.
+;----------------------------------------------------------------------------
+
+; view_down - the text moves up a row on the screen (row 1 becomes the top
+; row). The row below the screen (row 25) must exist: the text goes on.
+!zone view_down
+view_down
+        ldx #0                  ; the row tables move up a row
+-       lda row_off_lo+1,x
+        sta row_off_lo,x
+        lda row_off_hi+1,x
+        sta row_off_hi,x
+        lda row_color+1,x
+        sta row_color,x
+        lda row_rvs+1,x
+        sta row_rvs,x
+        lda row_len_lo+1,x
+        sta row_len_lo,x
+        lda row_len_hi+1,x
+        sta row_len_hi,x
+        inx
+        cpx #MROWS-1
+        bne -
+        lda #0                  ; and so do the screen rows
+        sta .r
+-       ldx .r                  ; row r+1 to row r, from the top down
+        ldy .r
+        inx
+        jsr copy_row
+        inc .r
+        lda .r
+        cmp #ROWS-1
+        bne -
+        ldx #ROWS-1             ; draw the new bottom row (and measure the
+        jmp redraw_from         ; one below it)
+.r      !byte 0
+
+; view_up - the text moves down a row on the screen (the row above the top
+; becomes the top row). Carry set if the top is the start of the text
+; already (then nothing happens).
+!zone view_up
+view_up
         lda row_off_lo
         ora row_off_hi
         bne +
         sec
         rts
-+       lda row_off_lo          ; limit = the byte just before the top
-        sta off
++       lda row_off_lo          ; the old top: from here on the rows are
+        sta edit_end            ; as they were (for redraw_from, below)
         lda row_off_hi
-        sta off+1
-        jsr set_ptr
-        lda ptr
-        bne +
-        dec ptr+1
-+       dec ptr
-        lda ptr
-        sta limit
-        lda ptr+1
-        sta limit+1
-        jsr find_row_start
-        jsr set_top_ptr
+        sta edit_end+1
+        ldx #MROWS-2            ; the row tables move down a row (row 0
+-       lda row_off_lo,x        ; stays for now: rows_back works from it)
+        sta row_off_lo+1,x
+        lda row_off_hi,x
+        sta row_off_hi+1,x
+        lda row_color,x
+        sta row_color+1,x
+        lda row_rvs,x
+        sta row_rvs+1,x
+        lda row_len_lo,x
+        sta row_len_lo+1,x
+        lda row_len_hi,x
+        sta row_len_hi+1,x
+        dex
+        bpl -
+        lda #ROWS-2             ; and so do the screen rows
+        sta .r
+-       ldx .r                  ; row r to row r+1, from the bottom up
+        ldy .r
+        iny
+        jsr copy_row
+        dec .r
+        bpl -
+        lda eof_row             ; the end of the text: a row lower, too
+        cmp #MROWS-1
+        bcs +
+        inc eof_row
+        bne ++                  ; (always)
++       lda #$ff                ; (was in row 25: now below it)
+        sta eof_row
+++      lda #1                  ; the new top row
+        jsr rows_back
+        lda #0                  ; draw it; redraw_from stops at the next
+        sta edit_delta          ; row that starts where it did before (the
+        sta edit_delta+1        ; old top), with nothing moved
+        lda #1
+        sta can_stop
+        ldx #0
+        jsr redraw_from
+        lda #0
+        sta can_stop
         clc
         rts
+.r      !byte 0
 
-; scroll_down_one - move the top of the screen down one row (row 1 becomes
-; row 0; does not redraw).
-!zone scroll_down_one
-scroll_down_one
-        lda row_off_lo+1
-        sta row_off_lo
-        lda row_off_hi+1
-        sta row_off_hi
-        lda row_color+1
-        sta row_color
-        lda row_rvs+1
-        sta row_rvs
+; copy_row - copy screen row X to row Y: characters and colors
+!zone copy_row
+copy_row
+        lda row_lo,x
+        sta ptr
+        lda row_hi,x
+        sta ptr+1
+        lda row_lo,y
+        sta ptr2
+        lda row_hi,y
+        sta ptr2+1
+        ldy #39
+-       lda (ptr),y
+        sta (ptr2),y
+        dey
+        bpl -
+        lda ptr+1               ; the same for the colors
+        clc
+        adc #>(COLOR_RAM - SCREEN)
+        sta ptr+1
+        lda ptr2+1
+        clc
+        adc #>(COLOR_RAM - SCREEN)
+        sta ptr2+1
+        ldy #39
+-       lda (ptr),y
+        sta (ptr2),y
+        dey
+        bpl -
         rts
 
 ;============================================================================
@@ -870,9 +1438,13 @@ redraw_all
 ; be the same as before: a row after the edit (old offset >= edit_end)
 ; that starts where it did before, moved by edit_delta, in the same state.
 ; The rows below it then only need their offsets moved by edit_delta.
+; Afterwards the page marker shows the new position.
 !zone redraw_from
 redraw_from
-        stx .row
+        jsr .rows
+        jmp update_marker
+
+.rows   stx .row
         lda #0                  ; marked text: reversed on the screen
         sta .in_sel
         lda sel_on
@@ -970,7 +1542,14 @@ redraw_from
         sta row_rvs,x
         jsr .row_ptrs
         lda #0
-        sta .col
+        sta .col                ; screen column
+        sta .lcol               ; column in the row (wrap off: in the line)
+        sta .lcol+1
+        sta .brk_col            ; no space seen yet
+        lda hscroll             ; columns to leave out on the left
+        sta .skip               ; (always 0 with word wrap)
+        lda hscroll+1
+        sta .skip+1
 
 .pos    lda sel_on              ; the start or end of the marked part?
         beq .gap
@@ -1000,7 +1579,7 @@ redraw_from
         sta ptr
         lda gap_end+1
         sta ptr+1
-.read   lda ptr+1           ; the end of the text?
+.read   lda ptr+1               ; the end of the text?
         cmp text_end+1
         bcc +                   ; (quick: a whole page before it)
         bne .to_eof
@@ -1020,36 +1599,88 @@ redraw_from
         jmp .pos
 .not_color
         cmp #CT_CHAR
-        bne .not_char
-        txa                     ; a character: put it on the screen
-        jsr petscii_to_screen
+        beq .char
+        jmp .not_char
+
+.char   inc .lcol               ; a character (X = it)
+        bne +
+        inc .lcol+1
++       lda .skip               ; scrolled off the left (wrap off)?
+        ora .skip+1
+        beq .draw
+        lda .skip
+        bne +
+        dec .skip+1
++       dec .skip
+        jmp .pos
+.draw   ldy .col
+        cpy #40
+        bcs .to_pos             ; past the right edge (wrap off): not shown
+        stx .ch
+        lda scrcode,x           ; put it on the screen
         ora .rvs
         eor .in_sel             ; (marked: shown the other way round)
-        ldy .col
         sta (scr),y
         lda .color
         sta (clr),y
         iny
         sty .col
-        cpy #40
-        bcs +
-        jmp .pos
-+       ldx .row                ; 40 characters: the row is full
-        lda #40
-        sta row_len,x
+        lda wrap_on
+        beq .to_pos             ; wrap off: the row goes on to the line end
+        lda .ch                 ; a space: the row may end after it, so
+        cmp #$20                ; remember how things are there
+        bne +
+        sty .brk_col
+        lda ptr
+        sta .brk
+        lda ptr+1
+        sta .brk+1
+        lda .color
+        sta .brk_color
+        lda .rvs
+        sta .brk_rvs
+        lda .in_sel
+        sta .brk_sel
++       cpy #40
+        bcs .full
+.to_pos jmp .pos
+
+.full   lda .brk_col            ; 40 characters: the row is full. It ends
+        beq .cut                ; after its last space, if it has one
+        cmp #40                 ; (none: the word is cut at 40; or the
+        bcs .cut                ; 40th character is the space itself)
+        sta .col                ; The word after the space starts the next
+        lda .brk                ; row: blank it here, and go back to it.
+        sta ptr
+        lda .brk+1
+        sta ptr+1
+        lda .brk_color
+        sta .color
+        lda .brk_rvs
+        sta .rvs
+        lda .brk_sel
+        sta .in_sel
+        jsr .fill
+.cut    ldx .row
+        lda .col
+        sta row_len_lo,x
+        lda #0
+        sta row_len_hi,x
         jmp .next_row
+
 .not_char
         cmp #CT_EOL
         bne .not_eol
-        ldx .row                ; line end: one more cursor place, then
-        ldy .col                ; blank to the end of the row
-        iny
-        tya
-        sta row_len,x
-        jsr .fill
+        jsr .line_end           ; line end: one more cursor place, then
+                                ; blank to the end of the row
         lda .in_sel             ; a marked line end: a reversed space
-        beq +
+        beq +                   ; (if it is on the screen)
+        lda .skip
+        ora .skip+1
+        bne +
         ldy .col
+        cpy #40
+        bcs +
         lda #$a0
         sta (scr),y
 +       lda #0                  ; a line end also ends reverse
@@ -1085,17 +1716,14 @@ redraw_from
 
 .eof    ldx .row                ; end of the text, in this row
         stx eof_row
-        ldy .col
-        iny                     ; (one cursor place after the last byte)
-        tya
-        sta row_len,x
-        jsr .fill
+        jsr .line_end           ; (one cursor place after the last byte)
 -       inc .row                ; the rows below are empty
         ldx .row
         cpx #MROWS
         bcs +
         lda #0
-        sta row_len,x
+        sta row_len_lo,x
+        sta row_len_hi,x
         jsr .row_ptrs
         lda #0
         sta .col
@@ -1117,6 +1745,19 @@ redraw_from
         cpx #MROWS
         bcc -
         rts
+
+; .line_end - the row ends with a line end or the end of the text: its
+; cursor places are its characters plus one; blank the rest of the row.
+.line_end
+        ldx .row
+        clc
+        lda .lcol
+        adc #1
+        sta row_len_lo,x
+        lda .lcol+1
+        adc #0
+        sta row_len_hi,x
+        ; (falls into .fill)
 
 ; .fill - blank the row from .col to the end
 .fill   ldy .col
@@ -1154,6 +1795,9 @@ redraw_from
 
 .row    !byte 0
 .col    !byte 0
+.lcol   !word 0
+.skip   !word 0
+.ch     !byte 0
 .color  !byte 0
 .rvs    !byte 0
 .old_eof !byte 0
@@ -1161,6 +1805,11 @@ redraw_from
 .in_sel !byte 0                 ; $80 while drawing marked text
 .sel_a  !word 0                 ; addresses where the marked part starts
 .sel_b  !word 0                 ; and ends
+.brk_col !byte 0                ; word wrap: the column after the last
+.brk    !word 0                 ; space in the row, the address there,
+.brk_color !byte 0              ; and the state there
+.brk_rvs !byte 0
+.brk_sel !byte 0
 
 redraw_stop     !byte MROWS     ; redraw_from draws up to (not including)
                                 ; this row
@@ -1170,13 +1819,41 @@ edit_end        !word 0         ; old offset just after the edited part
 edit_delta      !word 0         ; how much longer the text got (signed)
 old_len         !word 0         ; text length before the edit
 
+; update_marker - the page marker (grey on the side borders) shows which
+; part of the document is on the screen: from the offset of the top row to
+; the offset just below the bottom row, out of the whole text. (Offsets,
+; not lines: they are known already, cost nothing to keep up to date, and
+; work the same with and without word wrap.)
+!zone update_marker
+update_marker
+        jsr text_len
+        lda work
+        sta mk_total
+        sta mk_last
+        lda work+1
+        sta mk_total+1
+        sta mk_last+1
+        lda row_off_lo
+        sta mk_first
+        lda row_off_hi
+        sta mk_first+1
+        lda eof_row             ; the end of the text on the screen?
+        cmp #ROWS
+        bcc +                   ; yes: the screen goes to the end
+        lda row_off_lo+ROWS     ; no: to where row 25 (below it) starts
+        sta mk_last
+        lda row_off_hi+ROWS
+        sta mk_last+1
++       jmp marker_set
+
 ;============================================================================
 ; Where is the cursor on the screen?
 ;============================================================================
 
 ; locate_cursor - find the cursor's row and column, and the typing color
-; and reverse state there (cur_row, cur_col, cur_color, cur_rvs).
-; Carry set if it is not on the screen: A = 0 above it, 1 below it.
+; and reverse state there (cur_row, cur_lcol, cur_col, cur_color, cur_rvs).
+; Carry set if it is not on the screen: A = 0 above it, 1 below it, 2 off
+; to the side (word wrap off; cur_col is then $ff).
 !zone locate_cursor
 locate_cursor
         jsr get_cursor_off      ; work = cursor offset
@@ -1205,8 +1882,9 @@ locate_cursor
         bcs .find
 .last   dex
         cpx #ROWS
-        bcs .below
-        stx cur_row
+        bcc +
+        jmp .below
++       stx cur_row
 
         lda row_off_lo,x        ; walk the row up to the cursor
         sta off
@@ -1219,7 +1897,8 @@ locate_cursor
         lda row_rvs,x
         sta cur_rvs
         lda #0
-        sta cur_col
+        sta cur_lcol
+        sta cur_lcol+1
 .walk   lda ptr
         cmp gap_start
         bne +
@@ -1238,7 +1917,9 @@ locate_cursor
         jmp .walk
 +       cmp #CT_CHAR
         bne +
-        inc cur_col
+        inc cur_lcol
+        bne .walk
+        inc cur_lcol+1
         jmp .walk
 +       cmp #CT_RVSON
         bne +
@@ -1250,7 +1931,22 @@ locate_cursor
         lda #0
         sta cur_rvs
         jmp .walk
-.done   clc
+.done   sec                     ; the screen column: cur_lcol - hscroll,
+        lda cur_lcol            ; if that is 0-39
+        sbc hscroll
+        tax
+        lda cur_lcol+1
+        sbc hscroll+1
+        bne .side               ; (left of the screen, or far right)
+        cpx #40
+        bcs .side
+        stx cur_col
+        clc
+        rts
+.side   lda #$ff
+        sta cur_col
+        lda #2
+        sec
         rts
 .above  lda #0
         sec
@@ -1265,21 +1961,65 @@ locate_cursor
 ensure_visible
 -       jsr locate_cursor
         bcc .ok
-        cmp #0
-        bne .below
+        cmp #1
+        beq .below
+        bcs .side
         ; Above the top: the row holding the cursor becomes the top row.
+        jsr .cursor_row
+        jsr redraw_all
+        jmp -
+.ok     rts
+
+.below  ; Just one row below the screen (in row 25)? Then scroll one row.
+        lda row_off_lo+ROWS
+        sta off
+        lda row_off_hi+ROWS
+        sta off+1
+        jsr set_ptr
+        jsr row_next            ; where row 26 would start
+        bcs .one                ; (the text ends in row 25)
+        jsr ptr_to_off
+        jsr get_cursor_off
+        lda work                ; the cursor before row 26?
+        cmp off
+        lda work+1
+        sbc off+1
+        bcc .one
+        ; Further down (a big paste, say): the row holding the cursor
+        ; becomes the bottom row, in one go.
+        jsr .cursor_row
+        lda #ROWS-1
+        jsr rows_back
+        jsr redraw_all
+        jmp -
+.one    jsr view_down
+        jmp -
+
+.side   ; Off to the side (word wrap off): the view jumps so the cursor is
+        ; in the middle column, or at its place if that is near the start.
+        lda #0
+        sta hscroll
+        sta hscroll+1
+        sec
+        lda cur_lcol
+        sbc #20
+        tax
+        lda cur_lcol+1
+        sbc #0
+        bcc +                   ; column < 20: no scrolling
+        sta hscroll+1
+        stx hscroll
++       jsr redraw_all
+        jmp -
+
+; .cursor_row - the row holding the cursor becomes the top row
+.cursor_row
         lda gap_start
         sta limit
         lda gap_start+1
         sta limit+1
         jsr find_row_start
-        jsr set_top_ptr
-        jsr redraw_all
-        jmp -
-.below  jsr scroll_down_one     ; below the bottom: scroll down a row
-        jsr redraw_all
-        jmp -
-.ok     rts
+        jmp set_top_ptr
 
 ;============================================================================
 ; The cursor on the screen
@@ -1301,6 +2041,9 @@ under_color     !byte 0
 !zone cursor_show
 cursor_show
         jsr cursor_hide
+        lda cur_col
+        cmp #40
+        bcs +                   ; not on the screen (off to the side)
         ldx cur_row
         cpx #ROWS
         bcs +                   ; not on the screen
@@ -1402,6 +2145,7 @@ insert_byte
 +       txa
         ldy #0
         sta (gap_start),y
+        jsr count_color
         inc gap_start
         bne +
         inc gap_start+1
@@ -1430,6 +2174,7 @@ insert_after
         txa
         ldy #0
         sta (gap_end),y
+        jsr count_color
         lda #1
         sta modified
         clc
@@ -1471,8 +2216,14 @@ after_edit
         lda #0
         sta can_stop
         jsr ensure_visible
-        lda cur_col
+        jmp set_want_col
+
+; set_want_col - aim for the cursor's column when moving up and down
+set_want_col
+        lda cur_lcol
         sta want_col
+        lda cur_lcol+1
+        sta want_col+1
         rts
 
 ; leave_cursor - tidy the codes at the cursor before it moves away.
@@ -1557,12 +2308,12 @@ overwrite_next
 ; joins it to the line above.
 !zone delete_left
 delete_left
-        lda cur_row             ; at the top left of the screen? show the
-        ora cur_col             ; row above first, so what gets deleted is
-        bne +                   ; on the screen
-        jsr scroll_up_one
+        lda cur_row             ; at the start of the top row? show the
+        ora cur_lcol            ; row above first, so what gets deleted is
+        ora cur_lcol+1          ; on the screen
+        bne +
+        jsr view_up
         bcs .none               ; nothing above: the start of the text
-        jsr redraw_all
         jsr locate_cursor
 +       jsr begin_edit
 -       jsr gap_left            ; bring the byte to delete next to the gap
@@ -1699,9 +2450,7 @@ cursor_left
 ; moved - after a sideways move: keep the cursor on the screen, and aim
 ; for this column when moving up and down.
 moved   jsr ensure_visible
-        lda cur_col
-        sta want_col
-        rts
+        jmp set_want_col
 
 ; cursor_down, cursor_up - one screen row down or up, aiming for want_col.
 !zone cursor_down
@@ -1712,8 +2461,7 @@ cursor_down
         beq .none               ; already on the last row of the text
         cpx #ROWS-1
         bcc +
-        jsr scroll_down_one     ; on the bottom row: scroll first
-        jsr redraw_all
+        jsr view_down           ; on the bottom row: scroll first
         ldx #ROWS-2
 +       inx
         jmp goto_row
@@ -1723,9 +2471,8 @@ cursor_up
         jsr leave_cursor
         ldx cur_row
         bne +
-        jsr scroll_up_one       ; on the top row: scroll first
+        jsr view_up             ; on the top row: scroll first
         bcs .none               ; the start of the text
-        jsr redraw_all
         ldx #1
 +       dex
         jmp goto_row
@@ -1735,24 +2482,37 @@ cursor_up
 !zone goto_row
 goto_row
         stx .row
-        lda row_len,x           ; last place in the row: len - 1
-        sec
+        sec                     ; last place in the row: len - 1
+        lda row_len_lo,x
         sbc #1
-        cmp want_col
-        bcc +
+        sta .col
+        lda row_len_hi,x
+        sbc #0
+        sta .col+1
+        lda want_col            ; want_col, if the row reaches that far
+        cmp .col
+        lda want_col+1
+        sbc .col+1
+        bcs +
         lda want_col
-+       sta .col
-        lda row_off_lo,x        ; walk the row to that column
+        sta .col
+        lda want_col+1
+        sta .col+1
++       lda row_off_lo,x        ; walk the row to that column
         sta off
         lda row_off_hi,x
         sta off+1
         jsr set_ptr
         lda #0
         sta .n
+        sta .n+1
 .walk   lda .n
         cmp .col
+        bne +
+        lda .n+1
+        cmp .col+1
         beq .there
-        lda ptr                 ; (jump over the gap)
++       lda ptr                 ; (jump over the gap)
         cmp gap_start
         bne +
         lda ptr+1
@@ -1772,14 +2532,17 @@ goto_row
         cmp #CT_CHAR
         bne .walk
         inc .n
+        bne .walk
+        inc .n+1
         jmp .walk
 .there  jsr ptr_to_off
         jsr move_gap_to
         jsr skip_codes
-        jmp locate_cursor
+        jmp ensure_visible      ; (word wrap off: the view may need to move
+                                ; sideways)
 .row    !byte 0
-.col    !byte 0
-.n      !byte 0
+.col    !byte 0,0
+.n      !byte 0,0
 
 ; page_down (F5), page_up (F3) - move a screenful: the screen scrolls by
 ; 24 rows and the cursor keeps its place on the screen.
@@ -1808,19 +2571,14 @@ page_down
 
 page_up
         jsr leave_cursor
-        lda #ROWS-1
-        sta .count
--       jsr scroll_up_one
-        bcs +                   ; reached the start of the text
-        dec .count
-        bne -
-+       jsr redraw_all
+        lda #ROWS-1             ; 24 rows up (or to the start of the text)
+        jsr rows_back
+        jsr redraw_all
         ldx cur_row
         cpx eof_row
         bcc +
         ldx eof_row
 +       jmp goto_row
-.count  !byte 0
 
 ; home_key - HOME: to the start of the line; if already there, to the top
 ; of the document.
@@ -1848,54 +2606,25 @@ home_key
         lda ctype,x
         cmp #CT_EOL
         beq .at_start           ; a line end: the cursor is at a line start
-        ; Go to the start of this line.
--       jsr move_left
-        bcs +
-        ldy #0                  ; stop when the byte before is a line end
-        jsr .byte_before
-        cmp #CT_EOL
-        bne -
-+       jmp moved
+        ; Go to the start of this line, in one move (after any codes there).
+        lda gap_start
+        sta ptr
+        lda gap_start+1
+        sta ptr+1
+        jsr line_start
+        jsr ptr_to_off
+        jsr move_gap_to
+        jsr skip_codes
+        jmp moved
 .at_start                       ; already at a line start: top of document
         lda #0
         sta off
         sta off+1
         jsr move_gap_to
         jsr skip_codes
-        lda #0
-        sta row_off_lo
-        sta row_off_hi
-        sta row_rvs
-        lda text_color
-        sta row_color
+        jsr empty_view          ; (the top of the screen at the start)
         jsr redraw_all
         jmp moved
-
-; .byte_before - A = ctype of the last visible byte before the cursor
-; (CT_EOL at the start of the text)
-.byte_before
-        lda gap_start
-        sta ptr
-        lda gap_start+1
-        sta ptr+1
--       lda ptr
-        cmp #<BUF_START
-        bne +
-        lda ptr+1
-        cmp #>BUF_START
-        beq .eol
-+       lda ptr
-        bne +
-        dec ptr+1
-+       dec ptr
-        ldy #0
-        lda (ptr),y
-        jsr is_visible
-        bcs -
-        lda ctype,x
-        rts
-.eol    lda #CT_EOL
-        rts
 
 ;============================================================================
 ; Marked text (the selection) and the clipboard
@@ -1985,6 +2714,8 @@ sel_to_gap
         lda sel_s+1
         sta off+1
         jsr move_gap_to
+        lda #0                  ; (the marked text may start above the top
+        sta top_known           ; of the screen: its state may change)
         lda gap_start
         sta ptr
         lda gap_start+1
@@ -2010,7 +2741,7 @@ take_byte
         dec sel_len+1
 +       dec sel_len
         pla
-        rts
+        jmp uncount_color       ; (keeps A)
 
 ; sel_left - Z clear if marked bytes are left to take
 sel_left
@@ -2063,17 +2794,12 @@ show_cursor_at
         sta limit+1
         jsr find_row_start      ; the row the cursor is in goes on top ...
         jsr set_top_ptr
--       lda .n                  ; ... then back up X rows
+        lda .n                  ; ... then back up X rows
         beq +
-        jsr scroll_up_one
-        bcs +
-        dec .n
-        jmp -
+        jsr rows_back
 +       jsr redraw_all
-        jsr locate_cursor
-        lda cur_col             ; (aim for this column moving up/down)
-        sta want_col
-        rts
+        jsr ensure_visible      ; (word wrap off: it may be off to the side)
+        jmp set_want_col        ; (aim for this column moving up/down)
 .n      !byte 0
 
 ; gap_size - work = the free space (the gap)
@@ -2670,52 +3396,87 @@ no_room
         rts
 
 ; block_copy_fwd - copy blk_count bytes from ptr to ptr2, first byte first
-; (for moving to lower addresses)
+; (for moving to lower addresses). Whole pages first, with Y running
+; through each page, then the rest. Leaves ptr and ptr2 just after the
+; bytes, and blk_count 0.
 !zone block_copy_fwd
 block_copy_fwd
         ldy #0
--       lda blk_count
-        ora blk_count+1
-        beq +
-        lda (ptr),y
+        ldx blk_count+1         ; whole pages
+        beq .rest
+.page   lda (ptr),y
         sta (ptr2),y
-        inc ptr
-        bne ++
+        iny
+        bne .page
         inc ptr+1
-++      inc ptr2
-        bne ++
         inc ptr2+1
-++      lda blk_count
-        bne ++
-        dec blk_count+1
-++      dec blk_count
-        jmp -
-+       rts
+        dex
+        bne .page
+.rest   ldx blk_count           ; the rest
+        beq .done
+-       lda (ptr),y
+        sta (ptr2),y
+        iny
+        dex
+        bne -
+        tya                     ; the pointers past them
+        clc
+        adc ptr
+        sta ptr
+        bcc +
+        inc ptr+1
++       tya
+        clc
+        adc ptr2
+        sta ptr2
+        bcc .done
+        inc ptr2+1
+.done   lda #0
+        sta blk_count
+        sta blk_count+1
+        rts
 
 ; block_copy_back - copy blk_count bytes ending just before ptr to just
-; before ptr2, last byte first (for moving to higher addresses)
+; before ptr2, last byte first (for moving to higher addresses). The odd
+; bytes at the top first, then whole pages below them. Leaves ptr and ptr2
+; at the start of the bytes, and blk_count 0.
 !zone block_copy_back
 block_copy_back
-        ldy #0
--       lda blk_count
-        ora blk_count+1
-        beq +
+        sec                     ; the pointers down by the odd bytes
         lda ptr
-        bne ++
+        sbc blk_count
+        sta ptr
+        bcs +
         dec ptr+1
-++      dec ptr
++       sec
         lda ptr2
-        bne ++
+        sbc blk_count
+        sta ptr2
+        bcs +
         dec ptr2+1
-++      dec ptr2
++       ldy blk_count           ; the odd bytes, top one first
+        beq .pages
+-       dey
         lda (ptr),y
         sta (ptr2),y
-        lda blk_count
-        bne ++
-        dec blk_count+1
-++      dec blk_count
-        jmp -
-+       rts
+        tya
+        bne -
+.pages  ldx blk_count+1         ; then whole pages, going down
+        beq .done
+-       dec ptr+1
+        dec ptr2+1
+        ldy #0
+--      dey                     ; (255 down to 0)
+        lda (ptr),y
+        sta (ptr2),y
+        tya
+        bne --
+        dex
+        bne -
+.done   lda #0
+        sta blk_count
+        sta blk_count+1
+        rts
 
 ;============================================================================
 ; Other keys
@@ -2727,6 +3488,18 @@ toggle_mode
         eor #1
         sta edit_mode
         rts
+
+; toggle_wrap - CTRL-W (until the menu arrives in phase 8): word wrap on
+; <-> off. The cursor stays on its screen row.
+toggle_wrap
+        lda wrap_on
+        eor #1
+        sta wrap_on
+        lda #0                  ; (word wrap never scrolls sideways)
+        sta hscroll
+        sta hscroll+1
+        ldx cur_row
+        jmp show_cursor_at
 
 ; next_background - SHIFT + F7: the next text background color, through all
 ; 16. (Text in the same color as the background disappears, as in BASIC;
@@ -2803,6 +3576,9 @@ editor_key
 +       cmp #KEY_V              ; CTRL-V: paste
         bne +
         jmp paste
++       cmp #KEY_W              ; CTRL-W: word wrap on/off (for now; the
+        bne +                   ; main menu takes over in phase 8)
+        jmp toggle_wrap
 +       cmp #KEY_A              ; CTRL-A: mark everything
         bne .keys
         jmp select_all

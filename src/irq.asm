@@ -556,14 +556,18 @@ irq_mark_bot    !byte 0         ; line where it turns back to dark grey
 ;============================================================================
 ; Page position marker math
 ;
-; Call marker_set with mk_first = first visible line and mk_total = total
-; lines in the document. It works out the band of side border lines:
+; Call marker_set with mk_first = where the screen starts in the document,
+; mk_last = where it ends, and mk_total = the size of the whole document,
+; all in the same unit (the editor uses bytes: see update_marker). It
+; works out the band of side border lines:
 ;   top    = 51 + 200 * first / total
-;   height = max(8, 200 * 25 / total)
+;   bottom = 51 + 200 * last / total, but at least 8 lines below the top
 ; and hands the result to the housekeeping IRQ, which switches over
 ; between frames so the IRQ chain never sees half-updated values.
+; When all of the document is on the screen, the band is the whole side.
 ;============================================================================
 mk_first        !word 0
+mk_last         !word 0
 mk_total        !word 0
 band_top        !byte 0         ; first grey line
 band_bot        !byte 0         ; first dark grey line after the band
@@ -575,61 +579,36 @@ marker_pending  !byte 0
 
 !zone marker_set
 marker_set
-        lda mk_total+1          ; 25 lines or fewer: all of it is visible
-        bne .big
-        lda mk_total
-        cmp #26
-        bcs .big
-        lda #51
+        lda #51                 ; an empty document: all of it is visible
         sta band_top
         lda #251
         sta band_bot
-        jmp .place
-
-.big    ; top = 51 + 200 * first / total
-        lda mk_first
-        sta math_num
-        lda mk_first+1
-        sta math_num+1
-        lda #200
-        sta math_mul
-        jsr mul_16x8
         lda mk_total
-        sta math_div
-        lda mk_total+1
-        sta math_div+1
-        jsr div_24x16
-        lda math_num+2          ; the result should be below 200; if the
-        ora math_num+1          ; input was bad, pin it at 199
-        bne .pin
-        lda math_num
-        cmp #200
-        bcc +
-.pin    lda #199
-+       clc
-        adc #51
+        ora mk_total+1
+        beq .place
+        lda mk_first            ; top
+        ldx mk_first+1
+        jsr .line
         sta band_top
-
-        ; height = 5000 / total (total is at least 26 here, so it fits
-        ; in one byte)
-        lda #<5000
-        sta math_num
-        lda #>5000
-        sta math_num+1
-        lda #0
-        sta math_num+2
-        jsr div_24x16           ; divisor is still mk_total
-        lda math_num
+        lda mk_last             ; bottom
+        ldx mk_last+1
+        jsr .line
+        sta band_bot
+        sec                     ; at least 8 lines tall
+        sbc band_top
+        bcc +                   ; (bad input: bottom above top)
         cmp #8
-        bcs +
-        lda #8                  ; at least 8 lines tall
-+       clc
-        adc band_top
-        bcs .clip               ; past line 255
+        bcs .place
++       lda band_top
+        clc
+        adc #8
+        sta band_bot
         cmp #252
-        bcc +
-.clip   lda #251                ; no further than the end of the text area
-+       sta band_bot
+        bcc .place
+        lda #251                ; no further than the end of the text area
+        sta band_bot
+        lda #251-8
+        sta band_top
 
 .place  ; Move edges off badlines (line & 7 = 3, our YSCROLL): on a badline
         ; the CPU is stopped during the text part of the line.
@@ -677,6 +656,29 @@ marker_set
 +       tya
         rts
 
+; .line - A/X = a position (low/high byte). Returns A = the raster line
+; 51 + 200 * position / mk_total (at most 251).
+.line   sta math_num
+        stx math_num+1
+        lda #200
+        sta math_mul
+        jsr mul_16x8
+        lda mk_total
+        sta math_div
+        lda mk_total+1
+        sta math_div+1
+        jsr div_24x16
+        lda math_num+2          ; the result is at most 200 when position
+        ora math_num+1          ; <= total; pin anything bigger at 200
+        bne .pin
+        lda math_num
+        cmp #201
+        bcc +
+.pin    lda #200
++       clc
+        adc #51
+        rts
+
 ; marker_apply - copy the new marker values into the IRQ variables.
 ; Called by the housekeeping IRQ (and once at start-up).
 marker_apply
@@ -690,18 +692,11 @@ marker_apply
         sta marker_pending
         rts
 
-; init_marker - phase 1: a made-up position (line 40 of 160).
-; (A test build can pick another with -DFAKE_FIRST=... -DFAKE_TOTAL=...)
-!ifndef FAKE_FIRST { FAKE_FIRST = 40 }
-!ifndef FAKE_TOTAL { FAKE_TOTAL = 160 }
+; init_marker - start with an empty document: all of it visible. (The
+; editor updates the marker after every redraw: update_marker.)
 init_marker
-        lda #<FAKE_FIRST
-        sta mk_first
-        lda #>FAKE_FIRST
-        sta mk_first+1
-        lda #<FAKE_TOTAL
+        lda #0
         sta mk_total
-        lda #>FAKE_TOTAL
         sta mk_total+1
         jsr marker_set
         jmp marker_apply

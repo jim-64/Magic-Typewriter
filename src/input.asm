@@ -59,6 +59,7 @@ KEY_C           = 20
 KEY_V           = 31
 KEY_A           = 10
 KEY_N           = 39
+KEY_W           = 9
 
 ; Events that are not a single key
 KEY_CHARSET     = $40           ; C= and SHIFT pressed and let go alone
@@ -242,6 +243,11 @@ scan_keyboard
 .repeat clc                     ; ... or went past it: repeat now, and
         adc #REPEAT_RATE        ; count the next wait from where this one
         sta key_timer           ; ended (so PAL averages out to 15/second)
+        lda key_q_head          ; ... but only if the program has taken all
+        cmp key_q_tail          ; the earlier events: when a key's job takes
+        bne .no_repeat          ; longer than the repeat (scrolling a big
+                                ; document), repeats must not pile up and
+                                ; carry on after the key is let go
         lda key_mods
         ora #MOD_REPEAT
         tax
@@ -550,12 +556,17 @@ mailbox_poll
         lda MB_DOC_READY        ; a test document in the buffer?
         beq +
         jsr test_document
-+       lda MB_MK_GO
-        beq +
++       lda MB_MK_GO            ; the harness moves the marker: first line
+        beq +                   ; and total lines, 25 lines on the screen
         lda MB_MK_FIRST
         sta mk_first
+        clc
+        adc #25
+        sta mk_last
         lda MB_MK_FIRST+1
         sta mk_first+1
+        adc #0
+        sta mk_last+1
         lda MB_MK_TOTAL
         sta mk_total
         lda MB_MK_TOTAL+1
@@ -577,14 +588,10 @@ test_document
         jsr cursor_hide
         lda #0
         sta MB_DOC_READY
-        sta row_off_lo          ; the top of the screen at the start
-        sta row_off_hi
-        sta row_rvs
         sta modified
-        sta want_col
         sta sel_on
-        lda text_color
-        sta row_color
+        jsr empty_view          ; the top of the screen at the start
+        jsr count_colors
         jsr skip_codes          ; (the cursor goes after leading codes)
         jsr redraw_all
         jsr locate_cursor
