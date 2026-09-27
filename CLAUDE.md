@@ -118,10 +118,13 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   Monitor joyport command, and the 1351 buttons share the port 1 fire/up lines. **Tried in phase 2: it
   had no effect** — $DC01 stayed $FF with fire+up "pressed" on port 1 (JoyPort1Device = 1, joystick).
   So port 1 input (Mouse Gotcha 2) can only be checked by Jim for now (VICE keyset joystick on port 1).
-- **After changing `MachineVideoStandard`, do `c64_system` → `reset` before `run_prg`.** Otherwise
-  VICE's pending reset cold-starts BASIC after the load, which zeroes $0801–$0802, and RUN does nothing.
-  Values: 1 = PAL, 2 = NTSC (3 = old NTSC, 4 = PAL-N/Drean, unverified). `run_prg` itself works fine
-  after a quit to READY.
+- **Switch PAL/NTSC with `VICIIModel`, not `MachineVideoStandard`.** Setting `MachineVideoStandard`
+  back to 1 left VICE on the old NTSC chip. `VICIIModel` values: 0 = 6569 PAL, **1 = 8565 PAL (VICE's
+  default here)**, 2 = 6569R1 old PAL, 3 = 6567 NTSC, **4 = 8562 NTSC**, 5 = 6567R56A old NTSC,
+  6 = 6572 PAL-N (Drean). The mailbox's system byte (+6) confirms what the program detected.
+- **After changing the VIC model, `c64_system` → `reset` (sometimes twice) before `run_prg`**, and check
+  the mailbox signature. Otherwise VICE's pending reset cold-starts BASIC after the load, which zeroes
+  $0801–$0802, and RUN does nothing.
 - **The CPU mostly runs only between MCP calls' monitor sessions**, so frame counts advance slowly while
   Claude polls. Give injected key events time: read the mailbox again rather than assuming they are done.
 - **Watchpoints:** since 1.0.1, checkpoints honor the exact load/store/exec mask requested, so a
@@ -196,7 +199,8 @@ Features that a platform lacks (e.g. REU or mouse) must fail gracefully: detect 
 - **C64 Bridge** MCP server (see its section below).
 - Optional: **Exomizer** for the release PRG.
 - Editor: VS Code with the **VS64** extension (2.6.2 installed), which supports ACME. VS64 builds from
-  `project-config.json`.
+  `project-config.json`. Its output file is named after the project `name` there, set to
+  `magictypewriter` so VS64 and `build.bat` both write `build/magictypewriter.prg` (VS64 makes no .d64).
 - The paths above are for Jim's Windows PC. On the Ubuntu laptops, `build.sh` expects `acme` and `c1541`
   on the PATH (e.g. from the `acme` and `vice` packages); confirm versions with Jim when first set up there.
 
@@ -461,8 +465,11 @@ Ignore it, or treat it like RUN/STOP.
 - The four key tables (normal, SHIFT, C=, CTRL) are copies of the KERNAL's, in `src/data.asm`, so every
   key types what it types in BASIC. The CTRL table gives CTRL-1…8 = color codes, CTRL-9/0 = RVS on/off,
   CTRL-letters = control codes ($01 for CTRL-A …); the C= table gives C= 1…8 = the other 8 colors.
-- **All non-modifier keys repeat** (a modern editor habit; the KERNAL only repeats a few). First repeat
-  after about 0.4 s, then about 15 per second (timing table). **Ask Jim if this feels right.**
+- **All non-modifier keys repeat** (a modern editor habit; the KERNAL only repeats SPACE, INST/DEL and
+  the cursor keys), **with BASIC's timing** (Jim's choice, 2026-09-27): the KERNAL repeats 19 ticks
+  (1/60 s) after the press, then every 4 ticks (15/s). We scan once per frame, so `key_timer` counts in
+  1/300 s steps: 6 per PAL frame, 5 per NTSC frame (timing table), giving the same speed on every system.
+  Checked: a 48-frame hold gives 10 repeats on PAL and 8 on NTSC, as calculated.
 - Port 1 lines held low (joystick, mouse buttons) are read with $DC00 = $FF and masked out of the scan.
   $DC00 is left at $7F afterwards (row 7, and the SID paddles on port 1 for the mouse).
 - Character set toggle rule as built: fires when C= and a SHIFT are both let go, provided no other key

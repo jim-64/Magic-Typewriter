@@ -1,6 +1,6 @@
 {
-    "name": "Magic Typewriter",
-    "description": "Project Magic Typewriter",
+    "name": "magictypewriter",
+    "description": "Magic Typewriter - a text editor for the Commodore 64",
     "toolkit": "acme",
     "sources": [
         "src/main.asm"

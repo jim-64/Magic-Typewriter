@@ -66,6 +66,15 @@ MOD_REPEAT      = %10000000     ; event made by holding the key down
 
 KEY_QUEUE_SIZE  = 16            ; must be a power of 2
 
+; Key repeat, timed like BASIC. The KERNAL counts in "ticks" of 1/60
+; second: the first repeat comes 19 ticks after the press, then one every
+; 4 ticks (15 per second). We scan once per frame instead (50 per second
+; on PAL, 60 on NTSC), so key_timer counts in steps of 1/300 second: each
+; frame takes 6 steps off on PAL and 5 on NTSC (timing table), and the
+; same numbers give the same speed on every machine.
+REPEAT_DELAY    = 19 * 5        ; 19 ticks, in 1/300 second steps
+REPEAT_RATE     = 4 * 5         ; 4 ticks
+
 ;----------------------------------------------------------------------------
 ; Keyboard variables
 ;----------------------------------------------------------------------------
@@ -74,9 +83,8 @@ key_now         !fill 8, 0      ; matrix this frame, one byte per row,
 key_before      !fill 8, 0      ; matrix last frame
 key_mods        !byte 0         ; modifier keys held now (MOD_... bits)
 key_last        !byte $ff       ; key that repeats if held ($ff = none)
-key_timer       !byte 0         ; frames until it repeats
-key_rep_delay   !byte 0         ; frames before the first repeat  } from the
-key_rep_rate    !byte 0         ; frames between repeats          } timing table
+key_timer       !byte 0         ; time until it repeats, in 1/300 s steps
+key_step        !byte 0         ; 1/300 s steps per frame (timing table)
 key_charset     !byte 0         ; C= + SHIFT toggle: 0 = idle, 1 = both held,
                                 ; 2 = another key was pressed meanwhile
 key_restores    !byte 0         ; counts RESTORE presses (NMI handler)
@@ -107,10 +115,8 @@ not_modifier    !byte $ff, $7f, $ff, $ff, $ff, $ff, $ef, $db
 !zone init_keyboard
 init_keyboard
         ldx system_type
-        lda tab_repeat_delay,x
-        sta key_rep_delay
-        lda tab_repeat_rate,x
-        sta key_rep_rate
+        lda tab_repeat_step,x
+        sta key_step
 
         ; RESTORE makes an NMI. The KERNAL's NMI handler would warm-start
         ; BASIC on RUN/STOP + RESTORE and lose the document, so send it to
@@ -220,15 +226,21 @@ scan_keyboard
         lda #$ff                ; let go: no more repeats
         sta key_last
         bne .no_repeat
-+       dec key_timer
-        bne .no_repeat
-        lda key_rep_rate
-        sta key_timer
++       lda key_timer           ; count down by one frame's worth
+        sec
+        sbc key_step
+        beq .repeat             ; reached 0 ...
+        bcs .wait               ; still above 0
+.repeat clc                     ; ... or went past it: repeat now, and
+        adc #REPEAT_RATE        ; count the next wait from where this one
+        sta key_timer           ; ended (so PAL averages out to 15/second)
         lda key_mods
         ora #MOD_REPEAT
         tax
         lda key_last
         jsr .queue
+        jmp .no_repeat
+.wait   sta key_timer
 .no_repeat
 
         ; New key presses: down now, not down last frame, not a modifier.
@@ -254,7 +266,7 @@ scan_keyboard
         sta key_last            ; the newest key is the one that repeats
         ldx key_mods
         jsr .queue
-        lda key_rep_delay
+        lda #REPEAT_DELAY
         sta key_timer
         ldx key_row
 .next_bit
