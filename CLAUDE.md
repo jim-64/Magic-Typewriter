@@ -3,6 +3,12 @@
 **Magic Typewriter** is a small, modern-feeling text editor for the Commodore 64, written in 6502
 assembly with ACME. Use the name in the main menu title and as the PRG/disk name (`MAGIC TYPEWRITER`).
 
+## Status
+
+- **Phase 1 done** (2026-09-27), on branch `main`. Jim chose the side-border badge layout (see Border
+  icons). Branch `phase1` keeps the earlier layout (badges above/below the text area) for reference only.
+- Next: phase 2, keyboard scanner.
+
 ## Working with Jim
 
 - Jim programs BASIC and 6502 assembly on real Commodore hardware for fun. He knows the C64 well.
@@ -29,8 +35,9 @@ working program (Build Order phase 12). C64 Bridge can drive the Ultimate too, s
 2. Run the PRG in VICE with `c64_program` → `run_prg` (host path, plus `symbolsFile` for the labels).
    For file I/O phases, attach the `.d64` first with `c64_disk` → `mount`.
 3. Drive the editor with injected input (see below), then check results by reading memory
-   (screen RAM $0400, color RAM $D800, buffer, state variables) and with `c64_graphics` → `capture_frame`
-   screenshots at milestones (not after every change).
+   (screen RAM $0400, color RAM $D800, buffer, state variables) and with screenshots at milestones
+   (not after every change). `capture_frame` only returns raw pixels; use a throwaway VICE with
+   `-exitscreenshot` instead (see VICE gotchas).
 4. Repeat in **PAL, NTSC, old NTSC, and Drean**, and with REU on/off (see C64 Bridge section).
 5. When the phase passes automated checks, stop and hand Jim a **Human Test** (below).
 
@@ -47,6 +54,19 @@ VICE's emulated 1351. Release builds leave the mailbox out entirely.
 The mailbox lives at **$02C0–$02F3** (unused KERNAL RAM); its layout is documented at the top of
 `src/input.asm`. It also reports the frame counter, detected system, and page-marker results, and lets
 Claude move the page marker (write first/total lines, then 1 to `+12`).
+
+### Test builds
+
+Extra ACME `-D` options for Claude's automated checks (never in Jim's builds):
+
+| Option | What it does |
+|---|---|
+| `-DDEBUG=1` / `0` | Debug build with the test mailbox (default, and what VS64 builds) / release build |
+| `-DSPLIT_TEST=1` | Records whether each stable-raster compare saw the old or the next line; shows the flags as four white/black blocks on row 10. Also varies the main loop's length so every IRQ jitter case happens. The right wait count is the only one that gives both results. |
+| `-DBORDER_TEST=1` | Strip background green instead of blue, so a debug-borders screenshot shows which side-border lines are open |
+| `-DQUIT_TEST=1` | Quits to BASIC by itself after 256 frames (tests the restore path) |
+| `-DFAKE_FIRST=n -DFAKE_TOTAL=n` | Start-up page marker position (phase 1 fake marker) |
+| `-DTOP_PAL_CMP=n` etc. | Override any stable-raster wait count (list and method at the top of `src/irq.asm`) |
 
 ## C64 Bridge MCP (VICE)
 
@@ -210,7 +230,7 @@ build.sh            same steps (Linux)
 
 ## Display
 
-Reference mockup: `mockup-2026-09-25.png` (Jim's drawing). The **border sprites in it are pixel-exact**
+Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The **border sprites in it are pixel-exact**
 (1 image pixel = 1 C64 pixel). The text area and text in it are **not** to scale.
 
 - Text area: full **40×25**, ROM character set.
@@ -218,6 +238,8 @@ Reference mockup: `mockup-2026-09-25.png` (Jim's drawing). The **border sprites 
   upper/graphics ($D018 = $15) and upper/lower ($D018 = $17). Default: upper/lower.
 - **Open the top and bottom borders.** Raster IRQ at line $F9 clears $D011 bit 3 (24 rows); a later
   IRQ (after line $FC) sets it back.
+- **Open the side borders on the strip lines** (28–49 and 251–264) so the F3/F5 badges can sit in the
+  corners. See Border icons.
 - **No text in the borders** other than the key labels drawn into the icon sprites.
 
 ### Colors (from the mockup)
@@ -304,9 +326,8 @@ XXXXXXXX..XX...XXXX.....   $FF,$31,$E0
 ```
 Store only the rows above (13×3 or 7×3 bytes); expand into 64-byte sprite blocks at init and zero the rest.
 
-**Branch `side-border-badges` (experiment, 2026-09-27):** the badges sit in the side borders, as in
-Jim's mockup. Branch `phase1` keeps the earlier layout (badges above/below the text area, no
-side-border opening).
+**Decided (2026-09-27):** the badges sit in the side borders, as in Jim's mockup. (Branch `phase1`
+keeps the earlier layout, with the badges above/below the text area.)
 
 Vertical placement (same on PAL and NTSC), as raster lines:
 - Top badges: raster 37–49 (the mockup has 38–50, touching the text area; see below).
@@ -329,7 +350,7 @@ again at line 256+Y; sprites 1–3 are switched off after the bottom strip and b
 - **NTSC caution:** some NTSC TVs start showing around raster 41, so the top badges' 3-row tip may be
   cut off there. Check on a real NTSC TV.
 
-**Horizontal placement (side-border-badges branch, as in the mockup):**
+**Horizontal placement (as in the mockup):**
 - Left badges (sprites 2 and 4): X = 0, in the left border, touching the text area (X = 24).
 - Right badges (sprites 3 and 5): X = 344, in the right border, touching the text area. X > 255, so
   set their bits in the sprite X MSB register $D010.
@@ -338,10 +359,8 @@ again at line 256+Y; sprites 1–3 are switched off after the bottom strip and b
   in one exact cycle per line), from the two stable IRQs. An open side border shows $D021 (blue in
   the strips) plus sprites.
 - CPU cost: the two strip IRQs run from line 25 to 51 and from 247 to about 265, roughly 14% of the
-  CPU on PAL and 17% on NTSC.
-
-(Branch `phase1` layout: badges at X = 24 and X = 320 above/below the text area, menu icon centered
-at X = 172, no side-border opening.)
+  CPU on PAL and 17% on NTSC. Jim accepted this.
+- Sprites 6 and 7 are still free.
 
 ### Page position marker
 
@@ -379,7 +398,7 @@ color split at line 50 (stable) → marker top →
 marker bottom → color split at line 250 (stable) → open-border IRQ ($F9) → housekeeping (keyboard scan, cursor blink, restore 25-row mode) → mouse read
 (separate, see Mouse).
 
-As built (side-border-badges branch; see the table at the top of `src/irq.asm`): line 10 turns
+As built (see the table at the top of `src/irq.asm`): line 10 turns
 sprites 1–3 on (the mouse read goes there in phase 7); line 25 prepares the stable top IRQ; line 27
 stabilizes, opens the side borders on lines 28–49 and does the color split at the end of line 50;
 marker top/bottom; line 247 prepares the stable bottom IRQ; line 249 opens the top/bottom border, does
@@ -765,7 +784,8 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with Jim.
 
 1. System detect + IRQ chain: open top/bottom borders, color splits, 6 sprites from the mockup,
-   border-color marker at a fake position. Debug test mailbox.
+   border-color marker at a fake position. Debug test mailbox. **Done 2026-09-27**, including the
+   side-border badges.
 2. Keyboard scanner: both SHIFTs, CTRL, C=, RUN/STOP, ←, key repeat, NMI trap.
 3. Gap buffer, typing, flashing cursor (both shapes, F7 toggle), colors and reverse (rendering, color
    keys, restore codes, clean-up), INST/DEL and SHIFT-INST, RETURN, cursor movement, redraw,
