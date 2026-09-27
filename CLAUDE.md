@@ -961,9 +961,12 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
   harmless here, but will take effect if the file is later printed to screen. Leave as is?
 - Find: add Replace later? Case-sensitive option?
 - SpeedScript return marker and load address (check real files).
-- Emulator arrow keys: VICE and some modern keyboards fake SHIFT + CRSR for Up/Left. If they fake **left**
-  SHIFT, Up would mark text. **VICE: answered (phase 2)** — every VICE 3.9 keymap has `!VSHIFT RSHIFT`,
-  so Up/Left arrive as **right** SHIFT + CRSR: they only reverse direction and never mark, and PC
-  Shift+Up (left SHIFT + right SHIFT + CRSR) marks upward, as designed. Still check TheC64, MEGA65 and
-  the BlingBox in phase 12.
+- Emulator arrow keys: VICE and some modern keyboards fake SHIFT + CRSR for Up/Left. **VICE, as tested by
+  Jim (phase 5):** PC Up alone = CRSR DOWN + a *virtual right* SHIFT (`!VSHIFT RSHIFT` in every VICE 3.9
+  keymap) = cursor up, as designed. But VICE only adds that virtual SHIFT when no SHIFT is held: **PC Left
+  Shift + Up arrives as left SHIFT + CRSR DOWN — the same as Shift + Down — so it marks downward**, and the
+  editor cannot tell them apart. In VICE, mark up/left with **both PC Shift keys + Down/Right** (PC Right
+  Shift = C64 right SHIFT), exactly as on a real C64; or, once the mark-key menu exists, mark key = C=
+  (**Tab** in VICE's symbolic keymap) + PC Up works naturally. Put this in the user notes. Still check
+  TheC64, MEGA65 and the BlingBox in phase 12.
 - SHIFT LOCK engages left SHIFT, so it forces marking. Document this in the user notes.
