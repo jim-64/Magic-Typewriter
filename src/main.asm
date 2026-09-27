@@ -9,9 +9,9 @@
 ; Build: run build.bat (Windows) or build.sh (Linux), or use VS64's build.
 ;
 ; Done so far: phase 1 (system detect, raster IRQ chain, open borders,
-; color splits, page marker, border sprites, debug test mailbox) and
-; phase 2 (keyboard scanner). The main loop shows a keyboard test screen
-; until the editor arrives in phase 3. RUN/STOP quits back to BASIC.
+; color splits, page marker, border sprites, debug test mailbox), phase 2
+; (keyboard scanner) and phase 3 (the editor: typing, cursor, colors).
+; Until the menus arrive (phase 8), RUN/STOP asks QUIT Y/N.
 ;============================================================================
 
 ; DEBUG=1 builds include the test mailbox (see input.asm).
@@ -122,6 +122,7 @@ start                           ; must be at $080d = 2061
         jsr init_keyboard
         jsr init_irq
         cli
+        jsr editor_init         ; an empty document, ready to type
 
 ;============================================================================
 ; Main loop
@@ -134,32 +135,22 @@ main_loop
         lda frame_count+1       ; test builds (-DQUIT_TEST=1): quit by
         bne quit                ; themselves after 256 frames
 }
-        jsr show_held           ; phase 2 test: show the held modifier keys
+        jsr cursor_blink
         jsr get_key             ; any key event?
         bcs main_loop
 !if DEBUG {
         jsr mailbox_log_key     ; tell the test harness
+        ldx frame_count         ; and how many frames the key takes
+        stx key_start_frame
 }
-        jsr handle_key
+        jsr editor_key
+!if DEBUG {
+        lda frame_count
+        sec
+        sbc key_start_frame
+        sta MB_KEY_TIME
+}
         jmp main_loop
-
-;----------------------------------------------------------------------------
-; handle_key - A = key code, Y = modifiers (from get_key).
-; Phase 2: RUN/STOP and RESTORE quit; everything else goes to the test
-; screen. (The editor takes over in phase 3.)
-;----------------------------------------------------------------------------
-!zone handle_key
-handle_key
-        cmp #KEY_STOP
-        beq quit
-        cmp #KEY_RESTORE
-        beq quit
-        cmp #KEY_CHARSET
-        beq toggle_charset
-        sta last_code
-        sty last_mods
-        jsr show_last_key
-        jmp echo_key
 
 ;----------------------------------------------------------------------------
 ; toggle_charset - switch between the upper/graphics and the upper/lower
@@ -203,7 +194,7 @@ quit
         rts                     ; back to BASIC, which prints READY.
 
 ;----------------------------------------------------------------------------
-; init_screen - colors, character set, clear the text area, test text.
+; init_screen - VIC settings and colors. (The editor draws the text.)
 ;----------------------------------------------------------------------------
 !zone init_screen
 init_screen
@@ -217,268 +208,6 @@ init_screen
         sta VIC_BORDER
         lda #STRIP_BG
         sta VIC_BG0
-
-        ; Clear 1000 screen cells to spaces in the text color.
-        ldx #0
--       lda #$20
-        sta SCREEN,x
-        sta SCREEN+$100,x
-        sta SCREEN+$200,x
-        sta SCREEN+$2e8,x       ; last block ends at $07e7, before the
-        lda text_color          ; sprite pointers at $07f8
-        sta COLOR_RAM,x
-        sta COLOR_RAM+$100,x
-        sta COLOR_RAM+$200,x
-        sta COLOR_RAM+$2e8,x
-        inx
-        bne -
-
-        ; Phase 2 test screen (texts in data.asm)
-        lda #<test_texts
-        sta zp_ptr2
-        lda #>test_texts
-        sta zp_ptr2+1
-        jsr print_list
-
-        ; Show which video system was detected on row 2.
-        ldx system_type
-        lda system_name_offset,x
-        tax
-        ldy #0
--       lda system_names,x
-        beq +
-        sta SCREEN+2*40+1,y
-        inx
-        iny
-        bne -
-+       lda #ECHO_TOP
-        sta echo_row
-        rts
-
-;----------------------------------------------------------------------------
-; print_list - print a list of texts. zp_ptr2 points to the list:
-; for each text a row, a column, the screen codes and a 0; $ff ends it.
-;----------------------------------------------------------------------------
-!zone print_list
-print_list
-        ldy #0
-        lda (zp_ptr2),y         ; row, or $ff = end of the list
-        cmp #$ff
-        beq .end
-        tax
-        iny
-        lda (zp_ptr2),y         ; column
-        clc                     ; zp_ptr = start of the row + column
-        adc row_lo,x
-        sta zp_ptr
-        lda row_hi,x
-        adc #0
-        sta zp_ptr+1
-        lda zp_ptr2             ; step over row and column
-        clc
-        adc #2
-        sta zp_ptr2
-        bcc +
-        inc zp_ptr2+1
-+       ldy #0
--       lda (zp_ptr2),y         ; copy the text
-        beq +
-        sta (zp_ptr),y
-        iny
-        bne -
-+       iny                     ; step over the text and its 0
-        tya
-        clc
-        adc zp_ptr2
-        sta zp_ptr2
-        bcc print_list
-        inc zp_ptr2+1
-        bne print_list          ; (always)
-.end    rts
-
-;============================================================================
-; Phase 2 test screen (the editor replaces this in phase 3)
-;============================================================================
-ECHO_TOP        = 12            ; typed text goes on rows 12-23
-ECHO_BOTTOM     = 23
-
-; show_held - the "Held:" labels on row 8 show reversed while held.
-!zone show_held
-show_held
-        ldx #0                  ; index into held_labels (3 bytes each)
-        ldy #0                  ; index into held_text
-.label  lda held_labels+2,x     ; the modifier bit for this label
-        and key_mods
-        beq +
-        lda #$80                ; held: reversed characters
-+       sta .rvs
-        lda held_labels,x       ; column
-        sta .col
-        lda held_labels+1,x     ; length
-        sta .len
-        stx .x
-.char   lda held_text,y
-        ora .rvs
-        ldx .col
-        sta SCREEN+8*40,x
-        inc .col
-        iny
-        dec .len
-        bne .char
-        ldx .x
-        inx
-        inx
-        inx
-        cpx #4*3
-        bne .label
-        rts
-.rvs    !byte 0
-.col    !byte 0
-.len    !byte 0
-.x      !byte 0
-
-; show_last_key - row 9: key code in hex, the character it types, and the
-; modifiers that came with it.
-!zone show_last_key
-show_last_key
-        lda #$24                ; "$"
-        sta SCREEN+9*40+11
-        lda last_code
-        jsr hex_digits
-        stx SCREEN+9*40+12
-        sta SCREEN+9*40+13
-
-        lda last_code           ; the character it types
-        ldy last_mods
-        jsr key_to_petscii
-        bcs .blank
-        jsr petscii_to_screen
-        bcc +
-.blank  lda #$20
-+       sta SCREEN+9*40+15
-
-        lda last_mods           ; LS RS CT C=: a name for each bit that is
-        sta .bits               ; set, spaces for the others
-        ldx #0
-.mod    lsr .bits               ; next modifier bit into carry
-        ldy #3
--       lda #$20
-        bcc +
-        lda mod_names,x
-+       sta SCREEN+9*40+18,x
-        inx
-        dey
-        bne -
-        cpx #4*3
-        bne .mod
-
-        ldx #2                  ; REP for a repeat
--       lda #$20
-        bit last_mods
-        bpl +
-        lda mod_repeat,x
-+       sta SCREEN+9*40+31,x
-        dex
-        bpl -
-        rts
-.bits   !byte 0
-
-; hex_digits - A = a byte. Returns X = screen code of the high hex digit,
-; A = screen code of the low one.
-!zone hex_digits
-hex_digits
-        pha
-        lsr
-        lsr
-        lsr
-        lsr
-        jsr .digit
-        tax
-        pla
-        and #$0f
-.digit  cmp #10
-        bcc +
-        sbc #9                  ; 10-15 -> 1-6, the screen codes of A-F
-        rts                     ; (carry is set here)
-+       ora #$30                ; 0-9 -> screen codes of "0"-"9"
-        rts
-
-; echo_key - type the last key's character on rows 12-23. RETURN starts a
-; new line, DEL rubs out; other control codes are not shown.
-!zone echo_key
-echo_key
-        lda last_code
-        ldy last_mods
-        jsr key_to_petscii
-        bcs .done               ; types nothing
-        cmp #$0d                ; RETURN
-        beq .newline
-        cmp #$8d                ; SHIFT + RETURN
-        beq .newline
-        cmp #$14                ; DEL
-        beq .delete
-        jsr petscii_to_screen
-        bcs .done               ; other control codes
-        pha
-        jsr .point
-        pla
-        ldy echo_col
-        sta (zp_ptr),y
-        lda text_color
-        sta (zp_ptr2),y
-        inc echo_col
-        lda echo_col
-        cmp #40
-        bcc .done
-.newline
-        lda #0
-        sta echo_col
-        inc echo_row
-        lda echo_row
-        cmp #ECHO_BOTTOM+1
-        bcc .done
-        jmp clear_echo          ; full: clear and start at the top again
-.done   rts
-
-.delete lda echo_col
-        beq .done               ; already at the start of the line
-        dec echo_col
-        jsr .point
-        ldy echo_col
-        lda #$20
-        sta (zp_ptr),y
-        rts
-
-; .point - zp_ptr = echo_row in screen RAM, zp_ptr2 = the same in color RAM
-.point  ldx echo_row
-        lda row_lo,x
-        sta zp_ptr
-        sta zp_ptr2
-        lda row_hi,x
-        sta zp_ptr+1
-        clc
-        adc #>(COLOR_RAM - SCREEN)
-        sta zp_ptr2+1
-        rts
-
-; clear_echo - clear rows 12-23 and start typing at the top.
-clear_echo
-        lda #ECHO_TOP
-        sta echo_row
--       jsr .point
-        ldy #39
-        lda #$20
-.clear  sta (zp_ptr),y
-        dey
-        bpl .clear
-        inc echo_row
-        lda echo_row
-        cmp #ECHO_BOTTOM+1
-        bcc -
-        lda #ECHO_TOP
-        sta echo_row
-        lda #0
-        sta echo_col
         rts
 
 ;----------------------------------------------------------------------------
@@ -489,10 +218,6 @@ entry_sp        !byte 0         ; stack pointer at start-up (for quit)
 text_bg         !byte BLACK     ; text background color (setting)
 text_color      !byte LIGHT_GREY ; default text color (setting)
 
-last_code       !byte 0         ; phase 2 test screen
-last_mods       !byte 0
-echo_row        !byte 0
-echo_col        !byte 0
 
 ;----------------------------------------------------------------------------
 ; The other source files
@@ -503,7 +228,22 @@ echo_col        !byte 0
 !source "src/editor.asm"
 !source "src/data.asm"
 
-; The program must end before the sprite blocks at $3e80.
-!if * > SPRITE_BASE {
-        !error "Program has grown into the sprite blocks at $3e80"
+;----------------------------------------------------------------------------
+; Tables that need no starting values live after the program, in memory
+; that the PRG file does not have to carry. They are set up at start-up.
+;----------------------------------------------------------------------------
+program_end
+ctype           = program_end           ; 256: what each byte of text is
+row_off_lo      = ctype + 256           ; per screen row (MROWS each):
+row_off_hi      = row_off_lo + MROWS    ;   where it starts in the text,
+row_color       = row_off_hi + MROWS    ;   the color there,
+row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
+row_len         = row_rvs + MROWS       ;   how many cursor places it has
+dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
+prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
+tables_end      = prompt_save + 240
+
+; All of it must end before the sprite blocks at $3e80.
+!if tables_end > SPRITE_BASE {
+        !error "Program and tables have grown into the sprite blocks at $3e80"
 }

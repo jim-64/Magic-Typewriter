@@ -51,6 +51,8 @@ KEY_CTRL        = 58
 KEY_SPACE       = 60
 KEY_CBM         = 61
 KEY_STOP        = 63
+KEY_Y           = 25
+KEY_N           = 39
 
 ; Events that are not a single key
 KEY_CHARSET     = $40           ; C= and SHIFT pressed and let go alone
@@ -452,6 +454,13 @@ key_to_petscii
 ;  +61     1    program     raster line where housekeeping ended
 ;  +62     1    program     raster line (low byte) where the bottom strip
 ;                           IRQ ended
+;  -1      1    program     ($02bf) frames the last key took to handle
+;  +63     1    harness     write 1 after putting a test document in the
+;                           buffer: the text at the END of the buffer (up
+;                           to $cfff), gap_end ($0a/$0b) = its first byte,
+;                           gap_start ($08/$09) = $4000. The editor then
+;                           shows it from the top, cursor at the start,
+;                           and sets this back to 0.
 ;
 ; Queues: the harness writes an event at slot "head", then moves head on
 ; by one (wrapping 7 -> 0 for keys, 3 -> 0 for the mouse). The queue is
@@ -480,7 +489,9 @@ MB_KEY_COUNT    = MB_BASE+52
 MB_KEY_LOG      = MB_BASE+53
 MB_HK_END       = MB_BASE+61
 MB_BOT_END      = MB_BASE+62
-MB_SIZE         = 63
+MB_DOC_READY    = MB_BASE+63
+MB_KEY_TIME     = MB_BASE-1      ; (just below the mailbox)
+MB_SIZE         = 64
 
 ;----------------------------------------------------------------------------
 ; mailbox_init - clear the mailbox and fill in the program's fields.
@@ -530,7 +541,10 @@ mailbox_poll
 -       dex
         bpl -
 }
-        lda MB_MK_GO
+        lda MB_DOC_READY        ; a test document in the buffer?
+        beq +
+        jsr test_document
++       lda MB_MK_GO
         beq +
         lda MB_MK_FIRST
         sta mk_first
@@ -550,6 +564,24 @@ mailbox_poll
 !ifdef SPLIT_TEST {
 .vary   !byte 0
 }
+key_start_frame !byte 0
+
+; test_document - show the document the harness put in the buffer.
+test_document
+        jsr cursor_hide
+        lda #0
+        sta MB_DOC_READY
+        sta row_off_lo          ; the top of the screen at the start
+        sta row_off_hi
+        sta row_rvs
+        sta modified
+        sta want_col
+        lda text_color
+        sta row_color
+        jsr skip_codes          ; (the cursor goes after leading codes)
+        jsr redraw_all
+        jsr locate_cursor
+        jmp cursor_show
 
 ;----------------------------------------------------------------------------
 ; mailbox_log_key - record a key event the main loop took (A = code,

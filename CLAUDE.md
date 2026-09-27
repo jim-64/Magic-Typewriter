@@ -7,8 +7,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
 
 - **Phase 1 done** (2026-09-27), on branch `main`. Jim chose the side-border badge layout (see Border
   icons). Branch `phase1` keeps the earlier layout (badges above/below the text area) for reference only.
-- **Phase 2 (keyboard scanner):** passes the automated checks; waiting for Jim's Human Test. Work is on
-  branch `phase2`; merge into `main` when Jim accepts it. (One branch per phase from here on.)
+- **Phase 2 done** (2026-09-27), merged into `main`.
+- **Phase 3 (the editor):** passes the automated checks; waiting for Jim's Human Test. Work is on branch
+  `phase3`; merge into `main` when Jim accepts it. (One branch per phase.)
 
 ## Working with Jim
 
@@ -623,6 +624,35 @@ Editing rules:
 - **Soft word wrap**, toggled from the menu. Display-only; never insert CRs into the file. With wrap off,
   long lines scroll horizontally.
 - Clipboard in free buffer space (top-down), or in the REU when present.
+
+**As built (phase 3, `src/editor.asm`; read its header comment first):**
+- Gap buffer at **$4000–$CFFF** (36 KB), BASIC ROM banked out. The program and its run-time tables
+  (ctype, per-row arrays, prompt save area; defined after `program_end` in `main.asm`) must stay below
+  the sprite blocks at $3E80; the build stops with an error if not.
+- Zero page $08–$19 belongs to the editor (main program only, never the IRQs): `gap_start` ($08) and
+  `gap_end` ($0A) are fixed addresses the test harness can read.
+- Positions are kept as **offsets** (bytes from the start of the text, not counting the gap), so they
+  stay valid when the cursor moves. `set_ptr` / `ptr_to_off` convert.
+- For each screen row (plus one below the screen) the editor keeps its start offset, the color and RVS
+  state there, and its number of cursor places. **Rows break after 40 characters for now** (plain
+  character wrap); phase 6 replaces this with word wrap / horizontal scroll.
+- After an edit, the redraw **stops as soon as a row starts where it did before, moved by the size of
+  the edit, in the same state** — the rest of the screen is unchanged. Measured (debug build, PAL):
+  typing a letter < 1 frame; RETURN at the top of the screen (every row moves) 4 frames; cursor moves
+  without scrolling < 1 frame. Scrolling redraws the whole screen.
+- The color at a position is found by scanning backward to the last color code. In a long document
+  with few color codes this can scan far; fine for 36 KB, **revisit for REU documents (phase 9)**.
+- Cursor blink runs from the **main loop** (not the IRQ), so it can never clash with a screen redraw.
+  Blink period from the timing table.
+- Color keys insert the new color code before the cursor and a restore code after it; typing goes in
+  between. `cleanup` runs whenever the cursor leaves a place and removes codes without effect (and all
+  color/RVS codes at the very end of the text).
+- Until the menus (phase 8): **RUN/STOP or RESTORE asks "QUIT Y/N"**. SHIFT+CLR asks "CLEAR ALL Y/N".
+  `prompt_yes_no` draws the centered box, saves/restores what is under it, and shows capitals in either
+  character set. F1 does nothing yet.
+- HOME goes to the start of the logical line (not the screen row); again = top of the document.
+- Debug mailbox additions: `+63` loads a test document placed in the buffer by the harness; `$02BF`
+  holds how many frames the last key took.
 - Track a "modified" flag; confirm before Load, Clear all, or Quit if unsaved.
 
 ## Menus and Prompts
@@ -827,10 +857,10 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 1. System detect + IRQ chain: open top/bottom borders, color splits, 6 sprites from the mockup,
    border-color marker at a fake position. Debug test mailbox. **Done 2026-09-27**, including the
    side-border badges.
-2. Keyboard scanner: both SHIFTs, CTRL, C=, RUN/STOP, ←, key repeat, NMI trap.
+2. Keyboard scanner: both SHIFTs, CTRL, C=, RUN/STOP, ←, key repeat, NMI trap. **Done 2026-09-27.**
 3. Gap buffer, typing, flashing cursor (both shapes, F7 toggle), colors and reverse (rendering, color
    keys, restore codes, clean-up), INST/DEL and SHIFT-INST, RETURN, cursor movement, redraw,
-   SHIFT-CLR "CLEAR ALL Y/N".
+   SHIFT-CLR "CLEAR ALL Y/N". (Automated checks passed 2026-09-27; Human Test pending.)
 4. PETSCII SEQ load/save with device number and error channel.
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste.
 6. Soft word wrap, horizontal scroll, marker tracking the real position.

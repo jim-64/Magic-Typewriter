@@ -140,47 +140,14 @@ keytab_ctrl                     ; CTRL (KERNAL $EC78)
 ; upper/lower character set and upper case into its capitals)
 ;----------------------------------------------------------------------------
 
-; Phase 2 test screen: row, column, text, 0 ... then $ff
-test_texts
-        !byte 1, 1
-        !scr "Magic Typewriter - phase 2 test", 0
-        !byte 4, 1
-        !scr "Type anything: it shows up below.", 0
-        !byte 5, 1
-        !scr "C= + SHIFT switches the character set.", 0
-        !byte 6, 1
-        !scr "RUN/STOP or RESTORE quits.", 0
-        !byte 8, 1
-        !scr "Held:", 0
-        !byte 9, 1
-        !scr "Last key:", 0
-        !byte 11, 0
-        !scr "----------------------------------------", 0
-        !byte $ff
+; The PETSCII color codes, in C64 color order (0 black ... 15 light grey)
+color_codes
+        !byte $90, $05, $1c, $9f, $9c, $1e, $1f, $9e
+        !byte $81, $95, $96, $97, $98, $99, $9a, $9b
 
-; "Held:" labels: column on row 8, length, modifier bit
-held_labels
-        !byte 7, 6, MOD_LSHIFT
-        !byte 15, 6, MOD_RSHIFT
-        !byte 23, 4, MOD_CTRL
-        !byte 29, 2, MOD_CBM
-held_text                       ; the labels, in the same order
-        !scr "LSHIFT"
-        !scr "RSHIFT"
-        !scr "CTRL"
-        !scr "C="
-
-; "Last key:" modifier names, 3 characters each, in MOD_ bit order
-mod_names
-        !scr "LS RS CT C= "
-mod_repeat
-        !scr "REP"
-
-system_name_offset
-        !byte .pal-system_names, .ntsc-system_names
-        !byte .oldntsc-system_names, .drean-system_names
-system_names
-.pal     !scr "Video: PAL", 0
-.ntsc    !scr "Video: NTSC", 0
-.oldntsc !scr "Video: old NTSC", 0
-.drean   !scr "Video: Drean (PAL-N)", 0
+; Questions for prompt_yes_no. Written in lower case: that gives screen
+; codes 1-26, which the prompt shows as capitals in either character set.
+msg_quit
+        !scr "quit y/n", 0
+msg_clear_all
+        !scr "clear all y/n", 0
