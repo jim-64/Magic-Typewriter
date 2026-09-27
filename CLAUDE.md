@@ -301,6 +301,8 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 - Text area: full **40×25**, ROM character set.
 - **Character set toggle: C= + SHIFT** (either SHIFT), exactly like BASIC: switches between
   upper/graphics ($D018 = $15) and upper/lower ($D018 = $17). Default: upper/lower.
+  The character set is **saved with the document** (Jim, 2026-09-27; see Formats), so switching it sets
+  the "modified" flag.
 - **Open the top and bottom borders.** Raster IRQ at line $F9 clears $D011 bit 3 (24 rows); a later
   IRQ (after line $FC) sets it back.
 - **Open the side borders on the strip lines** (28–49 and 251–264) so the F3/F5 badges can sit in the
@@ -654,8 +656,10 @@ Rendering rules (same as printing the file with CHROUT):
 - Color codes: $05 white, $1C red, $1E green, $1F blue, $81 orange, $90 black, $95 brown, $96 light red,
   $97 dark grey, $98 grey, $99 light green, $9A light blue, $9B light grey, $9C purple, $9E yellow, $9F cyan.
 - $8D (SHIFT-RETURN) is treated as a line end like CR.
-- $0E / $8E (lowercase / uppercase switch): on load, the first one found sets the display character set.
-  Otherwise invisible.
+- $0E / $8E (lowercase / uppercase switch): **a case code as the very first byte of a file is the
+  document's character set**, not text: loading sets the display from it and drops it; saving writes one
+  first (see Formats). Otherwise the first one found in the text sets the display character set and
+  stays in the text, invisible.
 - **All other control codes** (cursor moves, CLR, HOME, INST, DEL, bell, etc.) are kept in the buffer and
   saved, but are invisible and do nothing.
 - Text in the same color as the background is invisible, exactly as in BASIC (e.g. CTRL-1 black on black).
@@ -884,7 +888,9 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   out, so code between them must not touch `editor.asm` (see Memory Map, "the one rule").
 - Loading reads the file to the start of the buffer, then moves it to the end in one copy
   (`gap_to_start`), so the cursor starts at the top. A file bigger than the buffer loads partly, with
-  "TOO LONG: ONLY PART LOADED". The first $0E / $8E picks the character set.
+  "TOO LONG: ONLY PART LOADED". A $0E / $8E as the file's first byte picks the character set and is
+  not kept as text; without one, the first $0E / $8E in the text picks it (and stays); without any, the
+  set on screen stays. Saving writes $0E (upper/lower) or $8E (upper/graphics) first, from $D018.
 - Settings `load_dev` / `save_dev` (default 8) are there for the Load/Save menus.
 - Test files in `test/` (made once and committed): `sample` (mixed case, $0E, colors, reverse, a long
   line), `upper` ($8E, graphics), `long` (60 lines). build.bat/build.sh put them on the .d64 as SEQ.
@@ -941,7 +947,14 @@ separately. "magic" = the Magic Typewriter format (see Formats).
     uses defaults for ones missing.
   - On load, apply the stored settings, then load the text. Unknown version → load the text, ignore settings.
 
-- **PETSCII SEQ** (primary): load/save bytes as-is, colors and reverse included.
+- **PETSCII SEQ** (primary): load/save bytes as-is, colors and reverse included. **Plus the character
+  set** (Jim, 2026-09-27): saving writes the standard PETSCII case code first — $0E for upper/lower,
+  $8E for upper/graphics — so the file shows in the right set here and in other programs that print it
+  (BBS files commonly start with $0E). Loading takes a case code in the first byte as the setting and
+  does not keep it as text, so load/save round trips add nothing. (A program that reads the file as
+  data, e.g. with INPUT#, sees that extra first byte.) For the magic format (phase 10) the header holds
+  the character set too; decide then whether the text part also starts with the case code (it would
+  make TYPEing the file show the right set).
 - **ASCII SEQ**: swap upper/lower case ranges on load and save. On load, treat LF or CRLF as a line end.
   On save, write **CR+LF** (Jim's choice; no menu option). ASCII has no colors: drop color, RVS, and other
   control codes on save.
@@ -966,6 +979,29 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 - DMA stalls the CPU and would delay raster IRQs: **split transfers into chunks** (timing table) or run
   them while the beam is in the text area.
 - Undo is out of scope for now.
+
+## Cartridge version (future idea)
+
+Jim may want a cartridge version later, like an earlier 16K cartridge of his: Exomizer-compressed code
+that a small loader copies (decompresses) into RAM and starts. The plan-D memory layout suits that:
+
+- The loader decompresses the PRG image to $0801 and jumps to 2061; `copy_high` then works as usual
+  (or Exomizer decompresses the editor straight to $E000). A cartridge takes over at reset before the
+  KERNAL sets up RAM, I/O, vectors and the screen, so the loader must call those set-up routines first.
+- While editing, `$01 = $35` hides any normal 8K or 16K cartridge completely.
+- **Catch — a 16K cartridge that can't switch itself off** (EXROM and GAME wired low): its upper 8K
+  (ROMH) shows at $A000–$BFFF whenever the KERNAL ROM is in, i.e. in disk mode (`$01 = $36`), in the
+  middle of the text buffer. Loading still works (writes reach the RAM), but **saving reads the buffer**
+  and would read the cartridge. Fix then: read buffer bytes with the ROMs briefly out (SEI ... CLI), or
+  copy through a small buffer in low memory — so keep the disk code's buffer reads in one place. Also
+  there is **no BASIC** with such a cartridge (ROMH replaces it), so Quit needs another ending (reset).
+- A cartridge that can switch itself off (Magic Desk / Ocean / EasyFlash types, register at $DE00;
+  the Ultimate can emulate them) avoids both: switch it off after copying, and everything works as the
+  disk version. Quit would then need BASIC's cold start (the cartridge skipped it).
+- RESTORE is safe: our NMI trap never reaches the KERNAL's check that jumps into a cartridge.
+- Size: ~20 KB finished, ~11–13 KB after Exomizer, so a 16K cartridge with room for the loader.
+- VICE's `cartconv` makes a .crt image for testing. The settings file needs a disk: a cartridge start
+  (no $BA device) uses the built-in defaults, as already specified.
 
 ## Build Order
 

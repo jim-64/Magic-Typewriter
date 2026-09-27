@@ -2770,6 +2770,8 @@ editor_key
         beq .quit
         cmp #KEY_CHARSET
         bne +
+        lda #1                  ; the character set is saved with the
+        sta modified            ; document, so this is a change too
         jmp toggle_charset
 +       jsr cursor_hide
         jsr .do_key

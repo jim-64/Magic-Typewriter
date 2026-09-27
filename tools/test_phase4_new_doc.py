@@ -78,6 +78,36 @@ try:
         e.keys([(KEY["S"], CTRL)])
         check("after CLEAR ALL, CTRL-S asks for a name", "SAVE:" in box() and "note" not in box(), box())
         e.keys([(KEY["STOP"], 0)])
+
+        # The character set is saved with the document: switch to upper
+        # case/graphics (C= + SHIFT), save as OTHER, clear, switch back,
+        # load OTHER: it comes back in upper case/graphics
+        e.poke(e.lab["modified"], [0])
+        e.keys([(0xff, CBM | LS)])
+        check("C= + SHIFT: upper case/graphics", e.peek(0xd018)[0] & 2 == 0)
+        check("switching the set counts as a change", e.peek(e.lab["modified"])[0] == 1)
+        e.keys([(KEY["S"], CTRL)])
+        e.type_text("other")
+        e.keys([(KEY["RETURN"], 0)], settle=1.0)
+        for _ in range(100):
+            if e.peek(e.lab["modified"])[0] == 0:
+                break
+            time.sleep(0.2)
+        check("saved as OTHER", e.peek(e.lab["modified"])[0] == 0)
+        e.keys([(KEY["HOME"], LS), (KEY["Y"], 0)])      # CLEAR ALL
+        e.keys([(0xff, CBM | LS)])                      # back to upper/lower
+        check("switched back to upper/lower", e.peek(0xd018)[0] & 2 == 2)
+        e.keys([(KEY["L"], CTRL)])
+        if "LOAD WITHOUT SAVING" in box().upper():
+            e.keys([(KEY["Y"], 0)])
+        e.type_text("other")
+        e.keys([(KEY["RETURN"], 0)], settle=1.0)
+        for _ in range(100):
+            if e.text()[0] == b"OTHER":
+                break
+            time.sleep(0.2)
+        check("OTHER loaded back (the case code is not text)", e.text()[0] == b"OTHER", e.text()[0])
+        check("... in upper case/graphics", e.peek(0xd018)[0] & 2 == 0)
 finally:
     try:
         e.m.quit()
@@ -96,5 +126,11 @@ if not readonly:
         os.remove(os.path.join(S, out))
     subprocess.run([c1541, "-attach", "p4b.d64", "-read", "note,s", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
-    check("NOTE on disk = 'HELLO DISK' + RETURN", saved == b"HELLO DISK\r", saved)
+    check("NOTE on disk = $0e (upper/lower) + 'HELLO DISK' + RETURN", saved == b"\x0eHELLO DISK\r", saved)
+    out = "other_saved.seq"
+    if os.path.exists(os.path.join(S, out)):
+        os.remove(os.path.join(S, out))
+    subprocess.run([c1541, "-attach", "p4b.d64", "-read", "other,s", out], capture_output=True, cwd=S)
+    saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
+    check("OTHER on disk = $8e (upper case/graphics) + 'OTHER'", saved == b"\x8eOTHER", saved)
 print("ALL PASS" if ok else "SOME FAILED")

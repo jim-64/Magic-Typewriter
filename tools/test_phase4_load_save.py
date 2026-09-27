@@ -19,6 +19,9 @@ try:
     e = Editor(Mon())
     e.wait_ready()
     sample = open(os.path.join(PROJ, "test/sample.seq"), "rb").read()
+    # its first byte, $0e, is the character set: it becomes the setting,
+    # not text
+    assert sample[0] == 0x0e
 
     # 1. Load SAMPLE
     e.keys([(KEY["L"], CTRL)])
@@ -28,14 +31,14 @@ try:
     e.keys([(KEY["RETURN"], 0)], settle=0.5)
     for _ in range(100):                      # wait for the load to finish
         txt, cur = e.text()
-        if len(txt) == len(sample):
+        if len(txt) == len(sample) - 1:
             break
         time.sleep(0.2)
     time.sleep(0.5)
     txt, cur = e.text()
-    check("loaded bytes match test/sample.seq", txt == sample, (len(txt), len(sample)))
+    check("loaded text = test/sample.seq without its leading $0e", txt == sample[1:], (len(txt), len(sample)))
     check("cursor at the start", cur <= 1, cur)
-    check("lower case set chosen by $0e", e.peek(0xd018)[0] & 2 == 2)
+    check("upper/lower case set chosen by the leading $0e", e.peek(0xd018)[0] & 2 == 2)
     rows = e.screen_rows()
     print("   row 0:", rows[0]); print("   row 2:", rows[2])
     check("text on screen", rows[0][1:].startswith("agic Typewriter"), rows[0])   # (col 0 may show the cursor)
@@ -98,11 +101,12 @@ try:
             break
         time.sleep(0.2)
     txt, cur = e.text()
-    check("LONG loaded", txt == long_, len(txt))
+    check("LONG loaded (no case code: all of it is text)", txt == long_, len(txt))
     rows = e.screen_rows()
     check("LONG on screen", rows[0].strip().lower()[1:] == "ine 01", rows[0])   # (col 0 may show the cursor)
 
-    # 5b. Load UPPER: starts with $8e, so the upper case/graphics set
+    # 5b. Load UPPER: starts with $8e, so the upper case/graphics set, and
+    # the $8e is not text
     upper = open(os.path.join(PROJ, "test/upper.seq"), "rb").read()
     e.keys([(KEY["L"], CTRL)])
     e.keys([(KEY["DEL"], 0)] * 6)
@@ -110,10 +114,10 @@ try:
     e.keys([(KEY["RETURN"], 0)], settle=0.5)
     for _ in range(100):
         txt, cur = e.text()
-        if len(txt) == len(upper):
+        if len(txt) == len(upper) - 1:
             break
         time.sleep(0.2)
-    check("UPPER loaded", e.text()[0] == upper)
+    check("UPPER loaded", e.text()[0] == upper[1:])
     check("upper case/graphics set chosen by $8e", e.peek(0xd018)[0] & 2 == 0)
 
     # 6. Display back to normal after disk use: raster IRQ on, sprites on
@@ -138,8 +142,8 @@ c1541 = r"C:/bin/GTK3VICE-3.9-win64/GTK3VICE-3.9-win64/bin/c1541.exe"
 print(subprocess.run([c1541, "-attach", "p4.d64", "-read", "sample,s", out], capture_output=True, text=True, cwd=S).stdout[-200:])
 out = os.path.join(S, out)
 saved = open(out, "rb").read() if os.path.exists(out) else b""
-check("saved file = 'x' typed at the cursor + the original", saved == sample[:1] + b"X" + sample[1:] or saved == b"X" + sample,
-      saved[:8])
+check("saved file = $0e (upper/lower set) + 'x' typed at the cursor + the rest",
+      saved == b"" + b"X" + sample[1:], saved[:8])
 listing = subprocess.run([c1541, "-attach", disk, "-list"], capture_output=True, text=True).stdout
 print(listing)
 print("ALL PASS" if ok else "SOME FAILED")

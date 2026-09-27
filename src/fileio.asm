@@ -321,15 +321,30 @@ load_file
         sta gap_end+1
         lda #0
         sta .charset
+        lda #1
+        sta .first
         ldx #FILE_LFN
         jsr CHKIN
         bcc .byte
         jmp .no_device
 .byte   jsr STOP                ; RUN/STOP breaks off
-        beq .break
-        jsr CHRIN
+        bne +
+        jmp .break
++       jsr CHRIN
         sta .b
-        lda gap_start           ; room left?
+        lda .first              ; the very first byte of the file?
+        beq .store
+        lda #0
+        sta .first
+        lda .b                  ; a case code there is the document's
+        cmp #$0e                ; character set (save_file writes it), so
+        beq +                   ; it becomes that setting, not text
+        cmp #$8e
+        bne .store
++       sta .charset
+        jmp .next
+
+.store  lda gap_start           ; room left?
         cmp gap_end
         bne +
         lda gap_start+1
@@ -341,15 +356,15 @@ load_file
         inc gap_start
         bne +
         inc gap_start+1
-+       lda .charset            ; the first $0e or $8e picks the character
-        bne +                   ; set to show it in
-        lda .b
++       lda .charset            ; no case code at the start: the first
+        bne .next               ; $0e or $8e in the text picks the
+        lda .b                  ; character set (it stays in the text)
         cmp #$0e                ; switch to lower case
-        beq ++
+        beq +
         cmp #$8e                ; switch to upper case
-        bne +
-++      sta .charset
-+       jsr READST
+        bne .next
++       sta .charset
+.next   jsr READST
         beq .byte               ; 0: more to come
         and #%01000000
         beq .read_error         ; not the end: something went wrong
@@ -420,7 +435,8 @@ load_file
         jmp locate_cursor
 
 .b              !byte 0
-.charset        !byte 0
+.charset        !byte 0         ; $0e, $8e, or 0 = none found
+.first          !byte 0         ; 1 until the first byte is read
 
 ;============================================================================
 ; Saving
@@ -483,14 +499,30 @@ save_file
         ldx #>suffix_write
         jsr name_plus
         jsr open_file
-        bcs .no_device
-        jsr read_status         ; e.g. 26, WRITE PROTECT ON
-        bcs .fail
-        ldx #FILE_LFN
+        bcc +
+        jmp .no_device
++       jsr read_status         ; e.g. 26, WRITE PROTECT ON
+        bcc +
+        jmp .fail
++       ldx #FILE_LFN
         jsr CHKOUT
         bcs .no_device
 
-        ; Write the text before the gap, then the text after it.
+        ; First the character set, as the standard PETSCII case code:
+        ; $0e = upper/lower case, $8e = upper case/graphics. load_file
+        ; takes it back as the setting, and other programs that print the
+        ; file switch to the right set with it.
+        lda VIC_MEMPTR
+        and #%00000010          ; bit 1 set: upper/lower case
+        beq +
+        lda #$0e
+        bne ++
++       lda #$8e
+++      jsr CHROUT
+        jsr READST
+        bne .bus_error
+
+        ; Then the text before the gap, and the text after it.
         lda #<BUF_START
         sta ptr
         lda #>BUF_START
