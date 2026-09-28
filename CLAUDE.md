@@ -14,7 +14,7 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   kept the old file name, so CTRL-S saved over the loaded file; it now starts an unnamed document.
 - **Phase 5 (marking, cut/copy/paste, recolor):** passes the automated checks; waiting for Jim's Human
   Test. Work is on branch `phase5`; merge into `main` when Jim accepts it. (One branch per phase.)
-- **Phase 6 (word wrap, sideways scrolling, page marker):** passes the automated checks; waiting for
+- **Phase 6 (word wrap, page marker):** passes the automated checks; waiting for
   Jim's Human Test. On branch `phase6` (made from `phase5`, since phase 5 isn't merged yet; Jim said
   "let's move on" after phase 5). Also in this branch: **the editor runs under the KERNAL ROM** (Jim
   chose this "plan D"; see Memory Map), Quit fixed (it left BASIC's zero page broken), the character
@@ -287,8 +287,8 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, end of phase 6): lower part $0801–$1E37, tables to $21EB; editor $E000–$FBB2, so
-  **~1.1 KB free under the KERNAL and ~7.3 KB below the sprite blocks**. New code goes in the lower
+- Space (debug build, end of phase 6): lower part $0801–$1E37, tables to $21D1; editor $E000–$FAAD, so
+  **~1.3 KB free under the KERNAL and ~7.3 KB below the sprite blocks**. New code goes in the lower
   part from now on (the mouse driver runs in the IRQ; menus, formats, printer and tape fit there too);
   code that runs during disk work must go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
@@ -449,7 +449,7 @@ again at line 256+Y; sprites 1–3 are switched off after the bottom strip and b
   with word wrap "lines" means screen rows, which would need a layout of the whole document); they
   work the same with wrap on and off. For ordinary text the difference from lines is small.
   **When the whole document fits on the screen, the band is the whole side (all grey)**, like a
-  scrollbar thumb that fills its track — ask Jim in the Human Test whether he'd rather hide it then.
+  scrollbar thumb that fills its track — **Jim: keep it that way** (2026-09-28).
 - Write $D020 while the beam is in the **text-area part of the line**, and **avoid badlines** for band
   edges (lines $30–$F7 where `(raster & 7) == YSCROLL`). Snap to the nearest safe line.
 - Display-only; the pointer can't be seen in the side border beside the text.
@@ -705,10 +705,11 @@ Editing rules:
 - **Copy / cut** stores the selection with its codes, prefixed by the color and RVS state at the selection
   start. **Paste** inserts it followed by a code that restores the state that was in effect at the paste
   point, so pasted text keeps its look and the text after it is unchanged.
-- **Soft wrap and horizontal scroll** count visible characters only.
+- **Soft wrap** counts visible characters only.
 - **Find** searches visible characters only, skipping codes, so a word containing a color change still matches.
-- **Soft word wrap**, toggled from the menu. Display-only; never insert CRs into the file. With wrap off,
-  long lines scroll horizontally.
+- **Soft word wrap**, toggled from the menu. Display-only; never insert CRs into the file. **With wrap
+  off, rows are cut at 40 characters, even in the middle of a word, like the BASIC screen. No sideways
+  scrolling** (Jim, 2026-09-28; a first version scrolled long lines sideways, and he didn't want it).
 - Clipboard in free buffer space (top-down), or in the REU when present.
 
 **As built (phase 5, "Marked text" section of `src/editor.asm`):**
@@ -740,7 +741,7 @@ Editing rules:
 - Positions are kept as **offsets** (bytes from the start of the text, not counting the gap), so they
   stay valid when the cursor moves. `set_ptr` / `ptr_to_off` convert.
 - For each screen row (plus one below the screen) the editor keeps its start offset, the color and RVS
-  state there, and its number of cursor places (16-bit: with word wrap off a row is a whole line).
+  state there, and its number of cursor places.
 - After an edit, the redraw **stops as soon as a row starts where it did before, moved by the size of
   the edit, in the same state** — the rest of the screen is unchanged. (This holds with word wrap too:
   a row's layout depends only on where it starts.)
@@ -752,10 +753,8 @@ Editing rules:
   exactly 40 characters wraps its last word too. `redraw_from` (drawing) and `row_next` (walking one
   row without drawing) follow the same rule and **must be kept the same**; tools/test_phase6.py checks
   the screen against a Python model of it.
-- **Word wrap off:** each line is one row; the screen shows 40 columns from `hscroll`. When the cursor
-  would leave the screen sideways, the view jumps so the cursor is in column 20 (or `hscroll` = 0 when
-  it is within 20 of the line start). Columns are 16-bit (`cur_lcol`, `want_col`, `row_len`).
-  `cur_col` is always the screen column. `locate_cursor` returns A = 2 for "off to the side".
+- **Word wrap off:** a row is cut after 40 characters, even mid-word (the phase 3 rule). Rows never
+  reach past column 39, so all columns fit in a byte.
 - **CTRL-W toggles word wrap — temporary** until the main menu (phase 8) has the Wordwrap item. The
   cursor keeps its screen row.
 - **Finding rows upward:** layout depends on where a paragraph starts, so `find_row_start` walks the
@@ -1066,8 +1065,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 4. PETSCII SEQ load/save with device number and error channel. **Done 2026-09-27.**
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
    (Automated checks passed 2026-09-27; Human Test pending.)
-6. Soft word wrap, horizontal scroll, marker tracking the real position. (Automated checks passed
-   2026-09-27, with the memory change and speed work; Human Test pending.)
+6. Soft word wrap (off = rows cut at 40), marker tracking the real position. (Automated checks
+   passed 2026-09-28, with the memory change and speed work; Human Test pending.)
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,

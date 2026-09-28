@@ -39,17 +39,15 @@
 ; screen, is measured but not drawn.
 ;
 ; How the text is split into rows (wrap_on, a setting):
-; - Word wrap on: a row takes up to 40 characters. If the line goes on
-;   past that, the row ends after its last space and the word that did
-;   not fit starts the next row; a word longer than 40 characters is cut
-;   at 40. A line end needs a cursor place of its own, so a line of
-;   exactly 40 characters wraps its last word too. redraw_from and
-;   row_next both follow this rule, and must stay the same.
-; - Word wrap off: each line is one row, however long. The screen shows
-;   40 columns of it, starting "hscroll" columns in; when the cursor
-;   would leave the screen sideways, the view jumps so the cursor is in
-;   the middle again (or back to column 0 near the start of the line).
-; The text itself never changes: wrapping is only how it is shown.
+; - A row takes up to 40 characters. A line end needs a cursor place of
+;   its own, so a line of exactly 40 characters goes on to a second row.
+; - Word wrap on: if the line goes on past 40 characters, the row ends
+;   after its last space and the word that did not fit starts the next
+;   row; a word longer than 40 characters is cut at 40.
+; - Word wrap off: the row is cut after 40 characters, even in the middle
+;   of a word, like the BASIC screen.
+; redraw_from and row_next both follow these rules, and must stay the
+; same. The text itself never changes: wrapping is only how it is shown.
 ;============================================================================
 
 BUF_START       = $4000         ; the text buffer ...
@@ -81,17 +79,13 @@ edit_mode       !byte MODE_INSERT ; insert or overwrite (setting, F7)
 mark_key        !byte MARK_CBM  ; setting (default C=: left SHIFT can't
                                 ; mark up/left in VICE - see CLAUDE.md)
 modified        !byte 0         ; 1 = changed since loaded or saved
-wrap_on         !byte 1         ; setting: 1 = word wrap, 0 = long lines
-                                ; scroll sideways (CTRL-W for now)
-hscroll         !word 0         ; wrap off: columns scrolled off the left
+wrap_on         !byte 1         ; setting: 1 = word wrap, 0 = rows cut at
+                                ; 40 characters (CTRL-W for now)
 cur_row         !byte 0         ; cursor place on the screen
 cur_col         !byte 0
-cur_lcol        !word 0         ; the cursor's column counted from the
-                                ; start of its row (wrap off: its line)
 cur_color       !byte 0         ; typing color at the cursor
 cur_rvs         !byte 0         ; $80 = reverse on at the cursor
-want_col        !word 0         ; column to aim for when moving up/down
-                                ; (counted like cur_lcol)
+want_col        !byte 0         ; column to aim for when moving up/down
 eof_row         !byte 0         ; screen row holding the end of the text,
                                 ; $ff if it is below the screen
 off             !word 0         ; an offset (argument / result)
@@ -143,9 +137,6 @@ empty_buffer
 empty_view
         lda #0
         sta want_col
-        sta want_col+1
-        sta hscroll
-        sta hscroll+1
         sta row_off_lo          ; top = offset 0
         sta row_off_hi
         sta row_rvs
@@ -941,10 +932,10 @@ row_next
         beq .next               ; a line end ends the row
         cmp #CT_CHAR
         bne .loop               ; codes take no place
-        lda wrap_on
-        beq .loop               ; wrap off: the row is the whole line
         inc .chars
-        cpx #$20                ; a space: the row may end after it
+        lda wrap_on             ; word wrap: after a space the row may end
+        beq +
+        cpx #$20
         bne +
         lda .chars
         sta .brk_col
@@ -956,7 +947,7 @@ row_next
         cmp #40
         bcc .loop
         lda .brk_col            ; full: it ends after its last space ...
-        beq .next               ; (no space: the word is cut at 40)
+        beq .next               ; (no space, or wrap off: cut at 40)
         cmp #40
         bcs .next               ; (the 40th character is the space)
         lda .brk
@@ -1017,9 +1008,6 @@ find_row_start
         lda off+1
         sta .lim+1
         jsr line_start          ; the line holding it
-        lda wrap_on
-        bne .row
-        rts                     ; wrap off: the row is the whole line
 .row    lda ptr                 ; a row starts here
         sta .start
         lda ptr+1
@@ -1310,10 +1298,8 @@ view_down
         sta row_color,x
         lda row_rvs+1,x
         sta row_rvs,x
-        lda row_len_lo+1,x
-        sta row_len_lo,x
-        lda row_len_hi+1,x
-        sta row_len_hi,x
+        lda row_len+1,x
+        sta row_len,x
         inx
         cpx #MROWS-1
         bne -
@@ -1354,10 +1340,8 @@ view_up
         sta row_color+1,x
         lda row_rvs,x
         sta row_rvs+1,x
-        lda row_len_lo,x
-        sta row_len_lo+1,x
-        lda row_len_hi,x
-        sta row_len_hi+1,x
+        lda row_len,x
+        sta row_len+1,x
         dex
         bpl -
         lda #ROWS-2             ; and so do the screen rows
@@ -1542,14 +1526,8 @@ redraw_from
         sta row_rvs,x
         jsr .row_ptrs
         lda #0
-        sta .col                ; screen column
-        sta .lcol               ; column in the row (wrap off: in the line)
-        sta .lcol+1
+        sta .col
         sta .brk_col            ; no space seen yet
-        lda hscroll             ; columns to leave out on the left
-        sta .skip               ; (always 0 with word wrap)
-        lda hscroll+1
-        sta .skip+1
 
 .pos    lda sel_on              ; the start or end of the marked part?
         beq .gap
@@ -1602,20 +1580,7 @@ redraw_from
         beq .char
         jmp .not_char
 
-.char   inc .lcol               ; a character (X = it)
-        bne +
-        inc .lcol+1
-+       lda .skip               ; scrolled off the left (wrap off)?
-        ora .skip+1
-        beq .draw
-        lda .skip
-        bne +
-        dec .skip+1
-+       dec .skip
-        jmp .pos
-.draw   ldy .col
-        cpy #40
-        bcs .to_pos             ; past the right edge (wrap off): not shown
+.char   ldy .col                ; a character (X = it)
         stx .ch
         lda scrcode,x           ; put it on the screen
         ora .rvs
@@ -1625,10 +1590,10 @@ redraw_from
         sta (clr),y
         iny
         sty .col
-        lda wrap_on
-        beq .to_pos             ; wrap off: the row goes on to the line end
-        lda .ch                 ; a space: the row may end after it, so
-        cmp #$20                ; remember how things are there
+        lda wrap_on             ; word wrap: after a space the row may
+        beq +                   ; end, so remember how things are there
+        lda .ch
+        cmp #$20
         bne +
         sty .brk_col
         lda ptr
@@ -1643,12 +1608,12 @@ redraw_from
         sta .brk_sel
 +       cpy #40
         bcs .full
-.to_pos jmp .pos
+        jmp .pos
 
 .full   lda .brk_col            ; 40 characters: the row is full. It ends
         beq .cut                ; after its last space, if it has one
-        cmp #40                 ; (none: the word is cut at 40; or the
-        bcs .cut                ; 40th character is the space itself)
+        cmp #40                 ; (none, or word wrap off: cut at 40; or
+        bcs .cut                ; the 40th character is the space itself)
         sta .col                ; The word after the space starts the next
         lda .brk                ; row: blank it here, and go back to it.
         sta ptr
@@ -1663,9 +1628,7 @@ redraw_from
         jsr .fill
 .cut    ldx .row
         lda .col
-        sta row_len_lo,x
-        lda #0
-        sta row_len_hi,x
+        sta row_len,x
         jmp .next_row
 
 .not_char
@@ -1674,13 +1637,8 @@ redraw_from
         jsr .line_end           ; line end: one more cursor place, then
                                 ; blank to the end of the row
         lda .in_sel             ; a marked line end: a reversed space
-        beq +                   ; (if it is on the screen)
-        lda .skip
-        ora .skip+1
-        bne +
+        beq +
         ldy .col
-        cpy #40
-        bcs +
         lda #$a0
         sta (scr),y
 +       lda #0                  ; a line end also ends reverse
@@ -1722,8 +1680,7 @@ redraw_from
         cpx #MROWS
         bcs +
         lda #0
-        sta row_len_lo,x
-        sta row_len_hi,x
+        sta row_len,x
         jsr .row_ptrs
         lda #0
         sta .col
@@ -1750,13 +1707,10 @@ redraw_from
 ; cursor places are its characters plus one; blank the rest of the row.
 .line_end
         ldx .row
-        clc
-        lda .lcol
-        adc #1
-        sta row_len_lo,x
-        lda .lcol+1
-        adc #0
-        sta row_len_hi,x
+        ldy .col
+        iny
+        tya
+        sta row_len,x
         ; (falls into .fill)
 
 ; .fill - blank the row from .col to the end
@@ -1795,8 +1749,6 @@ redraw_from
 
 .row    !byte 0
 .col    !byte 0
-.lcol   !word 0
-.skip   !word 0
 .ch     !byte 0
 .color  !byte 0
 .rvs    !byte 0
@@ -1851,9 +1803,8 @@ update_marker
 ;============================================================================
 
 ; locate_cursor - find the cursor's row and column, and the typing color
-; and reverse state there (cur_row, cur_lcol, cur_col, cur_color, cur_rvs).
-; Carry set if it is not on the screen: A = 0 above it, 1 below it, 2 off
-; to the side (word wrap off; cur_col is then $ff).
+; and reverse state there (cur_row, cur_col, cur_color, cur_rvs).
+; Carry set if it is not on the screen: A = 0 above it, 1 below it.
 !zone locate_cursor
 locate_cursor
         jsr get_cursor_off      ; work = cursor offset
@@ -1897,8 +1848,7 @@ locate_cursor
         lda row_rvs,x
         sta cur_rvs
         lda #0
-        sta cur_lcol
-        sta cur_lcol+1
+        sta cur_col
 .walk   lda ptr
         cmp gap_start
         bne +
@@ -1917,9 +1867,7 @@ locate_cursor
         jmp .walk
 +       cmp #CT_CHAR
         bne +
-        inc cur_lcol
-        bne .walk
-        inc cur_lcol+1
+        inc cur_col
         jmp .walk
 +       cmp #CT_RVSON
         bne +
@@ -1931,22 +1879,7 @@ locate_cursor
         lda #0
         sta cur_rvs
         jmp .walk
-.done   sec                     ; the screen column: cur_lcol - hscroll,
-        lda cur_lcol            ; if that is 0-39
-        sbc hscroll
-        tax
-        lda cur_lcol+1
-        sbc hscroll+1
-        bne .side               ; (left of the screen, or far right)
-        cpx #40
-        bcs .side
-        stx cur_col
-        clc
-        rts
-.side   lda #$ff
-        sta cur_col
-        lda #2
-        sec
+.done   clc
         rts
 .above  lda #0
         sec
@@ -1961,9 +1894,8 @@ locate_cursor
 ensure_visible
 -       jsr locate_cursor
         bcc .ok
-        cmp #1
-        beq .below
-        bcs .side
+        cmp #0
+        bne .below
         ; Above the top: the row holding the cursor becomes the top row.
         jsr .cursor_row
         jsr redraw_all
@@ -1995,23 +1927,6 @@ ensure_visible
 .one    jsr view_down
         jmp -
 
-.side   ; Off to the side (word wrap off): the view jumps so the cursor is
-        ; in the middle column, or at its place if that is near the start.
-        lda #0
-        sta hscroll
-        sta hscroll+1
-        sec
-        lda cur_lcol
-        sbc #20
-        tax
-        lda cur_lcol+1
-        sbc #0
-        bcc +                   ; column < 20: no scrolling
-        sta hscroll+1
-        stx hscroll
-+       jsr redraw_all
-        jmp -
-
 ; .cursor_row - the row holding the cursor becomes the top row
 .cursor_row
         lda gap_start
@@ -2041,9 +1956,6 @@ under_color     !byte 0
 !zone cursor_show
 cursor_show
         jsr cursor_hide
-        lda cur_col
-        cmp #40
-        bcs +                   ; not on the screen (off to the side)
         ldx cur_row
         cpx #ROWS
         bcs +                   ; not on the screen
@@ -2220,10 +2132,8 @@ after_edit
 
 ; set_want_col - aim for the cursor's column when moving up and down
 set_want_col
-        lda cur_lcol
+        lda cur_col
         sta want_col
-        lda cur_lcol+1
-        sta want_col+1
         rts
 
 ; leave_cursor - tidy the codes at the cursor before it moves away.
@@ -2308,10 +2218,9 @@ overwrite_next
 ; joins it to the line above.
 !zone delete_left
 delete_left
-        lda cur_row             ; at the start of the top row? show the
-        ora cur_lcol            ; row above first, so what gets deleted is
-        ora cur_lcol+1          ; on the screen
-        bne +
+        lda cur_row             ; at the top left of the screen? show the
+        ora cur_col             ; row above first, so what gets deleted is
+        bne +                   ; on the screen
         jsr view_up
         bcs .none               ; nothing above: the start of the text
         jsr locate_cursor
@@ -2482,37 +2391,24 @@ cursor_up
 !zone goto_row
 goto_row
         stx .row
-        sec                     ; last place in the row: len - 1
-        lda row_len_lo,x
+        lda row_len,x           ; last place in the row: len - 1
+        sec
         sbc #1
-        sta .col
-        lda row_len_hi,x
-        sbc #0
-        sta .col+1
-        lda want_col            ; want_col, if the row reaches that far
-        cmp .col
-        lda want_col+1
-        sbc .col+1
-        bcs +
+        cmp want_col
+        bcc +
         lda want_col
-        sta .col
-        lda want_col+1
-        sta .col+1
-+       lda row_off_lo,x        ; walk the row to that column
++       sta .col
+        lda row_off_lo,x        ; walk the row to that column
         sta off
         lda row_off_hi,x
         sta off+1
         jsr set_ptr
         lda #0
         sta .n
-        sta .n+1
 .walk   lda .n
         cmp .col
-        bne +
-        lda .n+1
-        cmp .col+1
         beq .there
-+       lda ptr                 ; (jump over the gap)
+        lda ptr                 ; (jump over the gap)
         cmp gap_start
         bne +
         lda ptr+1
@@ -2532,17 +2428,14 @@ goto_row
         cmp #CT_CHAR
         bne .walk
         inc .n
-        bne .walk
-        inc .n+1
         jmp .walk
 .there  jsr ptr_to_off
         jsr move_gap_to
         jsr skip_codes
-        jmp ensure_visible      ; (word wrap off: the view may need to move
-                                ; sideways)
+        jmp ensure_visible      ; (row 25, below the screen: it scrolls)
 .row    !byte 0
-.col    !byte 0,0
-.n      !byte 0,0
+.col    !byte 0
+.n      !byte 0
 
 ; page_down (F5), page_up (F3) - move a screenful: the screen scrolls by
 ; 24 rows and the cursor keeps its place on the screen.
@@ -2798,7 +2691,7 @@ show_cursor_at
         beq +
         jsr rows_back
 +       jsr redraw_all
-        jsr ensure_visible      ; (word wrap off: it may be off to the side)
+        jsr locate_cursor
         jmp set_want_col        ; (aim for this column moving up/down)
 .n      !byte 0
 
@@ -3490,14 +3383,11 @@ toggle_mode
         rts
 
 ; toggle_wrap - CTRL-W (until the menu arrives in phase 8): word wrap on
-; <-> off. The cursor stays on its screen row.
+; <-> off (rows cut at 40 characters). The cursor stays on its screen row.
 toggle_wrap
         lda wrap_on
         eor #1
         sta wrap_on
-        lda #0                  ; (word wrap never scrolls sideways)
-        sta hscroll
-        sta hscroll+1
         ldx cur_row
         jmp show_cursor_at
 

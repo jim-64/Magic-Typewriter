@@ -1,11 +1,12 @@
-"""Phase 6: word wrap, word wrap off (sideways scrolling), page marker.
+"""Phase 6: word wrap, word wrap off (rows cut at 40), page marker.
 Run from the project folder:  python tools/test_phase6.py [c64|ntsc]
 Needs a debug build (build.bat).
 
 The screen is checked against layout(), a model of the wrap rule in
-src/editor.asm: a row takes up to 40 characters; if the line goes on, the
-row ends after its last space (a word longer than 40 is cut at 40); a line
-end needs a place of its own."""
+src/editor.asm: a row takes up to 40 characters; with word wrap, if the
+line goes on, the row ends after its last space (a word longer than 40 is
+cut at 40); without it, the row is cut at 40. A line end needs a place of
+its own."""
 import sys, os, time, random
 from mtest import *
 
@@ -37,9 +38,7 @@ def layout(text, wrap=True):
             if not visible(b):
                 continue
             chars.append(b)
-            if not wrap:
-                continue
-            if b == 0x20:
+            if wrap and b == 0x20:
                 brk = (i, len(chars))
             if len(chars) == 40:
                 if brk and brk[1] < 40:
@@ -78,7 +77,7 @@ def table(e2, name):
     hi = e2.peek(e2.lab[name + "_hi"], 26)
     return [lo[i] + 256 * hi[i] for i in range(26)]
 
-def screen_matches(e2, text, wrap=True, hs=0, label=""):
+def screen_matches(e2, text, wrap=True, label=""):
     """the rows on the screen = the model's rows from the current top"""
     rows = layout(text, wrap)
     top = table(e2, "row_off")[0]
@@ -92,7 +91,7 @@ def screen_matches(e2, text, wrap=True, hs=0, label=""):
     bad = []
     for r in range(25):
         if k + r < len(rows):
-            chars = rows[k + r][1][hs:hs + 40]
+            chars = rows[k + r][1]
             want = bytes(scr(c) for c in chars) + b" " * (40 - len(chars))
             if offs[r] != rows[k + r][0]:
                 bad.append(("row start", r, offs[r], rows[k + r][0]))
@@ -202,26 +201,28 @@ try:
     check("marker further down", (mk_top, mk_bot) == (snap(exp_top), snap(max(exp_bot, exp_top + 8))),
           (mk_top, mk_bot, exp_top, exp_bot))
 
-    # Word wrap off (CTRL-W): one row per line, the view scrolls sideways
+    # Word wrap off (CTRL-W): rows cut at 40 characters, even mid-word
     e.keys([(KEY["HOME"], 0), (KEY["HOME"], 0)])
     e.keys([(KEY["W"], CTRL)])
     check("CTRL-W: word wrap off", e.peek(e.lab["wrap_on"])[0] == 0)
-    screen_matches(e, doc, wrap=False, label="wrap off: one row per line")
+    screen_matches(e, doc, wrap=False, label="wrap off: rows cut at 40")
+    rows_off = layout(doc, wrap=False)
+    check("wrap off: the first row has 40 characters", len(rows_off[0][1]) == 40)
     e.keys([(KEY["RIGHT"], 0)] * 45)
-    hs = word(e, "hscroll")
-    # (at column 40 it left the screen: the view jumped by 20, so the
-    # cursor was in the middle; 5 more to the right: column 25)
-    check("cursor at column 45: the view jumped at 40 to put it in the middle",
-          hs == 20 and e.peek(e.lab["cur_col"])[0] == 25, (hs, e.peek(e.lab["cur_col"])[0]))
-    screen_matches(e, doc, wrap=False, hs=20, label="wrap off: scrolled sideways")
-    e.keys([(KEY["DOWN"], 0)])                        # the 40-letter line
-    check("down: column 45 kept (the line is 40 long: to its end, 40)",
-          word(e, "cur_lcol") == 40, word(e, "cur_lcol"))
-    e.keys([(KEY["DOWN"], 0)] * 3)                    # 'SHORT'
-    check("down to a short line: the view jumps back to column 0",
-          word(e, "hscroll") == 0 and word(e, "cur_lcol") == 5, (word(e, "hscroll"), word(e, "cur_lcol")))
+    check("right 45 times: row 1, column 5",
+          (e.peek(e.lab["cur_row"])[0], e.peek(e.lab["cur_col"])[0]) == (1, 5),
+          (e.peek(e.lab["cur_row"])[0], e.peek(e.lab["cur_col"])[0]))
+    e.type_text("zz")
+    t = e.text()[0]
+    screen_matches(e, t, wrap=False, label="wrap off: typing moves the rest along")
+    e.keys([(KEY["DEL"], 0)] * 2)
+    check("deleted again", e.text()[0] == doc)
+    e.keys([(KEY["F5"], 0)])
+    screen_matches(e, doc, wrap=False, label="wrap off: F5")
+    e.keys([(KEY["F3"], 0)])
+    screen_matches(e, doc, wrap=False, label="wrap off: F3")
     e.keys([(KEY["W"], CTRL)])
-    check("CTRL-W again: word wrap on", e.peek(e.lab["wrap_on"])[0] == 1 and word(e, "hscroll") == 0)
+    check("CTRL-W again: word wrap on", e.peek(e.lab["wrap_on"])[0] == 1)
     screen_matches(e, doc, label="wrap on again")
 
     # A big document (about 30 KB, no color codes): speed
