@@ -97,9 +97,10 @@ try:
     check("typing replaces the marked text", e.text()[0].startswith(b"Z FIVE SIX\r"), e.text()[0][:12])
     check("unmarked after typing", e.peek(sel_on)[0] == 0)
 
-    # INST/DEL deletes marked text: mark " FIVE" leftwards (both SHIFTs)
-    e.keys([(KEY["RIGHT"], 0)] * 5)           # cursor after "Z FIVE"
-    e.keys([(KEY["RIGHT"], CBM | RS)] * 5)    # mark back over " FIVE" (C= + SHIFT)
+    # INST/DEL deletes marked text: mark " FIVE" leftwards (both SHIFTs).
+    # Marking left includes the character the cursor started on (the E).
+    e.keys([(KEY["RIGHT"], 0)] * 4)           # cursor on the E of "FIVE"
+    e.keys([(KEY["RIGHT"], CBM | RS)] * 4)    # mark back over " FIV" + E (C= + SHIFT)
     e.keys([(KEY["DEL"], 0)])
     check("DEL deletes the marked text (marked leftwards)", e.text()[0].startswith(b"Z SIX\r"), e.text()[0][:10])
 
@@ -133,6 +134,28 @@ try:
     check("CTRL-A marks everything", e.peek(sel_on)[0] == 1)
     e.keys([(KEY["C"], CTRL)])
     check("CTRL-C after CTRL-A copies the whole text", e.clipboard() == e.text()[0], (e.clipboard()[:20], e.text()[0][:20]))
+
+    # The character the cursor starts on is marked, whichever way marking
+    # goes (Jim, phase 6) - but not a line end
+    load_doc(e, b"ONE TWO THREE\r" + bytes([RED]) + b"RED\r")
+    def copied(start_right, keys):
+        e.keys([(KEY["RIGHT"], 0)])                  # (unmark)
+        e.keys([(KEY["HOME"], 0), (KEY["HOME"], 0)])
+        e.keys([(KEY["RIGHT"], 0)] * start_right)
+        e.keys(keys)
+        e.keys([(KEY["C"], CTRL)])
+        return e.clipboard()
+    c = copied(4, [(KEY["RIGHT"], CBM | RS)] * 2)
+    check("from the T of TWO, 2 left: 'E T' (the T included)", c == b"E T", c)
+    c = copied(4, [(KEY["RIGHT"], CBM)] * 2)
+    check("from the T of TWO, 2 right: 'TW'", c == b"TW", c)
+    c = copied(4, [(KEY["RIGHT"], CBM | RS)] + [(KEY["RIGHT"], CBM)] * 3)
+    check("1 left, then 3 right, back past the start: 'TW'", c == b"TW", c)
+    c = copied(13, [(KEY["RIGHT"], CBM | RS)] * 3)
+    check("from the end of a line, 3 left: 'REE' (no line end)", c == b"REE", c)
+    c = copied(14, [(KEY["DOWN"], CBM | RS)])
+    check("from the R of RED (a color code before it), up: the line and the R",
+          c.replace(bytes([RED]), b"") == b"ONE TWO THREE\rR", c)
 finally:
     try:
         e.m.quit()

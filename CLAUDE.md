@@ -713,6 +713,10 @@ Editing rules:
 - Clipboard in free buffer space (top-down), or in the REU when present.
 
 **As built (phase 5, "Marked text" section of `src/editor.asm`):**
+- **The character the cursor is on when marking starts is always marked** (Jim, 2026-09-28): going
+  right it is the first marked character; going left the marking reaches to just after it
+  (`sel_anchor_end`, set by `mark_here`). Not a line end: marking left from the end of a line does
+  not take in the line end. **Phase 7: drag-marking with the mouse must start with `mark_here` too.**
 - Marking = `sel_anchor` (offset) to the cursor. Movement keys with the mark key held extend it:
   cursor keys, F3/F5, and HOME **only when the mark key is C=** (SHIFT+HOME stays CLEAR ALL). While
   marking, the cursor's codes are not tidied (`no_cleanup`), so offsets stay put. A move without the

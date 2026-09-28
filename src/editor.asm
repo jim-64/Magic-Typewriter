@@ -2522,8 +2522,13 @@ home_key
 ;============================================================================
 ; Marked text (the selection) and the clipboard
 ;
-; Text is marked from sel_anchor (an offset) to the cursor, whichever comes
-; first; it shows reversed on the screen. Every operation on it moves the
+; Text is marked from sel_anchor (an offset: where marking started) to the
+; cursor, whichever comes first; it shows reversed on the screen. The
+; character the cursor was on when marking started is always marked:
+; going right it is the first one; going left the marking reaches to just
+; after it (sel_anchor_end). (Not a line end, though: marking left from
+; the end of a line should not take in the line end.)
+; Every operation on marked text moves the
 ; cursor (the gap) to the start of the marked text first, so the marked
 ; bytes lie together right after the gap, and then works through them
 ; there.
@@ -2535,6 +2540,7 @@ home_key
 ;============================================================================
 sel_on          !byte 0         ; 1 = text is marked
 sel_anchor      !word 0         ; where the marking started (offset)
+sel_anchor_end  !word 0         ; just after the character there
 sel_s           !word 0         ; the marked part: from here ...
 sel_e           !word 0         ; ... up to (not including) here
 sel_len         !word 0
@@ -2547,6 +2553,45 @@ clip_rvs        !byte 0
 no_cleanup      !byte 0         ; 1 = leave_cursor leaves the codes alone
 blk_count       !word 0         ; bytes for block_copy
 
+; mark_here - start marking at the cursor: sel_anchor = the cursor, and
+; sel_anchor_end = just after the character the cursor is on (past any
+; codes before it). At a line end or the end of the text there is no
+; character: sel_anchor_end = sel_anchor.
+!zone mark_here
+mark_here
+        jsr get_cursor_off
+        lda work
+        sta sel_anchor
+        sta sel_anchor_end
+        lda work+1
+        sta sel_anchor+1
+        sta sel_anchor_end+1
+        lda #1
+        sta sel_on
+        lda gap_end             ; look along the text after the cursor
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
+-       jsr ptr_at_end
+        bcs .done               ; the end of the text: no character
+        ldy #0
+        lda (ptr),y
+        tax
+        inc ptr
+        bne +
+        inc ptr+1
++       lda ctype,x
+        cmp #CT_EOL
+        beq .done               ; a line end: not marked
+        cmp #CT_CHAR
+        bne -                   ; a code: look on
+        jsr ptr_to_off          ; a character: just after it
+        lda off
+        sta sel_anchor_end
+        lda off+1
+        sta sel_anchor_end+1
+.done   rts
+
 ; sel_range - sel_s and sel_e: the marked part, in order.
 !zone sel_range
 sel_range
@@ -2556,15 +2601,25 @@ sel_range
         lda sel_anchor+1
         sbc work+1
         bcc .anchor_first
-        lda work                ; the cursor comes first
-        sta sel_s
+        lda work                ; the cursor comes first: up to just after
+        sta sel_s               ; the character where marking started
         lda work+1
         sta sel_s+1
-        lda sel_anchor
+        lda sel_anchor_end
         sta sel_e
-        lda sel_anchor+1
+        lda sel_anchor_end+1
         sta sel_e+1
-        rts
+        lda sel_anchor          ; (unless the cursor is back there: then
+        cmp work                ; nothing is marked)
+        bne +
+        lda sel_anchor+1
+        cmp work+1
+        bne +
+        lda work
+        sta sel_e
+        lda work+1
+        sta sel_e+1
++       rts
 .anchor_first
         lda sel_anchor
         sta sel_s
@@ -2936,8 +2991,10 @@ sel_finish
         beq .at_end
         lda work                ; the cursor was at the start: mark from
         sta sel_anchor          ; here (the end) back to sel_s
+        sta sel_anchor_end
         lda work+1
         sta sel_anchor+1
+        sta sel_anchor_end+1
         lda sel_s
         sta off
         lda sel_s+1
@@ -2946,8 +3003,10 @@ sel_finish
         jmp +
 .at_end lda sel_s               ; the cursor was at the end: mark from sel_s
         sta sel_anchor
+        sta sel_anchor_end
         lda sel_s+1
         sta sel_anchor+1
+        sta sel_anchor_end+1
 +       ldx sel_old_row
         jmp show_cursor_at
 
@@ -3275,6 +3334,8 @@ select_all
         lda #0
         sta sel_anchor
         sta sel_anchor+1
+        sta sel_anchor_end      ; (not used: the cursor is after it)
+        sta sel_anchor_end+1
         lda #1
         sta sel_on
         ldx #ROWS-1             ; the end of the text on the bottom row
@@ -3567,13 +3628,7 @@ editor_key
         bcc .plain
         lda sel_on              ; start marking here?
         bne +
-        jsr get_cursor_off
-        lda work
-        sta sel_anchor
-        lda work+1
-        sta sel_anchor+1
-        lda #1
-        sta sel_on
+        jsr mark_here
 +       lda cur_row             ; remember where the cursor and the top of
         sta .old_row            ; the screen were
         lda row_off_lo
