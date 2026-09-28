@@ -12,13 +12,14 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   no more color skipping (see Menus).
 - **Phase 4 done** (2026-09-27; Jim tested in VICE), merged into `main`. Fixed after his test: CLEAR ALL
   kept the old file name, so CTRL-S saved over the loaded file; it now starts an unnamed document.
-- **Phase 5 (marking, cut/copy/paste, recolor):** passes the automated checks; waiting for Jim's Human
-  Test. Work is on branch `phase5`; merge into `main` when Jim accepts it. (One branch per phase.)
-- **Phase 6 (word wrap, page marker):** passes the automated checks; waiting for
-  Jim's Human Test. On branch `phase6` (made from `phase5`, since phase 5 isn't merged yet; Jim said
-  "let's move on" after phase 5). Also in this branch: **the editor runs under the KERNAL ROM** (Jim
-  chose this "plan D"; see Memory Map), Quit fixed (it left BASIC's zero page broken), the character
-  set saved with the document, and a lot of speed work for big documents (see Text Model, phase 6).
+- **Phase 5 done** (2026-09-28; marking, cut/copy/paste, recolor), merged into `main`. Changed after
+  Jim's test: the mark key defaults to C=; marking left includes the character the cursor started on.
+- **Phase 6 done** (2026-09-28; word wrap, page marker), merged into `main`. Changed after Jim's test:
+  with word wrap off, rows are cut at 40 characters (no sideways scrolling); the marker stays all grey
+  when the whole document fits. Also in this phase: **the editor runs under the KERNAL ROM** (Jim's
+  "plan D"; see Memory Map), Quit fixed (it left BASIC's zero page broken), the character set saved
+  with the document, and speed work for big documents (see Text Model, phase 6).
+- Next: phase 7, the 1351 mouse. (One branch per phase: `phase7`.)
 
 ## Working with Jim
 
@@ -1068,9 +1069,9 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
    SHIFT-CLR "CLEAR ALL Y/N". **Done 2026-09-27.**
 4. PETSCII SEQ load/save with device number and error channel. **Done 2026-09-27.**
 5. Selection (mark key: left SHIFT or C=) and cut/copy/paste; color and RVS keys recolor a selection.
-   (Automated checks passed 2026-09-27; Human Test pending.)
-6. Soft word wrap (off = rows cut at 40), marker tracking the real position. (Automated checks
-   passed 2026-09-28, with the memory change and speed work; Human Test pending.)
+   **Done 2026-09-28.**
+6. Soft word wrap (off = rows cut at 40), marker tracking the real position. **Done 2026-09-28**,
+   with the memory change and speed work.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
