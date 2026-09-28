@@ -22,6 +22,21 @@ spr_pointer
         !byte %11000011,0,0
         !byte %11111111,0,0
 
+; The same box low in its block (rows 13-20). The VIC fetches all 21 rows
+; of a sprite from its top line, and near the bottom of the text area those
+; fetches must stay clear of the bottom strip's exact timing: there the
+; pointer uses this picture, with its fetches above the box instead.
+spr_pointer_low
+        !byte 13, 8*3
+        !byte %11111111,0,0
+        !byte %11000011,0,0
+        !byte %11000011,0,0
+        !byte %11000011,0,0
+        !byte %11000011,0,0
+        !byte %11000011,0,0
+        !byte %11000011,0,0
+        !byte %11111111,0,0
+
 ; Menu icon "=F1" (23x7)
 spr_menu
         !byte 13, 7*3
@@ -79,6 +94,8 @@ spr_positions
         !byte <SPR_RIGHT_X,  SPR_BOT_Y          ; 5 F5 right
 ; X bit 8 for each sprite (bit n = sprite n)
 SPR_XMSB_BITS = (>PTR_TEST_X) | ((>SPR_MENU_X) << 1) | ((>SPR_LEFT_X) << 2) | ((>SPR_RIGHT_X) << 3) | ((>SPR_LEFT_X) << 4) | ((>SPR_RIGHT_X) << 5)
+ICON_XMSB = SPR_XMSB_BITS & %11111110   ; the icons' bits (the pointer's is
+                                        ; set by mouse_frame)
 
 ;----------------------------------------------------------------------------
 ; Screen row addresses: row n starts at SCREEN + 40*n (low and high bytes).

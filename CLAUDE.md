@@ -19,7 +19,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   when the whole document fits. Also in this phase: **the editor runs under the KERNAL ROM** (Jim's
   "plan D"; see Memory Map), Quit fixed (it left BASIC's zero page broken), the character set saved
   with the document, and speed work for big documents (see Text Model, phase 6).
-- Next: phase 7, the 1351 mouse. (One branch per phase: `phase7`.)
+- **Phase 7 (1351 mouse):** passes the automated checks; waiting for Jim's Human Test. On branch
+  `phase7`. Jim's choices: the pointer stays over the text area, and past it the icon under it turns
+  red (the pointer's color); the right button will open the menu (phase 8).
 
 ## Working with Jim
 
@@ -149,6 +151,11 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   -warp -autostart <prg> -limitcycles 8000000 -exitscreenshot out.png` (borders mode 2 shows the whole
   raster including blanking; 0 is the normal view). Use a scratch `-config` file so Jim's own VICE
   settings are never changed.
+- **Pictures of a state set up through the monitor:** the binary monitor's "display get" (0x84) returns
+  an **all-black buffer while VICE runs at warp speed or with `-VICIIborders 2`**. Without warp and
+  in the normal border mode it works (scratch `grab.py` wrote it to a PNG). For debug-border pictures,
+  start VICE with `-exitscreenshot out.png`, set things up through the monitor, then quit (0xbb): the
+  picture is written at exit — one VICE run per picture (phase 7's pointer/strip check did this).
 
 ### Notes for later (C64 Ultimate, phase 12)
 
@@ -179,8 +186,12 @@ through the test mailbox (keys, screen text, buffer text, labels from `build/mai
 `python tools/test_phase6.py [c64|ntsc]` (word wrap checked against a Python model of the wrap rule,
 paging both ways, reflow, wrap off, marker, and timings in a 30 KB document).
 **Run them all after any change to the editor** — test_phase3 caught a real regression in phase 5.
-(Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5, once "keys not
-handled" right after start-up in phase 6; neither repeated in 20+ runs. `mtest.keys` now reports the key
+`python tools/test_phase7.py [c64|ntsc]` (the mouse through the mailbox: detection, click to a cell,
+dragging both ways, mark key + click, pointer pictures, strips and icon colors, F3/F5 badge clicks,
+right button, drag-scrolling, the 10-second hide). `mtest` has `mouse(events)` and `move_to(x, y)`.
+(Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
+phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
+phase 6; none repeated. `mtest.keys` now reports the key
 count and the mailbox's log of the last keys handled when it times out; look there next time.)
 `vicemon.py` reads and writes $E000–$FFFF in VICE's **"ram" bank** (the editor lives under the KERNAL
 ROM, which is switched in during disk work) and everything else in the "cpu" bank (I/O, color RAM).
@@ -288,10 +299,10 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, end of phase 6): lower part $0801–$1E37, tables to $21D1; editor $E000–$FAAD, so
-  **~1.3 KB free under the KERNAL and ~7.3 KB below the sprite blocks**. New code goes in the lower
-  part from now on (the mouse driver runs in the IRQ; menus, formats, printer and tape fit there too);
-  code that runs during disk work must go in the lower part anyway.
+- Space (debug build, end of phase 7): lower part $0801–$2261, tables to $25FB; editor $E000–$FB9A, so
+  **~1.1 KB free under the KERNAL and ~6.2 KB below the sprite blocks**. New code goes in the lower
+  part from now on (menus, formats, printer and tape fit there); code that runs during disk work must
+  go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
   warm start. Restarting means loading the program again. (`SYS 2061` after Quit would crash too.)
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
@@ -480,10 +491,11 @@ marker bottom → color split at line 250 (stable) → open-border IRQ ($F9) →
 (separate, see Mouse).
 
 As built (see the table at the top of `src/irq.asm`): line 10 turns
-sprites 1–3 on (the mouse read goes there in phase 7); line 25 prepares the stable top IRQ; line 27
+sprites 1–3 on and puts in the pointer and icon colors worked out last frame; line 25 prepares the
+stable top IRQ; line 27
 stabilizes, opens the side borders on lines 28–49 and does the color split at the end of line 50,
-**then runs the housekeeping with IRQs allowed** (sprites 1–3 off, keyboard scan; cursor blink in
-phase 3), so the page-marker IRQs can cut in on time; marker top/bottom; line 247 prepares the stable
+**then runs the housekeeping with IRQs allowed** (sprites 1–3 off, mouse, keyboard scan), so the
+page-marker IRQs can cut in on time; marker top/bottom; line 247 prepares the stable
 bottom IRQ; line 249 opens the top/bottom border, does the split at the end of line 250, opens the
 side borders on lines 251–264, then only short jobs (25 rows back, frame counter, marker update).
 
@@ -493,9 +505,9 @@ housekeeping runs from line 52 to about 64 with no key pressed, about 71 in a fr
 the bottom strip IRQ ends at line 266 on PAL and line 3 on NTSC. The mailbox reports these (+15, +61,
 +62). Long jobs belong in the top housekeeping, never at the bottom. All wait
 counts are per video system; how they were found (`SPLIT_TEST` and `BORDER_TEST` builds) is described
-in `src/irq.asm`. **The mouse pointer's sprite fetches will shift this timing whenever the pointer is
-in or next to a strip — handle in phase 7** (for example, hide the pointer or use pre-tuned timings
-for those lines).
+in `src/irq.asm`. The mouse pointer's sprite fetches never reach the strips (see Mouse, as built);
+checked with the pointer at every edge of the text area on all four systems (phase 7). Housekeeping
+with the mouse ends by about line 72.
 
 ## Startup
 
@@ -626,12 +638,48 @@ movement keys** — C= + digit still selects a color.
   change (a joystick or empty port won't do this).
 - **Hide the pointer after 10 seconds without mouse input** (frame count from the timing table). Moving the
   mouse shows it again; a click while hidden only reveals it, without moving the cursor.
-- Clamp the pointer to the text area plus the opened top/bottom strips.
+- Clamp the pointer to the text area plus the opened top/bottom strips. (**Changed in phase 7:** the pointer
+  itself stays over the text area; in the strips it hides and the icon under it turns red. See As built.)
 - **Gotcha 1 — POT mux:** $DC00 bits 6/7 select which port the SID samples, and the keyboard scan rewrites
   $DC00. After scanning, restore $DC00 to select port 1, and read the POTs in a **later IRQ** (the SID
   needs ~512 cycles to take a fresh sample).
 - **Gotcha 2 — port 1 shares keyboard lines:** mouse buttons pull $DC01 lines low and look like key
   presses. Read the port with $DC00=$FF first and mask those bits out of the keyboard scan.
+
+**As built (phase 7, "The 1351 mouse" in `src/input.asm`; read its header comment first):**
+- **Where the pointer goes (Jim, 2026-09-28): over the text area only.** A sprite's fetches steal CPU
+  cycles on all 21 of its lines, and the strips are exact-timed, so the pointer never enters them.
+  Moved on past the text, it **hides and the border icon under it turns red** (the pointer's color);
+  a click then works that icon: F3 badges page up, F5 badges page down (with the mark key held: marking
+  by page), the menu icon opens the menu (phase 8; nothing yet). Hit zones in the strips (box left
+  edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60.
+- The box's top line stays within **52–242** (not 51 or 250: its fetches must stay within lines 52–249,
+  clear of the line 50 split, the line 249 stable check and the strips). From line 229 it uses a second
+  picture low in its block (block 254, rows 13–20; `spr_pointer_low`), so the fetches run above the box.
+  So on the top and bottom text rows the box sits one line off the cell; it still picks that cell.
+- **Reading:** `mouse_frame` runs in the housekeeping just **before** `scan_keyboard` (port 1 has been
+  selected since the last scan ended). It works out everything and leaves the VIC values in
+  `ptr_next_...` / `icon_colors`; `irq_frame_top` (line 10) puts them in, so the pointer never tears.
+  Movement: the 1351 manual's method (`pot_delta`), Y inverted, doubled when a frame's move is at least
+  the acceleration threshold (timing table: 4 PAL, 3 NTSC). Buttons read with $DC00 = $FF.
+- **Detection:** the pointer shows only after the paddle values change (`mouse_on`); until then
+  buttons are ignored (a joystick's fire button is no click). **10 seconds** without use hides it
+  (timing table: 500 / 600 frames); a click then only wakes it (`mouse_woke`, `mouse_ignore`).
+- **Events:** presses become key events in the normal queue — `KEY_MOUSE_L`, `KEY_MOUSE_R`,
+  `KEY_MOUSE_DRAG` ($42–$44) with the modifier keys held — and the place in `click_row` (0–24; $ff
+  above the text, 25 below), `click_col`, `click_icon`. The editor (`.mouse` in `editor_key`) sends
+  clicks through the same `.move` as the cursor keys, with `goto_click` as the move: so marking, the
+  mark key and redrawing work exactly as with keys. A drag is a move with the mark key bits added, so
+  it starts with `mark_here` (the character pressed on is marked, as with keys). Drag events come only
+  when the pointer reaches another cell and the queue is empty; past the top or bottom of the text, one
+  every 4 frames (`AUTOSCROLL`), moving the cursor a row further (the screen scrolls).
+- **Right button:** `KEY_MOUSE_R` → `.menu` in editor_key (does nothing until phase 8, like F1).
+- **Test mailbox:** mouse events (dx, dy in pixels, buttons) replace the real mouse, one per frame, no
+  acceleration; after the first one the buttons stay as the last event said (a drag can be sent in
+  several goes). Holding the mark key during a click: the mouse is read before the keyboard, so the
+  click must come a frame after the key event (test_phase7 writes both in one monitor stop).
+- **VICE for Jim:** Settings → Input devices → Control port 1: **Mouse (1351)**; then **Alt+Q** (or
+  Ctrl+M, depending on the VICE version) grabs the PC mouse, and again to let go.
 
 ## Text Model
 
@@ -1073,6 +1121,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 6. Soft word wrap (off = rows cut at 40), marker tracking the real position. **Done 2026-09-28**,
    with the memory change and speed work.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
+   (Automated checks passed 2026-09-28; Human Test pending.)
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
    Stats, Quit, then CTRL-F Find.

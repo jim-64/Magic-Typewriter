@@ -2437,6 +2437,41 @@ goto_row
 .col    !byte 0
 .n      !byte 0
 
+; goto_click - the mouse: put the cursor on the text cell clicked
+; (click_row, click_col), or as near as the text allows. Dragging past the
+; top or bottom of the text (row $ff, or 25): to the top or bottom row,
+; then on a row at a time, the screen scrolling.
+!zone goto_click
+goto_click
+        lda click_col
+        sta want_col
+        ldx click_row
+        cpx #ROWS
+        bcc .row
+        cpx #$ff
+        beq .above
+        ldx cur_row             ; below the text
+        cpx #ROWS-1
+        bcs +
+        ldx #ROWS-1
+        bne .row
++       jmp cursor_down
+.above  ldx cur_row             ; above the text
+        beq +
+        ldx #0
+        beq .row
++       jmp cursor_up
+.row    txa
+        pha
+        jsr leave_cursor
+        pla
+        tax
+        cpx eof_row             ; not past the end of the text
+        bcc +
+        beq +
+        ldx eof_row
++       jmp goto_row
+
 ; page_down (F5), page_up (F3) - move a screenful: the screen scrolls by
 ; 24 rows and the cursor keeps its place on the screen.
 !zone page_down
@@ -3508,7 +3543,11 @@ editor_key
         jmp quit
 +       rts
 
-.do_key lda .mods               ; CTRL + a letter: the commands
+.do_key lda .code               ; the mouse (mouse_frame, in input.asm)
+        cmp #KEY_MOUSE_L
+        bcc +
+        jmp .mouse
++       lda .mods               ; CTRL + a letter: the commands
         and #MOD_CTRL
         beq .keys
         lda .code
@@ -3618,6 +3657,36 @@ editor_key
         jmp .type
 .nothing
         rts
+
+; .mouse - A = a mouse event; where it happened is in click_row,
+; click_col and click_icon.
+.mouse  cmp #KEY_MOUSE_R
+        beq .menu               ; right button: the menu, like F1
+        cmp #KEY_MOUSE_DRAG
+        beq .drag
+        lda click_icon          ; left button: on a border icon?
+        beq .click
+        cmp #ICON_F3
+        bne +
+        lda #<page_up           ; (with the mark key: marking by page, as
+        ldx #>page_up           ; with the F3 key)
+        jmp .move
++       cmp #ICON_F5
+        bne .menu               ; (the menu icon)
+        lda #<page_down
+        ldx #>page_down
+        jmp .move
+.drag   lda mark_key            ; dragging marks, as if the mark key were
+        beq +                   ; held (MARK_LSHIFT = 0)
+        lda #MOD_CBM
+        bne ++
++       lda #MOD_LSHIFT
+++      ora .mods
+        sta .mods
+.click  lda #<goto_click        ; to the place clicked (with the mark key:
+        ldx #>goto_click        ; marking up to it)
+        jmp .move
+.menu   rts                     ; (the menu arrives in phase 8)
 
 ; .move - a key that moves the cursor (A/X = the routine that moves it).
 ; With the mark key held it marks text from where the cursor was; without

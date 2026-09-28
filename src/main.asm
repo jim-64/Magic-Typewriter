@@ -183,6 +183,7 @@ start                           ; must be at $080d = 2061
         jsr init_sprites
         jsr init_marker
         jsr init_keyboard
+        jsr init_mouse
         jsr init_irq
         cli
         jsr editor_init         ; an empty document, ready to type

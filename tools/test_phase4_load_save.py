@@ -122,7 +122,9 @@ try:
 
     # 6. Display back to normal after disk use: raster IRQ on, sprites on
     check("raster IRQ back on", e.peek(0xd01a)[0] & 1 == 1)
-    check("sprites back on", e.peek(0xd015)[0] in (0x3f, 0x31))
+    # (all five icons, or the F5 badges below the top strip; the pointer,
+    # sprite 0, stays off: there is no mouse)
+    check("sprites back on", e.peek(0xd015)[0] in (0x3e, 0x30), hex(e.peek(0xd015)[0]))
 finally:
     try:
         e.m.quit()

@@ -102,8 +102,8 @@ io_end  sei
         lda #0                  ; forget keys the KERNAL collected
         sta NDX
         jsr init_irq            ; (switches the timer IRQ off again)
-        lda #SPR_ON_ALL
-        sta VIC_SPR_ENABLE
+        lda #SPR_ON_ICONS       ; (the pointer is back from the next frame,
+        sta VIC_SPR_ENABLE      ; if it shows)
         cli
         rts
 

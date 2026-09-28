@@ -3,6 +3,7 @@ import time, re, os
 from vicemon import Mon, start_vice, PROJ, WORK
 MB = 0x02c0
 HEAD, TAIL, QUEUE, COUNT = MB + 16, MB + 17, MB + 18, MB + 52
+MHEAD, MTAIL, MQUEUE = MB + 34, MB + 35, MB + 36
 
 KEY = {c: n for n, c in enumerate(
     ["DEL", "RETURN", "RIGHT", "F7", "F1", "F3", "F5", "DOWN",
@@ -77,6 +78,50 @@ class Editor:
                 raise TimeoutError("keys not handled: count %d, wanted %d (started at %d); "
                                    "last keys handled (code, mods): %s"
                                    % (self.count(), want, start, self.peek(MB + 53, 8).hex(" ")))
+        time.sleep(settle)
+
+    def mouse(self, events, settle=0.3, timeout=30):
+        """events: list of (dx, dy, buttons) - dx/dy in pixels (+ = right,
+        down), buttons bit 0 left, bit 1 right. One is taken per frame; the
+        buttons then stay as the last event said."""
+        pending = list(events)
+        t0 = time.time()
+        while pending:
+            head, tail = self.peek(MHEAD, 2)
+            free = (tail - head - 1) % 4
+            batch = pending[:free]
+            if batch:
+                for dx, dy, b in batch:
+                    self.m.write(MQUEUE + 3 * head, bytes([dx & 255, dy & 255, b]))
+                    head = (head + 1) % 4
+                self.m.write(MHEAD, bytes([head]))
+                self.m.resume()
+                pending = pending[len(batch):]
+            time.sleep(0.05)
+            if time.time() - t0 > timeout:
+                raise TimeoutError("mouse events not taken")
+        while True:
+            head, tail = self.peek(MHEAD, 2)
+            if head == tail:
+                break
+            time.sleep(0.05)
+            if time.time() - t0 > timeout:
+                raise TimeoutError("mouse events not taken")
+        time.sleep(settle)
+
+    def mouse_pos(self):
+        x = int.from_bytes(self.peek(self.lab["mouse_x"], 2), "little")
+        return x, self.peek(self.lab["mouse_y"])[0]
+
+    def move_to(self, x, y, buttons=0, settle=0.3):
+        """move the pointer's box to (x, y), in steps of at most 60 pixels"""
+        for _ in range(40):
+            cx, cy = self.mouse_pos()
+            if (cx, cy) == (x, y):
+                break
+            dx = max(-60, min(60, x - cx))
+            dy = max(-60, min(60, y - cy))
+            self.mouse([(dx, dy, buttons)], settle=0.05)
         time.sleep(settle)
 
     def type_text(self, text):

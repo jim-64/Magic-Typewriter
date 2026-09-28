@@ -85,6 +85,18 @@ tab_blink_frames
 tab_repeat_step
         !byte 6, 5, 5, 6
 
+; Mouse: the pointer hides after 10 seconds without mouse use (frames).
+tab_mouse_idle_lo
+        !byte <500, <600, <600, <500
+tab_mouse_idle_hi
+        !byte >500, >600, >600, >500
+
+; Mouse acceleration: a move of at least this many steps in one frame
+; counts double (fast moves cross the screen quicker). A frame is shorter
+; on NTSC, so the same hand speed gives fewer steps per frame there.
+tab_mouse_accel
+        !byte 4, 3, 3, 4
+
 ; Stable raster handlers for the top and bottom strips (see irq.asm).
 tab_border_top_lo
         !byte <border_top_pal, <border_top_ntsc, <border_top_oldntsc, <border_top_drean

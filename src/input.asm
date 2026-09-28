@@ -1,6 +1,6 @@
 ;============================================================================
-; input.asm - keyboard matrix scanner, RESTORE key, debug test mailbox
-; (The 1351 mouse comes in phase 7.)
+; input.asm - keyboard matrix scanner, RESTORE key, 1351 mouse, debug test
+; mailbox
 ;============================================================================
 
 ;============================================================================
@@ -64,6 +64,9 @@ KEY_W           = 9
 ; Events that are not a single key
 KEY_CHARSET     = $40           ; C= and SHIFT pressed and let go alone
 KEY_RESTORE     = $41           ; the RESTORE key
+KEY_MOUSE_L     = $42           ; mouse: left button pressed (where: see
+KEY_MOUSE_R     = $43           ; click_row), right button pressed, or
+KEY_MOUSE_DRAG  = $44           ; moved with the left button held
 
 ; Modifier bits (in key_mods and in each event)
 MOD_LSHIFT      = %00000001
@@ -252,7 +255,7 @@ scan_keyboard
         ora #MOD_REPEAT
         tax
         lda key_last
-        jsr .queue
+        jsr queue_event
         jmp .no_repeat
 .wait   sta key_timer
 .no_repeat
@@ -279,7 +282,7 @@ scan_keyboard
         ora key_code
         sta key_last            ; the newest key is the one that repeats
         ldx key_mods
-        jsr .queue
+        jsr queue_event
         lda #REPEAT_DELAY
         sta key_timer
         ldx key_row
@@ -322,7 +325,7 @@ scan_keyboard
         bne +
         lda #KEY_CHARSET
         ldx #0
-        jsr .queue
+        jsr queue_event
 +       lda #0
         sta key_charset
 .cs_done
@@ -334,7 +337,7 @@ scan_keyboard
         sta key_restores_seen
         lda #KEY_RESTORE
         ldx key_mods
-        jsr .queue
+        jsr queue_event
 +
         ; Remember this frame's matrix for the next one.
         ldx #7
@@ -344,9 +347,10 @@ scan_keyboard
         bpl -
         rts
 
-; .queue - add an event: A = key code, X = modifiers. Keeps Y.
-; If the queue is full the event is dropped.
-.queue  pha
+; queue_event - add an event: A = key code, X = modifiers. Keeps Y.
+; If the queue is full the event is dropped. (The mouse uses it too.)
+queue_event
+        pha
         txa
         ldx key_q_head
         sta key_q_mods,x
@@ -419,6 +423,524 @@ key_to_petscii
 .none   sec
         rts
 
+;============================================================================
+; The 1351 mouse (control port 1)
+;
+; In its normal ("proportional") mode the 1351 tells how far it moved
+; through the SID's two paddle inputs, $D419 (X) and $D41A (Y): each counts
+; up or down as the mouse moves, and wraps round. Bits 1-6 carry the count;
+; bit 0 is noise. The buttons are joystick lines: left = fire ($DC01 bit
+; 4), right = up ($DC01 bit 0).
+;
+; mouse_frame runs once per frame in the housekeeping IRQ, just before the
+; keyboard scan: since the last scan, $DC00 has selected port 1 for the
+; SID's paddle inputs (bits 6-7 = %01) - far longer than the 512 cycles the
+; SID needs for a fresh reading. It works out where the pointer is, whether
+; it shows, which border icon it is over, and turns button presses into
+; key events (KEY_MOUSE_...) that the editor handles like keys. What goes
+; into the VIC is left in ptr_next_... and icon_colors; irq_frame_top puts
+; it in at line 10, where nothing is being drawn.
+;
+; Where the pointer goes (Jim's choice): over the text area only. The
+; border strips above and below it are timed to the exact cycle, and the
+; pointer sprite's fetches there would upset that. Moved on past the text,
+; the pointer hides and the border icon under it turns red instead; a
+; click then works that icon.
+;
+; The VIC fetches all 21 rows of a sprite from its top line, even blank
+; ones, stealing CPU cycles at the end of each of those lines. For the
+; pointer those lines must stay within 52-249: line 50 ends with the top
+; color split, line 249 with the bottom stable IRQ's check, and the strips
+; beyond are exact-timed. So the box's top line stays within 52-242, and
+; from line 229 on the pointer uses a second picture, low in its block, so
+; that the fetches run above the box instead of below it.
+;
+; No mouse, no pointer: it only shows once the paddle values have changed
+; (a joystick or an empty port never changes them). After 10 seconds
+; without use it hides; using the mouse again shows it, and a click then
+; only wakes it up.
+;============================================================================
+SID_POTX        = $d419
+SID_POTY        = $d41a
+
+; Where the pointer's 8 x 8 box may be: its left edge in sprite X
+; coordinates, its top as a raster line
+MOUSE_X_MIN     = 24            ; over the text area: the first column ...
+MOUSE_X_MAX     = 24 + 39*8     ; ... to the last
+MOUSE_STRIP_X_MAX = 360         ; in the strips: over the right badges too
+MOUSE_Y_MIN     = 30            ; in the top strip
+MOUSE_Y_TEXT    = 52            ; the first line it shows on (not 51: see
+MOUSE_Y_LAST    = 242           ; above) and the last
+MOUSE_Y_MAX     = 255           ; in the bottom strip
+MOUSE_Y_LOWPIC  = 229           ; from here on, the picture low in its block
+MOUSE_X0        = 24 + 19*8     ; where it starts: the middle of the screen
+MOUSE_Y0        = 51 + 12*8 + 1
+
+; Which border icon a click was on (click_icon)
+ICON_NONE       = 0
+ICON_MENU       = 1
+ICON_F3         = 2
+ICON_F5         = 3
+
+AUTOSCROLL      = 4             ; frames per row when dragging past the text
+
+mouse_on        !byte 0         ; 1 = a mouse was found (its values changed)
+mouse_first     !byte 1         ; 1 = nothing read yet
+mouse_x         !word MOUSE_X0  ; the box's left edge
+mouse_y         !byte MOUSE_Y0  ; the box's top line
+mouse_dx        !byte 0         ; this frame's movement (signed: + is to
+mouse_dy        !byte 0         ; the right, and down)
+mouse_btn       !byte 0         ; buttons now: bit 0 left, bit 1 right
+mouse_old_btn   !byte 0         ; ... and last frame
+mouse_idle      !word 0         ; frames since the mouse was last used
+mouse_idle_max  !word 0         ; 10 seconds (timing table)
+mouse_accel     !byte 0         ; acceleration threshold (timing table)
+mouse_woke      !byte 0         ; 1 = this frame's use woke a hidden pointer
+mouse_ignore    !byte 0         ; 1 = the left button only woke it: ignore
+                                ; it until it is let go
+mouse_drag      !byte 0         ; 1 = the left button went down in the text
+mouse_zone      !byte 0         ; 0 text area, 1 top strip, 2 bottom strip
+mouse_sprite    !byte 0         ; the icon sprite under it (1-5), 0 none
+drag_timer      !byte 0
+pot_x           !byte 0         ; the paddle values last used
+pot_y           !byte 0
+
+; For the editor: where the last mouse event happened
+click_row       !byte 0         ; text row 0-24; $ff above the text, 25 below
+click_col       !byte 0         ; column 0-39
+click_icon      !byte 0         ; ICON_...: a click on a border icon
+
+; For irq_frame_top: what goes into the VIC at the top of the next frame
+ptr_next_x      !byte <MOUSE_X0
+ptr_next_msb    !byte ICON_XMSB | (>MOUSE_X0)
+ptr_next_y      !byte MOUSE_Y0 - 1
+ptr_next_block  !byte SPR_BLOCK_PTR
+ptr_next_on     !byte 0         ; 1 = the pointer shows
+icon_colors     !fill 5, LIGHT_BLUE ; sprites 1-5
+
+;----------------------------------------------------------------------------
+; init_mouse - timing values for this system
+;----------------------------------------------------------------------------
+init_mouse
+        ldx system_type
+        lda tab_mouse_idle_lo,x
+        sta mouse_idle_max
+        lda tab_mouse_idle_hi,x
+        sta mouse_idle_max+1
+        lda tab_mouse_accel,x
+        sta mouse_accel
+        rts
+
+;----------------------------------------------------------------------------
+; mouse_frame - once per frame, from the housekeeping IRQ (see above)
+;----------------------------------------------------------------------------
+!zone mouse_frame
+mouse_frame
+        ; 1. How far it moved, and the buttons.
+!if DEBUG {
+        jsr mailbox_mouse       ; the test harness moving it instead?
+        bcc .have
+}
+        lda SID_POTX
+        ldy pot_x
+        jsr pot_delta
+        sty pot_x
+        jsr .accel
+        sta mouse_dx
+        lda SID_POTY
+        ldy pot_y
+        jsr pot_delta
+        sty pot_y
+        jsr .accel
+        eor #$ff                ; (the count goes up as the mouse moves away
+        clc                     ; from you: then the pointer goes up)
+        adc #1
+        sta mouse_dy
+        lda mouse_first         ; the very first reading only sets the start
+        beq +
+        lda #0
+        sta mouse_first
+        sta mouse_dx
+        sta mouse_dy
++       lda mouse_dx            ; moved: so there is a mouse
+        ora mouse_dy
+        beq +
+        lda #1
+        sta mouse_on
++       lda #$ff                ; the buttons: port 1's lines, read with no
+        sta CIA1_PRA            ; keyboard row selected
+        lda CIA1_PRB
+        eor #$ff                ; (1 = pressed)
+        tax
+        ldy #0
+        and #%00010000          ; fire line: the left button
+        beq +
+        ldy #1
++       txa
+        and #%00000001          ; up line: the right button
+        beq +
+        iny
+        iny
++       sty mouse_btn
+        lda mouse_on            ; no mouse found: nothing more to do (and a
+        bne .have               ; joystick's fire button is no click)
+        sta mouse_btn
+        rts
+
+        ; 2. In use, or idle?
+.have   lda #0
+        sta mouse_woke
+        lda mouse_dx
+        ora mouse_dy
+        bne .used
+        lda mouse_btn
+        cmp mouse_old_btn
+        bne .used
+        jsr .is_idle            ; not used: count up to the limit
+        bcs .place
+        inc mouse_idle
+        bne .place
+        inc mouse_idle+1
+        jmp .place
+.used   jsr .is_idle            ; used: if it was hidden, this only wakes it
+        bcc +
+        lda #1
+        sta mouse_woke
++       lda #0
+        sta mouse_idle
+        sta mouse_idle+1
+
+        ; 3. The new place.
+.place  ldx #0                  ; x = x + dx
+        lda mouse_dx
+        bpl +
+        dex
++       clc
+        adc mouse_x
+        sta mouse_x
+        txa
+        adc mouse_x+1
+        sta mouse_x+1
+        bpl +                   ; below 0: 0
+        lda #0
+        sta mouse_x
+        sta mouse_x+1
++       ldx #0                  ; y = y + dy, within MOUSE_Y_MIN-MOUSE_Y_MAX
+        lda mouse_dy
+        bpl +
+        dex
++       clc
+        adc mouse_y
+        tay
+        txa
+        adc #0                  ; the high byte: 0 fine, $ff below 0,
+        beq +                   ; 1 past 255
+        bmi .y_min
+        ldy #MOUSE_Y_MAX
+        bne .y_set
++       cpy #MOUSE_Y_MIN
+        bcs .y_set
+.y_min  ldy #MOUSE_Y_MIN
+.y_set  sty mouse_y
+        ldx #1                  ; which zone: the top strip, ...
+        cpy #MOUSE_Y_TEXT
+        bcc +
+        ldx #2                  ; ... the bottom strip ...
+        cpy #MOUSE_Y_LAST+1
+        bcs +
+        ldx #0                  ; ... or the text area
++       stx mouse_zone
+        cpx #0
+        bne .strip_x
+        lda mouse_x             ; over the text: from its first column ...
+        cmp #<MOUSE_X_MIN
+        lda mouse_x+1
+        sbc #>MOUSE_X_MIN
+        bcs +
+        lda #<MOUSE_X_MIN
+        sta mouse_x
+        lda #>MOUSE_X_MIN
+        sta mouse_x+1
++       lda #<MOUSE_X_MAX       ; ... to its last
+        cmp mouse_x
+        lda #>MOUSE_X_MAX
+        sbc mouse_x+1
+        bcs .x_ok
+        lda #<MOUSE_X_MAX
+        sta mouse_x
+        lda #>MOUSE_X_MAX
+        sta mouse_x+1
+        jmp .x_ok
+.strip_x
+        lda #<MOUSE_STRIP_X_MAX ; in a strip: over the right badges too
+        cmp mouse_x
+        lda #>MOUSE_STRIP_X_MAX
+        sbc mouse_x+1
+        bcs .x_ok
+        lda #<MOUSE_STRIP_X_MAX
+        sta mouse_x
+        lda #>MOUSE_STRIP_X_MAX
+        sta mouse_x+1
+.x_ok
+
+        ; 4. The border icon under it (in a strip): a left badge left of
+        ; x = 20, a right badge from x = 340, the menu icon (top) below 60.
+        ldy #0
+        lda mouse_zone
+        beq .set_icon
+        ldx #2                  ; top strip: F3 badges, sprites 2 and 3
+        cmp #1
+        beq +
+        ldx #4                  ; bottom strip: F5 badges, sprites 4 and 5
++       lda mouse_x+1
+        bne .right_side
+        lda mouse_x
+        cmp #20
+        bcs +
+        txa                     ; the left badge
+        tay
+        bne .set_icon
++       cmp #60                 ; the menu icon (top strip only)
+        bcs .set_icon
+        cpx #2
+        bne .set_icon
+        ldy #1
+        bne .set_icon
+.right_side
+        lda mouse_x             ; 256 + 84 = 340 and on: the right badge
+        cmp #<340
+        bcc .set_icon
+        inx
+        txa
+        tay
+.set_icon
+        sty mouse_sprite
+        ldx #4                  ; the icons light blue, the one under the
+        lda #LIGHT_BLUE         ; pointer red (while the mouse is in use)
+-       sta icon_colors,x
+        dex
+        bpl -
+        ldx mouse_sprite
+        beq +
+        jsr .is_idle
+        bcs +
+        lda #RED
+        sta icon_colors-1,x
++
+        ; 5. The pointer sprite, for the next frame.
+        lda #0
+        sta ptr_next_on
+        lda mouse_zone          ; in a strip: hidden
+        bne .events
+        jsr .is_idle            ; not used for 10 seconds: hidden
+        bcs .events
+        lda #1
+        sta ptr_next_on
+        lda mouse_x
+        sta ptr_next_x
+        lda mouse_x+1
+        and #1
+        ora #ICON_XMSB
+        sta ptr_next_msb
+        ldx #SPR_BLOCK_PTR      ; (a sprite's first row shows on line Y+1)
+        lda mouse_y
+        cmp #MOUSE_Y_LOWPIC
+        bcs +
+        sbc #0                  ; picture in rows 0-7: Y = top - 1 (the
+        jmp ++                  ; carry is clear: that subtracts 1)
++       ldx #SPR_BLOCK_PTR_LOW  ; picture in rows 13-20: Y = top - 14
+        sbc #14                 ; (carry set)
+++      sta ptr_next_y
+        stx ptr_next_block
+
+        ; 6. The buttons, as events for the editor.
+.events lda mouse_btn
+        and #1
+        beq .left_up
+        lda mouse_old_btn
+        and #1
+        bne .left_held
+        lda mouse_woke          ; the left button went down - if it only
+        bne .ignore             ; woke the pointer, that is all it does
+        jsr .where
+        lda #0
+        sta mouse_drag
+        lda mouse_zone
+        beq +                   ; in the text: a click there, and dragging
+        lda .icon               ; in a strip: only a click on an icon
+        beq .right
+        bne ++
++       lda #1
+        sta mouse_drag
+++      lda #AUTOSCROLL
+        sta drag_timer
+        lda #KEY_MOUSE_L
+        jsr .event
+        jmp .right
+.ignore lda #1
+        sta mouse_ignore
+        bne .right
+.left_up
+        lda #0
+        sta mouse_ignore
+        sta mouse_drag
+        beq .right
+.left_held
+        lda mouse_ignore        ; held down: dragging? (not after a press
+        bne .right              ; that only woke the pointer, nor one on
+        lda mouse_drag          ; an icon)
+        beq .right
+        lda key_q_head          ; only when the editor has taken all the
+        cmp key_q_tail          ; events before (so they never pile up)
+        bne .right
+        jsr .where
+        lda mouse_zone
+        beq +
+        dec drag_timer          ; past the top or bottom of the text: a row
+        bne .right              ; every few frames
+        lda #AUTOSCROLL
+        sta drag_timer
+        bne .drag
++       lda .row                ; in the text: when it gets to another cell
+        cmp click_row
+        bne .drag
+        lda .col
+        cmp click_col
+        beq .right
+.drag   lda #KEY_MOUSE_DRAG
+        jsr .event
+
+.right  lda mouse_btn           ; the right button went down: the menu
+        and #2
+        beq .done
+        lda mouse_old_btn
+        and #2
+        bne .done
+        lda mouse_woke
+        bne .done
+        jsr .where
+        lda #KEY_MOUSE_R
+        jsr .event
+.done   lda mouse_btn
+        sta mouse_old_btn
+        rts
+
+; .is_idle - carry set if the mouse has not been used for 10 seconds
+.is_idle
+        lda mouse_idle
+        cmp mouse_idle_max
+        lda mouse_idle+1
+        sbc mouse_idle_max+1
+        rts
+
+; .accel - A = a movement (signed): doubled when it is fast
+.accel  sta .a
+        bpl +
+        eor #$ff                ; (the size of a move to the left or up)
+        clc
+        adc #1
++       cmp mouse_accel
+        lda .a
+        bcc +
+        asl                     ; (twice a signed byte: small numbers only)
++       rts
+.a      !byte 0
+
+; .where - the cell under the pointer (.row, .col), or the icon (.icon)
+.where  lda #ICON_NONE
+        sta .icon
+        lda mouse_zone
+        beq .in_text
+        ldx #$ff                ; in a strip: row $ff above the text, 25
+        cmp #1                  ; below it
+        beq +
+        ldx #ROWS
++       stx .row
+        ldx mouse_sprite        ; and the icon under it
+        lda .sprite_icon,x
+        sta .icon
+        jmp .column
+.in_text
+        lda mouse_y             ; the nearest row: (y - 51 + 4) / 8
+        sec
+        sbc #51-4
+        lsr
+        lsr
+        lsr
+        sta .row
+.column lda mouse_x             ; the nearest column: (x - 24 + 4) / 8
+        sec
+        sbc #24-4
+        sta .t
+        lda mouse_x+1
+        sbc #0
+        bcs +
+        lda #0                  ; (left of the text: column 0)
+        sta .t
++       lsr
+        ror .t
+        lsr
+        ror .t
+        lsr
+        ror .t
+        lda .t
+        cmp #40
+        bcc +
+        lda #39                 ; (right of the text: the last column)
++       sta .col
+        rts
+.sprite_icon
+        !byte ICON_NONE, ICON_MENU, ICON_F3, ICON_F3, ICON_F5, ICON_F5
+
+; .event - queue event A for the editor, with the place it happened and
+; the modifier keys held now (so the mark key works as with the keys)
+.event  pha
+        lda .row
+        sta click_row
+        lda .col
+        sta click_col
+        lda .icon
+        sta click_icon
+        pla
+        ldx key_mods
+        jmp queue_event
+
+.row    !byte 0
+.col    !byte 0
+.icon   !byte 0
+.t      !byte 0
+
+;----------------------------------------------------------------------------
+; pot_delta - A = a paddle value now, Y = the one last used. Returns A = how
+; far the mouse moved (signed; the value counts in steps of 2, bit 0 is
+; noise), and Y = the value to keep: the new one - or the old one if it did
+; not really move, so noise never adds up. (The method from the 1351 manual.)
+;----------------------------------------------------------------------------
+!zone pot_delta
+pot_delta
+        sty .old
+        sta .new
+        sec
+        sbc .old
+        and #%01111111
+        cmp #%01000000
+        bcs .neg
+        lsr                     ; forwards
+        beq .none
+        ldy .new
+        rts
+.neg    ora #%11000000          ; backwards
+        cmp #$ff
+        beq .none
+        sec
+        ror
+        ldy .new
+        rts
+.none   lda #0                  ; (Y is still the old value)
+        rts
+.old    !byte 0
+.new    !byte 0
+
 !if DEBUG {
 ;============================================================================
 ; Debug test mailbox (DEBUG=1 builds only)
@@ -454,9 +976,15 @@ key_to_petscii
 ;                           same code as a real key press.
 ;  +34     1    harness     mouse queue head
 ;  +35     1    program     mouse queue tail
-;  +36    12    harness     mouse queue: 4 events of 3 bytes
-;                             dx (signed), dy (signed),
+;  +36    12    harness     mouse queue: 4 events of 3 bytes, one taken
+;                           per frame in place of the real mouse:
+;                             dx (signed, + = right), dy (signed, + =
+;                             down), both in pixels (no acceleration);
 ;                             buttons (bit 0 left, bit 1 right)
+;                           Once the harness has sent one, the buttons stay
+;                           as its last event said (so a drag can be sent
+;                           in several goes), and the real mouse is not
+;                           read any more.
 ;  +48     4    program     SPLIT_TEST builds: top split early/late,
 ;                           bottom split early/late (1 = has happened)
 ;  +52     1    program     number of key events the main loop has taken
@@ -596,6 +1124,51 @@ test_document
         jsr redraw_all
         jsr locate_cursor
         jmp cursor_show
+
+;----------------------------------------------------------------------------
+; mailbox_mouse - called by mouse_frame: the harness's mouse instead of the
+; real one? Carry clear if so, with mouse_dx, mouse_dy and mouse_btn set.
+;----------------------------------------------------------------------------
+!zone mailbox_mouse
+mailbox_mouse
+        ldx MB_MOUSE_TAIL       ; an event waiting?
+        cpx MB_MOUSE_HEAD
+        bne .event
+        lda .used               ; no: once the harness has used the mouse,
+        beq .none               ; it stays still with the buttons as the
+        lda #0                  ; last event said
+        sta mouse_dx
+        sta mouse_dy
+        lda .btn
+        sta mouse_btn
+        clc
+        rts
+.none   sec                     ; (never used: the real mouse)
+        rts
+.event  txa                     ; 3 bytes per event
+        asl
+        adc MB_MOUSE_TAIL
+        tay
+        lda MB_MOUSE_QUEUE,y
+        sta mouse_dx
+        lda MB_MOUSE_QUEUE+1,y
+        sta mouse_dy
+        lda MB_MOUSE_QUEUE+2,y
+        sta mouse_btn
+        sta .btn
+        inx                     ; take it off the queue
+        txa
+        and #3
+        sta MB_MOUSE_TAIL
+        lda #1
+        sta .used
+        sta mouse_on            ; (a mouse is there, as far as we know)
+        lda #0
+        sta mouse_first
+        clc
+        rts
+.used   !byte 0
+.btn    !byte 0
 
 ;----------------------------------------------------------------------------
 ; mailbox_log_key - record a key event the main loop took (A = code,

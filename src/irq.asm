@@ -3,12 +3,13 @@
 ;
 ; Each frame runs these raster IRQs, in this order:
 ;
-;   line  10  irq_frame_top  sprites 1-3 back on (mouse read in phase 7)
+;   line  10  irq_frame_top  sprites 1-3 back on; the mouse pointer and icon
+;                            colors worked out last frame go into the VIC
 ;   line  25  irq_top_a      set up the stable top IRQ
 ;   line  27  border_top_... open the side borders on lines 28-49 (so the
 ;                            F3 badges show there), then the color split
 ;                            at the end of line 50; then housekeeping
-;                            (sprites 1-3 off, keyboard scan) with IRQs
+;                            (sprites 1-3 off, mouse, keyboard scan) with IRQs
 ;                            allowed, so the marker IRQs can cut in
 ;   marker    irq_mark_top   side border -> grey    (skipped if not needed)
 ;   marker    irq_mark_bot   side border -> dark grey (skipped if not needed)
@@ -308,10 +309,33 @@ irq_exit
 irq_frame_top
         lda #$ff
         sta VIC_IRQ_FLAGS
-        lda #SPR_ON_ALL         ; all six sprites back on
+
+        ; The mouse pointer and the icon colors, as mouse_frame (input.asm)
+        ; worked them out last frame. Put into the VIC here, above the text
+        ; area, so the pointer never changes while it is being drawn.
+        lda ptr_next_x
+        sta VIC_SPR0_X
+        lda ptr_next_y
+        sta VIC_SPR0_Y
+        lda ptr_next_msb
+        sta VIC_SPR_XMSB
+        lda ptr_next_block
+        sta SPRITE_PTRS
+        ldx #4
+-       lda icon_colors,x       ; sprites 1-5
+        sta VIC_SPR0_COLOR+1,x
+        dex
+        bpl -
+
+        lda ptr_next_on         ; the five icons back on, and the pointer
+        ora #SPR_ON_ICONS       ; if it shows
         sta VIC_SPR_ENABLE
+        and #SPR_ON_BOTTOM      ; (the same for after the top strip, less
+        sta spr_bottom          ; its three sprites)
         +next_irq TOP_A_LINE, irq_top_a
         jmp irq_exit
+
+spr_bottom      !byte 0         ; sprites on from the top strip down
 
 ;============================================================================
 ; Top strip: side borders open for the F3 badges, then the color split
@@ -390,9 +414,11 @@ border_top_done
         ; so on PAL (312 lines) the top badges and the menu icon would show
         ; a second time at lines 256+Y, low in the bottom border. Their last
         ; line is done now: switch them off until irq_frame_top.
-        lda #SPR_ON_BOTTOM
+        lda spr_bottom
         sta VIC_SPR_ENABLE
 
+        jsr mouse_frame         ; the mouse first: the SID has been reading
+                                ; port 1 since the last keyboard scan
         jsr scan_keyboard
 !if DEBUG {
         lda VIC_RASTER          ; and where it ends
@@ -724,13 +750,15 @@ SPR_BLOCK_PTR   = 250           ; mouse pointer
 SPR_BLOCK_MENU  = 251           ; "=F1" menu icon
 SPR_BLOCK_F3    = 252           ; F3 badge (sprites 2 and 3)
 SPR_BLOCK_F5    = 253           ; F5 badge (sprites 4 and 5)
+SPR_BLOCK_PTR_LOW = 254         ; mouse pointer, low in its block
 
 SPR_TOP_Y       = 29 - 1        ; F3 badges and menu icon: blocks on lines
                                 ; 29-49; F3 picture (rows 8-20) on 37-49,
                                 ; menu picture (rows 13-19) on 42-48
 SPR_BOT_Y       = 252 - 1       ; F5 badges: picture (rows 0-12) on 252-264
-SPR_ON_ALL      = %00111111     ; sprites 0-5
-SPR_ON_BOTTOM   = %00110001     ; pointer and F5 badges only (see border_bot_done)
+SPR_ON_ICONS    = %00111110     ; sprites 1-5 (the pointer, 0, only when
+                                ; it shows: see irq_frame_top)
+SPR_ON_BOTTOM   = %00110001     ; pointer and F5 badges only (see border_top_done)
 SPR_LEFT_X      = 0             ; left border, touching the text area (X=24)
 SPR_RIGHT_X     = 344           ; right border, from the text area's edge;
                                 ; needs X bit 8
@@ -765,6 +793,10 @@ init_sprites
         lda #<spr_f5
         ldx #>spr_f5
         ldy #SPR_BLOCK_F5
+        jsr .copy
+        lda #<spr_pointer_low
+        ldx #>spr_pointer_low
+        ldy #SPR_BLOCK_PTR_LOW
         jsr .copy
 
         ; Sprite pointers
@@ -803,7 +835,7 @@ init_sprites
         sta VIC_SPR_EXPX
         sta VIC_SPR_EXPY
         sta VIC_SPR_PRIO
-        lda #SPR_ON_ALL
+        lda #SPR_ON_ICONS       ; (the pointer shows once a mouse is found)
         sta VIC_SPR_ENABLE
         rts
 
