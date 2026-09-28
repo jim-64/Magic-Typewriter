@@ -309,6 +309,7 @@ irq_exit
 irq_frame_top
         lda #$ff
         sta VIC_IRQ_FLAGS
+        jsr mouse_sample        ; the first of three mouse readings a frame
 
         ; The mouse pointer and the icon colors, as mouse_frame (input.asm)
         ; worked them out last frame. Put into the VIC here, above the text
@@ -553,7 +554,11 @@ border_bot_done
         lda marker_pending      ; new marker position from the main loop?
         beq +
         jsr marker_apply
-+
++       +next_irq FRAME_TOP_LINE, irq_frame_top
+        jsr mouse_sample        ; the third mouse reading of the frame (on
+                                ; NTSC this can end near line 10: the IRQ
+                                ; for line 10 is set already, and then just
+                                ; comes a little late - it has until 25)
 !if DEBUG {
         lda frame_count         ; let the test harness see that we run
         sta MB_FRAMES
@@ -562,7 +567,6 @@ border_bot_done
         lda VIC_RASTER          ; and where this ends: on NTSC it must stay
         sta MB_BOT_END          ; well before line 25 (the top strip IRQ)
 }
-        +next_irq FRAME_TOP_LINE, irq_frame_top
         jmp irq_exit
 
 ;----------------------------------------------------------------------------

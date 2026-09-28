@@ -372,7 +372,12 @@ row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
 row_len         = row_rvs + MROWS       ;   how many cursor places it has
 dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
 prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
+!if DEBUG {
+mouse_trace     = prompt_save + 240     ; 256: mouse trace (input.asm)
+tables_end      = mouse_trace + 256
+} else {
 tables_end      = prompt_save + 240
+}
 
 ; The lower part and the tables must end before the sprite blocks at $3e80.
 ; (The stored copy of the editor may reach past them: it is copied away

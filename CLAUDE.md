@@ -19,9 +19,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   when the whole document fits. Also in this phase: **the editor runs under the KERNAL ROM** (Jim's
   "plan D"; see Memory Map), Quit fixed (it left BASIC's zero page broken), the character set saved
   with the document, and speed work for big documents (see Text Model, phase 6).
-- **Phase 7 (1351 mouse):** passes the automated checks; waiting for Jim's Human Test. On branch
-  `phase7`. Jim's choices: the pointer stays over the text area, and past it the icon under it turns
-  red (the pointer's color); the right button will open the menu (phase 8).
+- **Phase 7 done** (2026-09-28; 1351 mouse), merged into `main`. Jim's choices: the pointer stays over
+  the text area, and past it the icon under it turns red (the pointer's color); the right button will
+  open the menu (phase 8). **Jim tested it in VICE 2.4: works.** In VICE 3.9 on his laptop the grabbed
+  mouse only ever moves right/down (a VICE/host problem, see VICE gotchas). **Still to do: test with a
+  real 1351 on real hardware** when Jim is home (feel, speed, Y direction).
+- Next: phase 8, menus and prompts. (One branch per phase: `phase8`.)
 
 ## Working with Jim
 
@@ -142,6 +145,14 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   Claude polls. Give injected key events time: read the mailbox again rather than assuming they are done.
 - **Watchpoints:** since 1.0.1, checkpoints honor the exact load/store/exec mask requested, so a
   store-only watchpoint on a state variable works.
+- **VICE's 1351 (from its source, phase 7):** POTX/POTY = `(counter AND $7F) + $40`, plus a random 0/1;
+  the counter only moves when the program reads a POT register (`mouse_poll()` is called then, at most
+  once per 512 cycles), walking toward the host mouse position. A read within 512 cycles of a change of
+  $DC00 bits 6-7 returns a random value. Start VICE with `-controlport1device 3` for a 1351 in port 1.
+- **VICE 3.9 (GTK) on Jim's laptop: the grabbed mouse only ever moves right/down**, fast, whatever the
+  real direction (seen in recordings of the paddle values; the Windows "high DPI" compatibility setting
+  did not help). **VICE 2.4 works** (Jim still likes 2.4's menus). Test the mouse in 2.4, on his desktop
+  PC, or on real hardware.
 - **Checkpoints were unreliable in phase 1:** after `create_checkpoint` the CPU stayed stopped in the
   monitor (`wait_for_state` timed out), and after a hit the Binary Monitor connection dropped and
   `nuclear_reset` left the old `x64sc` holding port 6502 (had to stop that process by hand). Memory reads
@@ -299,8 +310,9 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, end of phase 7): lower part $0801–$2261, tables to $25FB; editor $E000–$FB9A, so
-  **~1.1 KB free under the KERNAL and ~6.2 KB below the sprite blocks**. New code goes in the lower
+- Space (debug build, end of phase 7): lower part $0801–$2308, tables to $27A2 (debug builds add a
+  256-byte mouse trace); editor $E000–$FB9A, so **~1.1 KB free under the KERNAL and ~5.8 KB below the
+  sprite blocks**. New code goes in the lower
   part from now on (menus, formats, printer and tape fit there); code that runs during disk work must
   go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
@@ -657,11 +669,20 @@ movement keys** — C= + digit still selects a color.
   clear of the line 50 split, the line 249 stable check and the strips). From line 229 it uses a second
   picture low in its block (block 254, rows 13–20; `spr_pointer_low`), so the fetches run above the box.
   So on the top and bottom text rows the box sits one line off the cell; it still picks that cell.
-- **Reading:** `mouse_frame` runs in the housekeeping just **before** `scan_keyboard` (port 1 has been
-  selected since the last scan ended). It works out everything and leaves the VIC values in
-  `ptr_next_...` / `icon_colors`; `irq_frame_top` (line 10) puts them in, so the pointer never tears.
-  Movement: the 1351 manual's method (`pot_delta`), Y inverted, doubled when a frame's move is at least
-  the acceleration threshold (timing table: 4 PAL, 3 NTSC). Buttons read with $DC00 = $FF.
+- **Reading: three times a frame** (`mouse_sample`: at line 10, in the housekeeping just before
+  `scan_keyboard`, and at the end of the bottom strip IRQ — after it has set the line 10 IRQ, since on
+  NTSC it ends near line 7). Each reading adds its move to `mouse_acc_x/y` (the 1351 manual's method,
+  `pot_delta`). Why three: one reading can only tell 63 steps apart either way, and VICE's 1351 moved
+  ~60 steps a frame (a real 1351 is fine with one; more does no harm). None falls within 512 cycles of
+  the keyboard scan's $DC00 changes. `mouse_frame` (housekeeping) takes the frame's total, Y inverted,
+  doubles it when fast (threshold from the timing table: 4 PAL, 3 NTSC; not when it is 64 or more),
+  works out everything else and leaves the VIC values in `ptr_next_...` / `icon_colors`;
+  `irq_frame_top` (line 10) puts them in, so the pointer never tears. Buttons read with $DC00 = $FF.
+  Measured: housekeeping ends by line 73; the bottom strip IRQ by line 269 (PAL) / line 6-7 (NTSC).
+- **Debug recorder:** debug builds keep the last 64 frames' paddle values (the housekeeping reading)
+  and the movement worked out, 4 bytes a frame, in `mouse_trace` (index `mouse_trace_i`). A scratch
+  script read it live from a visible VICE while Jim moved the mouse; that is how the VICE 3.9 problem
+  was found. Rewrite such a script if needed: poll the ring every 0.2 s through `vicemon.py`.
 - **Detection:** the pointer shows only after the paddle values change (`mouse_on`); until then
   buttons are ignored (a joystick's fire button is no click). **10 seconds** without use hides it
   (timing table: 500 / 600 frames); a click then only wakes it (`mouse_woke`, `mouse_ignore`).
@@ -1121,7 +1142,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 6. Soft word wrap (off = rows cut at 40), marker tracking the real position. **Done 2026-09-28**,
    with the memory change and speed work.
 7. 1351 mouse: detection, box pointer, 10-second hide, click-to-cell, drag-select, icon clicks.
-   (Automated checks passed 2026-09-28; Human Test pending.)
+   **Done 2026-09-28** (tested by Jim in VICE 2.4; real hardware still to test).
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
    Stats, Quit, then CTRL-F Find.

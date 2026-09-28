@@ -532,6 +532,47 @@ init_mouse
         rts
 
 ;----------------------------------------------------------------------------
+; mouse_sample - read the paddle values and add how far the mouse moved
+; since the last reading to mouse_acc_x / mouse_acc_y. Called three times
+; a frame, from IRQs at line 10, in the housekeeping (mouse_frame) and at
+; the end of the bottom strip. A reading can only tell 63 steps apart
+; either way, and in VICE the 1351 can move more than that in one frame;
+; three readings keep each one well inside. (Once a frame is enough for a
+; real 1351; more often does no harm. Each reading falls in a different
+; 512-cycle SID sample, and none within 512 cycles of the keyboard scan,
+; which switches the paddle inputs about.)
+;----------------------------------------------------------------------------
+mouse_sample
+        lda SID_POTX
+!if DEBUG {
+        sta mouse_raw_x         ; (for the trace)
+}
+        ldy pot_x
+        jsr pot_delta
+        sty pot_x
+        clc
+        adc mouse_acc_x
+        sta mouse_acc_x
+        lda SID_POTY
+!if DEBUG {
+        sta mouse_raw_y
+}
+        ldy pot_y
+        jsr pot_delta
+        sty pot_y
+        clc
+        adc mouse_acc_y
+        sta mouse_acc_y
+        rts
+
+mouse_acc_x     !byte 0         ; movement since mouse_frame last took it
+mouse_acc_y     !byte 0         ; (signed; y as the paddle counts it)
+!if DEBUG {
+mouse_raw_x     !byte 0         ; the last paddle values read
+mouse_raw_y     !byte 0
+}
+
+;----------------------------------------------------------------------------
 ; mouse_frame - once per frame, from the housekeeping IRQ (see above)
 ;----------------------------------------------------------------------------
 !zone mouse_frame
@@ -539,30 +580,60 @@ mouse_frame
         ; 1. How far it moved, and the buttons.
 !if DEBUG {
         jsr mailbox_mouse       ; the test harness moving it instead?
-        bcc .have
+        bcs +
+        lda #0                  ; (then the readings count for nothing)
+        sta mouse_acc_x
+        sta mouse_acc_y
+        jmp .have
++
 }
-        lda SID_POTX
-        ldy pot_x
-        jsr pot_delta
-        sty pot_x
+        jsr mouse_sample        ; this frame's second reading
+        ldx mouse_acc_x         ; the movement of all this frame's readings
+        lda #0
+        sta mouse_acc_x
+        txa
         jsr .accel
         sta mouse_dx
-        lda SID_POTY
-        ldy pot_y
-        jsr pot_delta
-        sty pot_y
+        ldx mouse_acc_y
+        lda #0
+        sta mouse_acc_y
+        txa
         jsr .accel
         eor #$ff                ; (the count goes up as the mouse moves away
         clc                     ; from you: then the pointer goes up)
         adc #1
         sta mouse_dy
-        lda mouse_first         ; the very first reading only sets the start
-        beq +
+        lda mouse_first         ; the very first frame only sets the start:
+        beq +                   ; the paddle values as they are now
         lda #0
         sta mouse_first
         sta mouse_dx
         sta mouse_dy
-+       lda mouse_dx            ; moved: so there is a mouse
+        lda SID_POTX
+        sta pot_x
+        lda SID_POTY
+        sta pot_y
++
+!if DEBUG {
+        ; Trace (debug builds): the last 64 frames' paddle values (this
+        ; reading) and the movement worked out for the frame, 4 bytes a
+        ; frame, for the harness.
+        ldx mouse_trace_i
+        lda mouse_raw_x
+        sta mouse_trace,x
+        lda mouse_raw_y
+        sta mouse_trace+1,x
+        lda mouse_dx
+        sta mouse_trace+2,x
+        lda mouse_dy
+        sta mouse_trace+3,x
+        inx
+        inx
+        inx
+        inx
+        stx mouse_trace_i
+}
+        lda mouse_dx            ; moved: so there is a mouse
         ora mouse_dy
         beq +
         lda #1
@@ -833,17 +904,23 @@ mouse_frame
         sbc mouse_idle_max+1
         rts
 
-; .accel - A = a movement (signed): doubled when it is fast
+; .accel - A = a movement (signed): doubled when it is fast (but not when
+; it is so big already that twice would not fit in a byte)
 .accel  sta .a
+        lda .a                  ; (the flags as A says)
         bpl +
-        eor #$ff                ; (the size of a move to the left or up)
+        eor #$ff                ; the size of a move to the left or up
         clc
         adc #1
 +       cmp mouse_accel
+        bcc .same               ; slow: as it is
+        cmp #64
+        bcs .same               ; very big: as it is
         lda .a
-        bcc +
-        asl                     ; (twice a signed byte: small numbers only)
-+       rts
+        asl                     ; fast: twice as far
+        rts
+.same   lda .a
+        rts
 .a      !byte 0
 
 ; .where - the cell under the pointer (.row, .col), or the icon (.icon)
@@ -909,6 +986,9 @@ mouse_frame
 .col    !byte 0
 .icon   !byte 0
 .t      !byte 0
+!if DEBUG {
+mouse_trace_i !byte 0           ; the next slot (counts on in 4s, wraps)
+}
 
 ;----------------------------------------------------------------------------
 ; pot_delta - A = a paddle value now, Y = the one last used. Returns A = how
