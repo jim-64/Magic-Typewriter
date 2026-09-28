@@ -33,9 +33,18 @@ FILE_LFN        = 2             ; logical file number (and secondary
                                 ; address) for the document file
 CMD_LFN         = 15            ; the drive's command/error channel
 
-; Settings (the Load and Save menus change them in phase 8)
-load_dev        !byte 8
+; Settings (the Load, Save and Print menus change them)
+FORMAT_MAGIC    = 0             ; file formats (the Format settings)
+FORMAT_PETSCII  = 1
+FORMAT_ASCII    = 2
+FORMAT_SPEEDSCRIPT = 3
+load_dev        !byte 8         ; device (1 = tape)
+load_format     !byte FORMAT_PETSCII
 save_dev        !byte 8
+save_format     !byte FORMAT_PETSCII ; (the magic format comes in phase 10)
+save_type       !byte 0         ; 0 = SEQ, 1 = PRG
+print_ascii     !byte 0         ; 1 = convert to ASCII
+print_dev       !byte 4
 
 file_name       !fill 16, 0     ; the document's file name (PETSCII) ...
 file_name_len   !byte 0         ; ... 0 = none yet
@@ -274,7 +283,10 @@ name_to_input
 ; document.
 !zone load_file
 load_file
-        lda modified            ; changes not saved: ask first
+        jsr check_load          ; (tape and other formats: not yet)
+        bcc +
+        rts
++       lda modified            ; changes not saved: ask first
         beq +
         lda #<msg_load_unsaved
         ldx #>msg_load_unsaved
@@ -443,6 +455,47 @@ load_file
 ; Saving
 ;============================================================================
 
+; check_load, check_save - carry set (after saying so) if the Load or Save
+; settings ask for something not built yet: tape (phase 11), a format
+; other than PETSCII or a PRG file (phase 10).
+!zone check_load
+check_load
+        lda load_dev
+        cmp #1
+        beq .no
+        lda load_format
+        cmp #FORMAT_PETSCII
+        bne .no
+        clc
+        rts
+check_save
+        lda save_dev
+        cmp #1
+        beq .no
+        lda save_format
+        cmp #FORMAT_PETSCII
+        bne .no
+        lda save_type
+        bne .no
+        clc
+        rts
+.no     jsr not_yet
+        sec
+        rts
+
+; save_as - the Save menu's Save: ask for a name (the last one used is
+; filled in) and save under it
+save_as jsr check_save
+        bcc +
+        rts
++       jsr leave_cursor        ; (as CTRL-S: no codes without effect)
+        jsr name_to_input
+        lda #<msg_save
+        ldx #>msg_save
+        jsr prompt_input
+        bcc save_file
+        rts                     ; cancelled
+
 ; save_key - CTRL-S: save the document under its file name, asking for a
 ; name if it has none yet.
 !zone save_key
@@ -464,7 +517,10 @@ save_key
 ; An old file of that name is scratched first ("S0:name"), then the new one
 ; is written. (Not "@0:": some drives have a bug in save-with-replace.)
 save_file
-        lda save_dev
+        jsr check_save          ; (tape, other formats, PRG: not yet)
+        bcc +
+        rts
++       lda save_dev
         sta cur_dev
         lda #<msg_saving
         ldx #>msg_saving
@@ -609,3 +665,468 @@ save_file
         sec
         rts
 .end    !word 0
+
+;============================================================================
+; Disk directory and disk command (the Load and Save menus)
+;============================================================================
+GETIN           = $ffe4         ; KERNAL: a key from its buffer (0 = none)
+
+; dir_load, dir_save - Disk directory: the directory of the Load or the
+; Save menu's device, a screenful at a time (any key: the next; RUN/STOP:
+; back). It shows in the plain display of disk work, and the keys come
+; through the KERNAL meanwhile.
+!zone disk_directory
+dir_load
+        lda load_dev
+        jmp disk_directory
+dir_save
+        lda save_dev
+disk_directory
+        cmp #1
+        bne +
+        lda #<msg_no_tape       ; (no directory on tape)
+        ldx #>msg_no_tape
+        jmp message_box
++       sta cur_dev
+        lda #$24                ; "$"
+        sta name_buf
+        lda #1
+        sta name_len
+        jsr io_begin
+        ldy #0                  ; the command channel, to hear from the drive
+        jsr open_cmd
+        lda name_len            ; "$" with secondary address 0, as LOAD"$"
+        ldx #<name_buf          ; does: the directory as a BASIC program
+        ldy #>name_buf
+        jsr SETNAM
+        lda #FILE_LFN
+        ldx cur_dev
+        ldy #0
+        jsr SETLFS
+        jsr OPEN
+        bcc +
+        jmp .no_device
++       jsr read_status
+        bcc +
+        jmp .fail
++       ldx #FILE_LFN
+        jsr CHKIN
+        bcc +
+        jmp .no_device
++       jsr readable_color      ; the whole screen, in the box color
+        sta box_color
+        lda #0
+        sta box_left
+        lda #40
+        sta box_width
+        jsr .clear
+        jsr CHRIN               ; (the load address)
+        jsr CHRIN
+
+.line   jsr CHRIN               ; a line: its link (0 = no more lines) ...
+        sta .link
+        jsr CHRIN
+        ora .link
+        beq .end
+        jsr READST
+        bne .end
+        jsr CHRIN               ; ... its number (the blocks) ...
+        sta num24
+        jsr CHRIN
+        sta num24+1
+        lda #0
+        sta num24+2
+        jsr num24_text
+        ldx .row
+        jsr box_row_ptrs
+        ldy #0
+        lda #<num_text
+        ldx #>num_text
+        jsr box_print
+        iny
+        lda #0                  ; ... then its text, up to a 0
+        sta .rvs
+.char   jsr CHRIN
+        cmp #0
+        beq .eol
+        cmp #$12                ; RVS ON (the disk's name)
+        bne +
+        lda #$80
+        sta .rvs
+        bne .char
++       jsr petscii_to_screen
+        bcs .char               ; (other control codes: nothing)
+        ora .rvs
+        cpy #40
+        bcs .char               ; (past the edge: cut)
+        jsr box_put
+        jmp .char
+.eol    inc .row
+        lda .row
+        cmp #23
+        bcc .line
+        lda #<m_more            ; a screenful: wait
+        ldx #>m_more
+        jsr .bottom
+        jsr .wait
+        cmp #3                  ; RUN/STOP: back
+        beq .done
+        jsr .clear
+        jmp .line
+.end    lda #<m_any_key         ; the end
+        ldx #>m_any_key
+        jsr .bottom
+        jsr .wait
+.done   jsr close_all
+        jsr io_end
+        jmp redraw_all          ; (the document again; the menu goes back
+                                ; on top of it)
+.no_device
+        lda #<msg_no_device
+        ldx #>msg_no_device
+        jsr copy_message
+.fail   jsr close_all
+        jsr io_end
+        lda #<status_buf
+        ldx #>status_buf
+        jmp message_box
+
+; .clear - a blank screen; the next line goes on row 0
+.clear  ldx #0
+        stx .row
+-       stx .x
+        jsr box_row_ptrs
+        ldy #0
+--      lda #$20
+        jsr box_put
+        cpy #40
+        bcc --
+        ldx .x
+        inx
+        cpx #25
+        bcc -
+        rts
+
+; .bottom - A/X = a line for the bottom row
+.bottom pha
+        txa
+        pha
+        ldx #24
+        jsr box_row_ptrs
+        pla
+        tax
+        pla
+        ldy #0
+        jmp box_print
+
+; .wait - wait for a key (the KERNAL's, while the disk is in use). GETIN
+; reads from the current input, so the keyboard first, and afterwards the
+; directory again. Returns A = the key.
+.wait   jsr CLRCHN              ; (input from the keyboard)
+-       jsr GETIN
+        beq -
+        pha
+        ldx #FILE_LFN           ; (input from the directory again)
+        jsr CHKIN
+        pla
+        rts
+
+.link   !byte 0
+.row    !byte 0
+.rvs    !byte 0
+.x      !byte 0
+
+; cmd_load, cmd_save - Disk command: send a command to the Load or the
+; Save menu's device on channel 15 and show its answer. An empty command
+; just shows the drive's status.
+!zone disk_command
+cmd_load
+        lda load_dev
+        jmp disk_command
+cmd_save
+        lda save_dev
+disk_command
+        cmp #1
+        bne +
+        lda #<msg_no_tape       ; (not for tape)
+        ldx #>msg_no_tape
+        jmp message_box
++       sta cur_dev
+        lda #0                  ; a new command each time
+        sta input_len
+        lda #27                 ; (the box fills the screen's width)
+        sta input_max
+        lda #1                  ; (RETURN on its own: the status)
+        sta input_empty_ok
+        lda #<msg_command
+        ldx #>msg_command
+        jsr prompt_input
+        bcc +
+        rts                     ; cancelled
++       jsr io_begin
+        lda #<input_buf         ; the command goes with the opening of
+        ldx #>input_buf         ; channel 15
+        ldy input_len
+        jsr open_cmd
+        jsr read_status         ; the answer (or "device not present")
+        jsr close_all
+        jsr io_end
+        lda #<status_buf
+        ldx #>status_buf
+        jmp message_box
+
+;============================================================================
+; Settings on disk: MAGIC T DEFAULTS
+;
+; Save defaults writes every setting to the file MAGIC T DEFAULTS (SEQ) on
+; the disk the program was loaded from; start-up reads them back. The
+; file is the header of the magic format (phase 10) and nothing else:
+;   $00 "MTW" "1"             (the version)
+;   $40 + the number of settings that follow
+;   one byte per setting, $40 + its value (all of them printable letters)
+;   a RETURN
+; A reader skips settings it does not know and keeps its own for those
+; missing, so later versions can add some.
+;============================================================================
+DEFAULTS_COUNT  = 13            ; settings in version 1
+DEFAULTS_LEN    = 6 + DEFAULTS_COUNT + 1
+defaults_buf    !fill DEFAULTS_LEN, 0
+
+; where each setting is kept, in their order in the file (the character
+; set, 0 = upper case/graphics and 1 = upper/lower, is the VIC's)
+defaults_vars
+        !word text_bg, text_color, 0, wrap_on, edit_mode, mark_key
+        !word load_format, load_dev, save_format, save_type, save_dev
+        !word print_ascii, print_dev
+
+defaults_name   !pet "magic t defaults"
+DEFAULTS_NAME_LEN = * - defaults_name
+
+; defaults_make - the settings into defaults_buf
+!zone defaults_make
+defaults_make
+        ldx #5
+-       lda defaults_head,x
+        sta defaults_buf,x
+        dex
+        bpl -
+        ldx #0
+.next   txa
+        asl
+        tay
+        lda defaults_vars,y
+        sta zp_ptr2
+        lda defaults_vars+1,y
+        sta zp_ptr2+1
+        ora zp_ptr2
+        bne +
+        lda VIC_MEMPTR          ; (the character set)
+        lsr
+        and #1
+        bpl ++
++       ldy #0
+        lda (zp_ptr2),y
+++      clc
+        adc #$40
+        sta defaults_buf+6,x
+        inx
+        cpx #DEFAULTS_COUNT
+        bcc .next
+        lda #$0d
+        sta defaults_buf+6,x
+        rts
+
+; how the file starts: $00 "MTW1", and $40 + the number of settings
+defaults_head   !byte $00, $4d, $54, $57, $31, $40 + DEFAULTS_COUNT
+
+; defaults_apply - the settings from defaults_buf (read from a file),
+; if it starts as it should
+!zone defaults_apply
+defaults_apply
+        ldx #4                  ; $00 "MTW1"
+-       lda defaults_buf,x
+        cmp defaults_head,x
+        bne .done               ; not ours, or another version
+        dex
+        bpl -
+        lda defaults_buf+5      ; how many settings it holds
+        sec
+        sbc #$40
+        cmp #DEFAULTS_COUNT+1
+        bcc +
+        lda #DEFAULTS_COUNT     ; (more than we know: the ones we know)
++       sta .count
+        ldx #0
+.next   cpx .count
+        bcs .done
+        txa
+        asl
+        tay
+        lda defaults_vars,y
+        sta zp_ptr2
+        lda defaults_vars+1,y
+        sta zp_ptr2+1
+        lda defaults_buf+6,x
+        sec
+        sbc #$40
+        and #$3f                ; (keep a damaged file's values small)
+        ldy zp_ptr2
+        bne +
+        ldy zp_ptr2+1
+        bne +
+        ldy #MEMPTR_UPPER       ; (the character set)
+        cmp #0
+        beq ++
+        ldy #MEMPTR_LOWER
+++      sty VIC_MEMPTR
+        jmp ++
++       ldy #0
+        sta (zp_ptr2),y
+++      inx
+        bne .next
+.done   rts
+.count  !byte 0
+
+; defaults_file - input_buf = "MAGIC T DEFAULTS" (for name_plus)
+!zone defaults_file
+defaults_file
+        ldx #DEFAULTS_NAME_LEN-1
+-       lda defaults_name,x
+        sta input_buf,x
+        dex
+        bpl -
+        lda #DEFAULTS_NAME_LEN
+        sta input_len
+        rts
+
+; save_defaults - Save defaults (main menu): scratch the old file, write
+; the settings. Only onto the disk the program came from.
+!zone save_defaults
+save_defaults
+        lda load_device         ; ($BA at start-up)
+        cmp #8
+        bcc .no_disk
+        cmp #31
+        bcc +
+.no_disk
+        lda #<msg_need_disk
+        ldx #>msg_need_disk
+        jmp message_box
++       sta cur_dev
+        jsr defaults_make
+        jsr defaults_file
+        lda #<msg_saving
+        ldx #>msg_saving
+        ldy #0
+        jsr box_open
+        jsr io_begin
+        jsr scratch_input       ; "S0:MAGIC T DEFAULTS"
+        bcs .fail
+        lda #<suffix_write      ; then the new one
+        ldx #>suffix_write
+        jsr name_plus
+        jsr open_file
+        bcs .no_device
+        jsr read_status
+        bcs .fail
+        ldx #FILE_LFN
+        jsr CHKOUT
+        bcs .no_device
+        ldx #0
+-       lda defaults_buf,x
+        jsr CHROUT
+        inx
+        cpx #DEFAULTS_LEN
+        bcc -
+        jsr CLRCHN
+        lda #FILE_LFN
+        jsr CLOSE
+        jsr read_status
+        bcs .fail
+        jsr close_all
+        jsr io_end
+        jsr box_close
+        lda #<msg_defaults_saved
+        ldx #>msg_defaults_saved
+        jmp message_box
+.no_device
+        lda #<msg_no_device
+        ldx #>msg_no_device
+        jsr copy_message
+.fail   jsr close_all
+        jsr io_end
+        jsr box_close
+        lda #<status_buf
+        ldx #>status_buf
+        jmp message_box
+
+; load_defaults - start-up: the settings from MAGIC T DEFAULTS on the disk
+; the program came from. Anything wrong (no disk, no drive, no file): no
+; message at all, the built-in settings stay. Reading the drive's status
+; clears its error (and its blinking light).
+!zone load_defaults
+load_defaults
+        lda load_device
+        cmp #8
+        bcc .done
+        cmp #31
+        bcs .done
+        sta cur_dev
+        jsr defaults_file
+        lda #<suffix_read
+        ldx #>suffix_read
+        jsr name_plus
+        lda #0
+        sta .ok
+        jsr io_begin
+        ldy #0
+        jsr open_cmd
+        jsr open_file
+        bcs .close
+        jsr read_status         ; e.g. 62, FILE NOT FOUND
+        bcs .close
+        ldx #FILE_LFN
+        jsr CHKIN
+        bcs .close
+        ldx #0
+-       jsr CHRIN
+        sta defaults_buf,x
+        inx
+        jsr READST
+        bne +
+        cpx #DEFAULTS_LEN
+        bcc -
++       inc .ok
+.close  jsr close_all
+        jsr io_end
+        lda .ok
+        beq .done
+        jmp defaults_apply
+.done   rts
+.ok     !byte 0
+
+; scratch_input - send "S0:" + input_buf on channel 15 (it is opened for
+; that) and read the answer. Carry set on an error.
+!zone scratch_input
+scratch_input
+        lda #$53                ; S
+        sta name_buf
+        lda #$30                ; 0
+        sta name_buf+1
+        lda #$3a                ; :
+        sta name_buf+2
+        ldx #0
+-       lda input_buf,x
+        sta name_buf+3,x
+        inx
+        cpx input_len
+        bcc -
+        txa
+        clc
+        adc #3
+        tay
+        lda #<name_buf
+        ldx #>name_buf
+        jsr open_cmd
+        jmp read_status         ; 01, FILES SCRATCHED is fine
+

@@ -146,11 +146,15 @@ try:
     e.mouse([(0, 0, LEFT), (0, 0, 0)])
     check("click on F3: page up", top(e) == t0, (t0, top(e)))
 
-    # Right button: the menu (nothing yet, phase 8)
+    # Right button: the menu; again: closed
     before = e.text()[0]
     e.move_to(*cell_xy(5, 5))
     e.mouse([(0, 0, RIGHT), (0, 0, 0)])
-    check("right button: nothing breaks", e.text()[0] == before and v(e, "ptr_next_on") == 1)
+    check("right button: the menu", "MAGIC TYPEWRITER" in e.screen_rows()[5].upper())
+    e.mouse([(0, 0, RIGHT), (0, 0, 0)])
+    check("right button again: closed, text as it was",
+          "MAGIC TYPEWRITER" not in e.screen_rows()[5].upper() and e.text()[0] == before
+          and v(e, "ptr_next_on") == 1)
 
     # Dragging past the bottom of the text scrolls, marking as it goes
     e.move_to(*cell_xy(20, 0))

@@ -171,8 +171,24 @@ contrast_color
 
 ; Questions for prompt_yes_no. Written in lower case: that gives screen
 ; codes 1-26, which the prompt shows as capitals in either character set.
-msg_quit
-        !scr "quit y/n", 0
+msg_quit_unsaved
+        !scr "quit without saving y/n", 0
+msg_not_yet
+        !scr "not ready yet", 0
+msg_no_tape
+        !scr "not for tape", 0
+msg_find
+        !scr "find:", 0
+msg_not_found
+        !scr "not found", 0
+msg_command
+        !scr "command:", 0
+msg_need_disk
+        !scr "defaults need a disk", 0
+msg_defaults_saved
+        !scr "defaults saved", 0
+m_more
+        !scr "more: any key   back: run/stop", 0
 msg_clear_all
         !scr "clear all y/n", 0
 msg_load_unsaved

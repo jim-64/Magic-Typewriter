@@ -51,15 +51,15 @@ try:
     else:
         check("saved as NOTE", e.peek(e.lab["modified"])[0] == 0)
 
-        # Change it, then CTRL-L: asks first; N keeps the document
+        # Change it, then Load: asks first; N keeps the document
         e.type_text("more")
         doc_before, _ = e.text()
-        e.keys([(KEY["L"], CTRL)])
+        e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
         check("load with changes asks first", "LOAD WITHOUT SAVING Y/N" in box().upper(), box())
         e.keys([(KEY["N"], 0)])
         check("N keeps the document", e.text()[0] == doc_before)
         # Y goes on to the name box, with the last name filled in
-        e.keys([(KEY["L"], CTRL)])
+        e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
         e.keys([(KEY["Y"], 0)])
         check("name box shows the last name", "LOAD: note" in box(), box())
         e.keys([(KEY["RETURN"], 0)], settle=1.0)
@@ -97,7 +97,7 @@ try:
         e.keys([(KEY["HOME"], LS), (KEY["Y"], 0)])      # CLEAR ALL
         e.keys([(0xff, CBM | LS)])                      # back to upper/lower
         check("switched back to upper/lower", e.peek(0xd018)[0] & 2 == 2)
-        e.keys([(KEY["L"], CTRL)])
+        e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
         if "LOAD WITHOUT SAVING" in box().upper():
             e.keys([(KEY["Y"], 0)])
         e.type_text("other")

@@ -1,0 +1,245 @@
+;============================================================================
+; find.asm - CTRL-F: find text in the document
+;
+; A "FIND:" box asks for the text, with the last one filled in (so CTRL-F
+; then RETURN finds the next). The search starts at the cursor - or just
+; past the start of the marked text, which is usually the last match -
+; runs to the end of the document, then goes on once from the top. A match
+; is marked, with the cursor at its end, and brought onto the screen.
+;
+; Only visible characters are compared: color, reverse and other codes in
+; the text are stepped over, so a word with a color change inside it still
+; matches. Capitals and small letters count as the same. A match cannot
+; run over a line end (the search text cannot hold one).
+;
+; Runs with the KERNAL ROM switched out (it uses the editor), from the
+; lower part of the program.
+;============================================================================
+FIND_MAX        = 26            ; longest search text (the box fills the
+                                ; screen's width)
+find_buf        !fill FIND_MAX, 0 ; the last search text (PETSCII)
+find_len        !byte 0
+
+; find_key - CTRL-F
+!zone find_key
+find_key
+        ldx find_len            ; the last search text, to start with
+        stx input_len
+        dex
+        bmi +
+-       lda find_buf,x
+        sta input_buf,x
+        dex
+        bpl -
++       lda #FIND_MAX
+        sta input_max
+        lda #<msg_find
+        ldx #>msg_find
+        jsr prompt_input
+        bcc +
+        rts                     ; cancelled
++       ldx input_len           ; keep it for next time
+        stx find_len
+        dex
+-       lda input_buf,x
+        sta find_buf,x
+        dex
+        bpl -
+
+        jsr leave_cursor        ; (tidy the codes here before offsets count)
+        jsr get_cursor_off      ; where to start: the cursor ...
+        lda work
+        sta .from
+        lda work+1
+        sta .from+1
+        lda sel_on              ; ... or just past the start of the marked
+        beq +                   ; text (the last match, usually)
+        jsr sel_range
+        clc
+        lda sel_s
+        adc #1
+        sta .from
+        lda sel_s+1
+        adc #0
+        sta .from+1
++       lda .from               ; the candidate: the first place to try
+        sta off
+        lda .from+1
+        sta off+1
+        jsr set_ptr
+        lda #0
+        sta .wrapped
+
+.try    ; Does the text match at ptr? First step over codes to the next
+        ; visible byte: a match starts there.
+        ldx #ptr
+        jsr find_skip
+        bcs .at_end
+        lda ptr                 ; after wrapping round: stop on reaching
+        sta .start              ; where the search began
+        lda ptr+1
+        sta .start+1
+        lda .wrapped
+        beq +
+        jsr ptr_to_off
+        lda off
+        cmp .from
+        lda off+1
+        sbc .from+1
+        bcs .none
++       lda ptr                 ; ptr2 walks along the text, comparing
+        sta ptr2
+        lda ptr+1
+        sta ptr2+1
+        ldy #0
+        sty .i
+-       ldx #ptr2
+        jsr find_next           ; the next visible byte of the text
+        bcs .no_match           ; (the end of the text)
+        jsr find_fold
+        sta .t
+        ldy .i
+        lda find_buf,y
+        jsr find_fold
+        cmp .t
+        bne .no_match
+        inc .i
+        lda .i
+        cmp find_len
+        bcc -
+        jmp .found
+
+.no_match
+        lda .start              ; on to the next visible byte
+        sta ptr
+        lda .start+1
+        sta ptr+1
+        ldx #ptr
+        jsr find_next
+        jmp .try
+.at_end lda .wrapped            ; the end of the text: once round from the
+        bne .none               ; top
+        inc .wrapped
+        lda #<BUF_START
+        sta ptr
+        lda #>BUF_START
+        sta ptr+1
+        jmp .try
+.none   lda #<msg_not_found
+        ldx #>msg_not_found
+        jmp message_box
+
+.found  ; Mark it: from .start to ptr2 (just after its last byte), the
+        ; cursor at its end.
+        lda .start
+        sta ptr
+        lda .start+1
+        sta ptr+1
+        jsr ptr_to_off
+        lda off
+        sta sel_anchor
+        sta sel_anchor_end
+        lda off+1
+        sta sel_anchor+1
+        sta sel_anchor_end+1
+        lda ptr2
+        sta ptr
+        lda ptr2+1
+        sta ptr+1
+        jsr ptr_to_off
+        jsr move_gap_to
+        lda #1
+        sta sel_on
+        jsr locate_cursor       ; on the screen: just draw it marked
+        bcs +
+        jsr redraw_all
+        jsr locate_cursor
+        jmp set_want_col
++       ldx #ROWS/2             ; elsewhere: it goes in the middle
+        jmp show_cursor_at
+
+.from   !word 0
+.start  !word 0
+.wrapped !byte 0
+.i      !byte 0
+.t      !byte 0
+
+;----------------------------------------------------------------------------
+; Walking the text for Find. X = the zero page address of a pointer (ptr
+; or ptr2) into the text; it may be at the gap, which is jumped. (The
+; 6502's (zp,X) addressing reads through the pointer X names.)
+;----------------------------------------------------------------------------
+
+; find_skip - move the pointer on over codes, to the next visible byte
+; (not past it). Carry set at the end of the text.
+!zone find_skip
+find_skip
+-       jsr find_gap
+        bcs .end
+        lda ($00,x)
+        tay
+        lda ctype,y
+        cmp #CT_CHAR
+        beq .ok
+        cmp #CT_EOL
+        beq .ok
+        jsr find_inc
+        jmp -
+.ok     clc
+.end    rts
+
+; find_next - A = the next visible byte, the pointer past it. Carry set at
+; the end of the text.
+find_next
+        jsr find_skip
+        bcs +
+        lda ($00,x)
+        pha
+        jsr find_inc
+        pla
+        clc
++       rts
+
+; find_gap - jump the pointer over the gap if it is there; carry set if
+; it is at the end of the text
+find_gap
+        lda $00,x
+        cmp gap_start
+        bne +
+        lda $01,x
+        cmp gap_start+1
+        bne +
+        lda gap_end
+        sta $00,x
+        lda gap_end+1
+        sta $01,x
++       lda $01,x
+        cmp text_end+1
+        bne +
+        lda $00,x
+        cmp text_end
++       rts
+
+; find_inc - the pointer on by one
+find_inc
+        inc $00,x
+        bne +
+        inc $01,x
++       rts
+
+; find_fold - A = a byte: capitals and small letters made the same
+; ($c1-$da and $61-$7a become $41-$5a)
+!zone find_fold
+find_fold
+        cmp #$c1
+        bcc +
+        cmp #$db
+        bcs +
+        and #$7f                ; $c1-$da -> $41-$5a
+        rts
++       cmp #$61
+        bcc +
+        cmp #$7b
+        bcs +
+        and #$df                ; $61-$7a -> $41-$5a
++       rts

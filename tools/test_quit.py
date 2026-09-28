@@ -42,7 +42,10 @@ try:
     time.sleep(1.5)
     e.m.write(0xdd0d, [0x7f]); e.m.read(0xdd0d, 1)   # timer NMI off, cleared
     e.m.resume()
-    check("RESTORE asks QUIT", "QUIT" in e.screen_rows()[12].upper(), e.screen_rows()[12])
+    check("RESTORE opens the menu", "MAGIC TYPEWRITER" in e.screen_rows()[5].upper(), e.screen_rows()[5])
+    e.keys([(KEY["Q"], 0)])
+    check("Q (with changes) asks first", "QUIT WITHOUT SAVING" in e.screen_rows()[12].upper(),
+          e.screen_rows()[12])
 
     e.keys([(KEY["Y"], 0)], settle=2.0)
     check("back in BASIC: ROMs in ($01 = $37)", e.peek(0x01)[0] == 0x37, hex(e.peek(0x01)[0]))

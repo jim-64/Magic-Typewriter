@@ -60,6 +60,7 @@ KEY_V           = 31
 KEY_A           = 10
 KEY_N           = 39
 KEY_W           = 9
+KEY_F           = 21
 
 ; Events that are not a single key
 KEY_CHARSET     = $40           ; C= and SHIFT pressed and let go alone

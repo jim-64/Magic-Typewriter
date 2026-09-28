@@ -80,7 +80,7 @@ mark_key        !byte MARK_CBM  ; setting (default C=: left SHIFT can't
                                 ; mark up/left in VICE - see CLAUDE.md)
 modified        !byte 0         ; 1 = changed since loaded or saved
 wrap_on         !byte 1         ; setting: 1 = word wrap, 0 = rows cut at
-                                ; 40 characters (CTRL-W for now)
+                                ; 40 characters (main menu, D)
 cur_row         !byte 0         ; cursor place on the screen
 cur_col         !byte 0
 cur_color       !byte 0         ; typing color at the cursor
@@ -3478,15 +3478,6 @@ toggle_mode
         sta edit_mode
         rts
 
-; toggle_wrap - CTRL-W (until the menu arrives in phase 8): word wrap on
-; <-> off (rows cut at 40 characters). The cursor stays on its screen row.
-toggle_wrap
-        lda wrap_on
-        eor #1
-        sta wrap_on
-        ldx cur_row
-        jmp show_cursor_at
-
 ; next_background - SHIFT + F7: the next text background color, through all
 ; 16. (Text in the same color as the background disappears, as in BASIC;
 ; the user just steps on.) The top strip IRQ sets $D021 from text_bg.
@@ -3523,10 +3514,6 @@ clear_all
 editor_key
         sta .code
         sty .mods
-        cmp #KEY_STOP
-        beq .quit
-        cmp #KEY_RESTORE
-        beq .quit
         cmp #KEY_CHARSET
         bne +
         lda #1                  ; the character set is saved with the
@@ -3536,15 +3523,13 @@ editor_key
         jsr .do_key
         jmp cursor_show
 
-.quit   lda #<msg_quit          ; (the menu takes RUN/STOP in phase 8)
-        ldx #>msg_quit
-        jsr prompt_yes_no
-        bcc +
-        jmp quit
-+       rts
-
-.do_key lda .code               ; the mouse (mouse_frame, in input.asm)
-        cmp #KEY_MOUSE_L
+.do_key lda .code
+        cmp #KEY_STOP           ; RUN/STOP and RESTORE: the menu
+        beq +
+        cmp #KEY_RESTORE
+        bne ++
++       jmp menu_open
+++      cmp #KEY_MOUSE_L        ; the mouse (mouse_frame, in input.asm)
         bcc +
         jmp .mouse
 +       lda .mods               ; CTRL + a letter: the commands
@@ -3554,9 +3539,6 @@ editor_key
         cmp #KEY_S              ; CTRL-S: save
         bne +
         jmp save_key
-+       cmp #KEY_L              ; CTRL-L: load (for now; the Load menu
-        bne +                   ; takes over in phase 8)
-        jmp load_file
 +       cmp #KEY_X              ; CTRL-X: cut
         bne +
         jmp cut_selection
@@ -3566,9 +3548,9 @@ editor_key
 +       cmp #KEY_V              ; CTRL-V: paste
         bne +
         jmp paste
-+       cmp #KEY_W              ; CTRL-W: word wrap on/off (for now; the
-        bne +                   ; main menu takes over in phase 8)
-        jmp toggle_wrap
++       cmp #KEY_F              ; CTRL-F: find
+        bne +
+        jmp find_key
 +       cmp #KEY_A              ; CTRL-A: mark everything
         bne .keys
         jmp select_all
@@ -3631,9 +3613,9 @@ editor_key
         beq ++
         jmp next_background
 ++      jmp toggle_mode
-+       cmp #KEY_F1
++       cmp #KEY_F1             ; F1: the menu
         bne +
-        rts                     ; (opens the menu in phase 8)
+        jmp menu_open
 +       lda .code               ; any other key: what does it type?
         ldy .mods
         jsr key_to_petscii
@@ -3686,7 +3668,8 @@ editor_key
 .click  lda #<goto_click        ; to the place clicked (with the mark key:
         ldx #>goto_click        ; marking up to it)
         jmp .move
-.menu   rts                     ; (the menu arrives in phase 8)
+.menu   jmp menu_open           ; (the menu icon, the right button, and
+                                ; RUN/STOP or RESTORE above)
 
 ; .move - a key that moves the cursor (A/X = the routine that moves it).
 ; With the mark key held it marks text from where the cursor was; without

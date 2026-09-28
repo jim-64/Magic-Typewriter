@@ -186,6 +186,7 @@ start                           ; must be at $080d = 2061
         jsr init_mouse
         jsr init_irq
         cli
+        jsr load_defaults       ; the settings saved with Save defaults
         jsr editor_init         ; an empty document, ready to type
 
 ;============================================================================
@@ -337,6 +338,7 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 !source "src/input.asm"
 !source "src/menu.asm"
 !source "src/fileio.asm"
+!source "src/find.asm"
 !source "src/data.asm"
 
 ;----------------------------------------------------------------------------

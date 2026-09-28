@@ -201,10 +201,10 @@ try:
     check("marker further down", (mk_top, mk_bot) == (snap(exp_top), snap(max(exp_bot, exp_top + 8))),
           (mk_top, mk_bot, exp_top, exp_bot))
 
-    # Word wrap off (CTRL-W): rows cut at 40 characters, even mid-word
+    # Word wrap off (main menu, D): rows cut at 40 characters, even mid-word
     e.keys([(KEY["HOME"], 0), (KEY["HOME"], 0)])
-    e.keys([(KEY["W"], CTRL)])
-    check("CTRL-W: word wrap off", e.peek(e.lab["wrap_on"])[0] == 0)
+    e.keys([(KEY["F1"], 0), (KEY["D"], 0), (KEY["X"], 0)])   # main menu: Wordwrap
+    check("menu D: word wrap off", e.peek(e.lab["wrap_on"])[0] == 0)
     screen_matches(e, doc, wrap=False, label="wrap off: rows cut at 40")
     rows_off = layout(doc, wrap=False)
     check("wrap off: the first row has 40 characters", len(rows_off[0][1]) == 40)
@@ -221,8 +221,8 @@ try:
     screen_matches(e, doc, wrap=False, label="wrap off: F5")
     e.keys([(KEY["F3"], 0)])
     screen_matches(e, doc, wrap=False, label="wrap off: F3")
-    e.keys([(KEY["W"], CTRL)])
-    check("CTRL-W again: word wrap on", e.peek(e.lab["wrap_on"])[0] == 1)
+    e.keys([(KEY["F1"], 0), (KEY["D"], 0), (KEY["X"], 0)])   # main menu: Wordwrap
+    check("menu D again: word wrap on", e.peek(e.lab["wrap_on"])[0] == 1)
     screen_matches(e, doc, label="wrap on again")
 
     # A big document (about 30 KB, no color codes): speed

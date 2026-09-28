@@ -24,7 +24,11 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   open the menu (phase 8). **Jim tested it in VICE 2.4: works.** In VICE 3.9 on his laptop the grabbed
   mouse only ever moves right/down (a VICE/host problem, see VICE gotchas). **Still to do: test with a
   real 1351 on real hardware** when Jim is home (feel, speed, Y direction).
-- Next: phase 8, menus and prompts. (One branch per phase: `phase8`.)
+- **Phase 8 (menus, Stats, Save defaults, disk directory/command, Find):** passes the automated checks
+  (2026-09-28); waiting for Jim's Human Test. Work is on branch `phase8`; merge into `main` when Jim
+  accepts it. The temporary keys CTRL-L (load) and CTRL-W (wrap) are gone; the menus do both now.
+- **Memory:** ~2.1 KB left below the sprite blocks and ~1.1 KB under the KERNAL for phases 9–11
+  (see Memory Map). Watch it.
 
 ## Working with Jim
 
@@ -200,6 +204,10 @@ paging both ways, reflow, wrap off, marker, and timings in a 30 KB document).
 `python tools/test_phase7.py [c64|ntsc]` (the mouse through the mailbox: detection, click to a cell,
 dragging both ways, mark key + click, pointer pictures, strips and icon colors, F3/F5 badge clicks,
 right button, drag-scrolling, the 10-second hide). `mtest` has `mouse(events)` and `move_to(x, y)`.
+`python tools/test_phase8.py [c64|ntsc]` (every menu and setting, clicks on menu rows, closing keys,
+Stats against a Python count, Save menu, disk command and directory, Save defaults and reading them
+back at a fresh start, Find with a color code inside a match and wrapping, Quit asking first). The
+phase 4 tests load through F1 A A now, test_phase6 turns wrap off with F1 D X.
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -270,8 +278,9 @@ src/system.asm      PAL/NTSC detection, timing tables, REU detection and DMA
 src/irq.asm         raster IRQ chain (borders, color splits, page marker, housekeeping)
 src/input.asm       keyboard matrix scanner, 1351 mouse, debug test mailbox
 src/editor.asm      gap buffer, cursor, selection, clipboard, redraw, wrap
-src/menu.asm        text menus and prompts
-src/fileio.asm      KERNAL disk I/O and format conversion
+src/menu.asm        boxes, prompts, the menus (table-driven), Stats
+src/fileio.asm      KERNAL disk I/O, directory, disk command, MAGIC T DEFAULTS
+src/find.asm        CTRL-F Find
 src/data.asm        sprite data, menu strings, tables
 test/               sample SEQ, ASCII, and SpeedScript files
 build.bat           assemble + make d64 (Windows)
@@ -310,10 +319,11 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, end of phase 7): lower part $0801–$2308, tables to $27A2 (debug builds add a
-  256-byte mouse trace); editor $E000–$FB9A, so **~1.1 KB free under the KERNAL and ~5.8 KB below the
-  sprite blocks**. New code goes in the lower
-  part from now on (menus, formats, printer and tape fit there); code that runs during disk work must
+- Space (debug build, end of phase 8): lower part $0801–$31B3, tables to $364D (debug builds add a
+  256-byte mouse trace); editor $E000–$FB80, so **~1.1 KB free under the KERNAL and ~2.1 KB below the
+  sprite blocks**. Phase 8 took about 3.7 KB. Phases 9–11 (REU, formats, printer, tape) must fit in
+  what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
+  part from now on; code that runs during disk work must
   go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
   warm start. Restarting means loading the program again. (`SYS 2061` after Quit would crash too.)
@@ -663,7 +673,7 @@ movement keys** — C= + digit still selects a color.
   cycles on all 21 of its lines, and the strips are exact-timed, so the pointer never enters them.
   Moved on past the text, it **hides and the border icon under it turns red** (the pointer's color);
   a click then works that icon: F3 badges page up, F5 badges page down (with the mark key held: marking
-  by page), the menu icon opens the menu (phase 8; nothing yet). Hit zones in the strips (box left
+  by page), the menu icon opens the menu. Hit zones in the strips (box left
   edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60.
 - The box's top line stays within **52–242** (not 51 or 250: its fetches must stay within lines 52–249,
   clear of the line 50 split, the line 249 stable check and the strips). From line 229 it uses a second
@@ -694,7 +704,7 @@ movement keys** — C= + digit still selects a color.
   it starts with `mark_here` (the character pressed on is marked, as with keys). Drag events come only
   when the pointer reaches another cell and the queue is empty; past the top or bottom of the text, one
   every 4 frames (`AUTOSCROLL`), moving the cursor a row further (the screen scrolls).
-- **Right button:** `KEY_MOUSE_R` → `.menu` in editor_key (does nothing until phase 8, like F1).
+- **Right button:** `KEY_MOUSE_R` → `.menu` in editor_key → `menu_open`, like F1. In a menu it closes them all.
 - **Test mailbox:** mouse events (dx, dy in pixels, buttons) replace the real mouse, one per frame, no
   acceleration; after the first one the buttons stay as the last event said (a drag can be sent in
   several goes). Holding the mark key during a click: the mouse is read before the keyboard, so the
@@ -829,8 +839,8 @@ Editing rules:
   the screen against a Python model of it.
 - **Word wrap off:** a row is cut after 40 characters, even mid-word (the phase 3 rule). Rows never
   reach past column 39, so all columns fit in a byte.
-- **CTRL-W toggles word wrap — temporary** until the main menu (phase 8) has the Wordwrap item. The
-  cursor keeps its screen row.
+- Word wrap is switched in the main menu (D); the document is redrawn when the menu closes, with the
+  cursor on its row. (Phase 6's temporary CTRL-W is gone.)
 - **Finding rows upward:** layout depends on where a paragraph starts, so `find_row_start` walks the
   paragraph from its start (`line_start`). `rows_back` (used for cursor up at the top, F3,
   show_cursor_at, big jumps) goes back a line at a time and notes the last 25 row starts in a ring, so
@@ -859,9 +869,9 @@ Editing rules:
 - Color keys insert the new color code before the cursor and a restore code after it; typing goes in
   between. `cleanup` runs whenever the cursor leaves a place and removes codes without effect (and all
   color/RVS codes at the very end of the text).
-- Until the menus (phase 8): **RUN/STOP or RESTORE asks "QUIT Y/N"**. SHIFT+CLR asks "CLEAR ALL Y/N".
-  `prompt_yes_no` draws the centered box, saves/restores what is under it, and shows capitals in either
-  character set. F1 does nothing yet.
+- SHIFT+CLR asks "CLEAR ALL Y/N". `prompt_yes_no` draws the centered box, saves/restores what is
+  under it, and shows capitals in either character set. (Until phase 8, RUN/STOP and RESTORE asked
+  "QUIT Y/N"; now they open the menu, like F1.)
 - HOME goes to the start of the logical line (not the screen row); again = top of the document.
 - Debug mailbox additions: `+63` loads a test document placed in the buffer by the harness; `$02BF`
   holds how many frames the last key took.
@@ -974,6 +984,41 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   the RETURN after a command and gave ?FORMULA TOO COMPLEX for `"A"+"B"`. Then NEW (`JSR $A644`) and
   BASIC's warm start (`JMP ($A002)`, as RUN/STOP+RESTORE), which resets the rest and prints READY.
 
+### As built (phase 8, "Menus" section of `src/menu.asm`)
+
+- **One fixed panel for every menu:** rows 4–19, columns 5–34 (the main menu's size), so going from
+  one menu to another only redraws the panel. Title, a line, then one row per item: letter, name and,
+  for a setting, `: VALUE`. The document is drawn afresh when the menus close (`top_known` = 0,
+  `show_cursor_at cur_row`), since a setting may have changed how it looks.
+- **Closing keys:** X backs out one level; RUN/STOP, ←, RESTORE, F1, the right mouse button and a click
+  on the menu icon close them all. A left click on an item's row inside the panel chooses it.
+- **Menus are data tables** (layout in the comment at the top of the section): a title, then per item
+  its letter (screen code), kind, name and "what". Kinds: `MI_MENU` (opens a submenu; up to 3 deep),
+  `MI_SET` (steps a setting), `MI_RUN` (runs a job, then shows the menu again: Stats, Save defaults,
+  directory, disk command), `MI_DO` (closes the menus, then runs a job: Load, Save, Print, Quit),
+  `MI_EXIT`. A **setting** is: its variable, how many values, the values in stepping order, and a name
+  for each (`set_fields` / `set_name` / `set_next`). Adding a setting = one table entry + its strings.
+- Texts are `!scr` with lower-case letters; `box_print` shows them as capitals in either character set.
+- **Not built yet** (say "NOT READY YET" via `not_yet` / `check_load` / `check_save`): Print (phase 11),
+  tape (phase 11), formats other than PETSCII and the PRG file type (phase 10). The settings exist and
+  step already. **The Save format is PETSCII for now**; the "follows the loaded format, magic for a new
+  document" rule comes with the magic format in phase 10.
+- **Stats** counts on demand (`count_text`) into 24-bit counters (`inc24`, `num24_text`, up to 8
+  digits); free = the size of the gap. No "COUNTING..." yet (only needed for REU documents, phase 9).
+- **Disk directory** (`dir_load` / `dir_save`) runs in the plain disk display (between `io_begin` and
+  `io_end`), a screenful at a time with "MORE" on the bottom row; keys come through the KERNAL there.
+  **Gotcha:** GETIN reads from the current input channel, so the wait routine does CLRCHN before it and
+  CHKIN again after — without that it read a byte of the directory as the key and ended at once.
+- **Disk command** (`cmd_load` / `cmd_save`): a "COMMAND:" box (27 characters; an empty answer allowed,
+  `input_empty_ok`), sent on channel 15; the drive's answer shows in a box.
+- **Save defaults / start-up:** `MAGIC T DEFAULTS` holds the magic header only: `$00 "MTW" "1"`,
+  `$40 + 13` (the number of settings), then 13 bytes of `$40 + value` in the order of `defaults_vars`
+  in `src/fileio.asm` (background, text color, character set, wordwrap, mode, mark key, load format,
+  load device, save format, save type, save device, print ASCII, print device), then CR. Written only
+  to the device in $BA at start-up (`load_device`, 8–30), else "DEFAULTS NEED A DISK". `load_defaults`
+  runs after `init_irq` and before `editor_init`, silently; reading the status clears a drive error.
+- **Quit** (Q) asks "QUIT WITHOUT SAVING Y/N" if there are changes.
+
 ## Find (CTRL-F)
 
 - CTRL-F opens a centered **"FIND:"** prompt (same box style as other prompts). The last search text is
@@ -987,15 +1032,22 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   Searches match across soft-wrapped lines, since wrap is display-only. A search string may not contain CR.
 - Keep the search string short (e.g. 32 characters) to save RAM.
 
+**As built (phase 8, `src/find.asm`):** up to 26 characters (the box's width). With text marked, the
+search starts just past the start of the marked text (usually the last match), else at the cursor.
+A match is marked with the cursor at its end; if it is on the screen only the marking is drawn,
+otherwise it is shown in the middle row. "NOT FOUND" stays in its box until a key is pressed.
+The search walks the buffer with `(zp,X)` through `ptr` or `ptr2`, jumping the gap, and compares only
+visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A fold to $41–$5A.
+
 ## File I/O
 
 ### Disk (devices 8–14)
 
 **As built (phase 4, `src/fileio.asm`):**
-- CTRL-S saves (asks for a name if the document has none; the Save menu adds "save as" in phase 8).
+- CTRL-S saves (asks for a name if the document has none; the Save menu's A is "save as").
   CLEAR ALL makes a new document with no name (so CTRL-S asks again).
-  **CTRL-L loads — temporary** until the Load menu (phase 8); asks "LOAD WITHOUT SAVING Y/N" first if
-  there are changes. The name box ("LOAD:"/"SAVE:", `prompt_input` in `src/menu.asm`) shows the last
+  Load is in the Load menu (F1 A A; phase 4's temporary CTRL-L is gone); it asks "LOAD WITHOUT SAVING
+  Y/N" first if there are changes. The name box ("LOAD:"/"SAVE:", `prompt_input` in `src/menu.asm`) shows the last
   name; RETURN accepts, RUN/STOP cancels, DEL rubs out.
 - Channel 15 stays open while a file is in use; its status line is read after each step and any code
   of 20 or more is shown in a box as the drive sent it (e.g. "62, FILE NOT FOUND,00,00"). A drive that
@@ -1013,7 +1065,8 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   "TOO LONG: ONLY PART LOADED". A $0E / $8E as the file's first byte picks the character set and is
   not kept as text; without one, the first $0E / $8E in the text picks it (and stays); without any, the
   set on screen stays. Saving writes $0E (upper/lower) or $8E (upper/graphics) first, from $D018.
-- Settings `load_dev` / `save_dev` (default 8) are there for the Load/Save menus.
+- Settings `load_dev` / `save_dev` / `load_format` / `save_format` / `save_type` / `print_ascii` /
+  `print_dev` are at the top of `src/fileio.asm`; the Load, Save and Print menus step them.
 - Test files in `test/` (made once and committed): `sample` (mixed case, $0E, colors, reverse, a long
   line), `upper` ($8E, graphics), `long` (60 lines). build.bat/build.sh put them on the .d64 as SEQ.
 
@@ -1145,7 +1198,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
    **Done 2026-09-28** (tested by Jim in VICE 2.4; real hardware still to test).
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
-   Stats, Quit, then CTRL-F Find.
+   Stats, Quit, then CTRL-F Find. (Automated checks passed 2026-09-28; Human Test pending.)
 9. REU detection, fast moves, clipboard, then large documents held in the REU.
 10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type.
 11. Print menu, then tape load/save (device 1).

@@ -24,7 +24,7 @@ try:
     assert sample[0] == 0x0e
 
     # 1. Load SAMPLE
-    e.keys([(KEY["L"], CTRL)])
+    e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
     rows = e.screen_rows()
     check("load box shows LOAD:", "LOAD:" in rows[12], rows[12])
     e.type_text("sample")
@@ -60,7 +60,7 @@ try:
 
     # 3. Load a file that is not there: error box, document unchanged
     before, _ = e.text()
-    e.keys([(KEY["L"], CTRL)])
+    e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
     e.keys([(KEY["DEL"], 0)] * 6)
     e.type_text("nofile")
     e.keys([(KEY["RETURN"], 0)], settle=1.0)
@@ -77,7 +77,7 @@ try:
 
     # 4. Device 9 is not there
     e.poke(e.lab["load_dev"], [9])
-    e.keys([(KEY["L"], CTRL)])
+    e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
     e.keys([(KEY["RETURN"], 0)], settle=1.0)
     for _ in range(50):
         rows = e.screen_rows()
@@ -91,7 +91,7 @@ try:
 
     # 5. Load LONG (60 lines)
     long_ = open(os.path.join(PROJ, "test/long.seq"), "rb").read()
-    e.keys([(KEY["L"], CTRL)])
+    e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
     e.keys([(KEY["DEL"], 0)] * 6)
     e.type_text("long")
     e.keys([(KEY["RETURN"], 0)], settle=0.5)
@@ -108,7 +108,7 @@ try:
     # 5b. Load UPPER: starts with $8e, so the upper case/graphics set, and
     # the $8e is not text
     upper = open(os.path.join(PROJ, "test/upper.seq"), "rb").read()
-    e.keys([(KEY["L"], CTRL)])
+    e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
     e.keys([(KEY["DEL"], 0)] * 6)
     e.type_text("upper")
     e.keys([(KEY["RETURN"], 0)], settle=0.5)
