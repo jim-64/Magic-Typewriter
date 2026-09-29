@@ -35,11 +35,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   answers 62 to a scratch of a file that isn't there**; confirmed in his 2.4, see VICE gotchas);
   names with `* ? ,` are refused for saving. His "LOAD: NOT READY YET" came from a MAGIC T DEFAULTS on
   his disk with Load Format = MAGIC (and File Type = PRG).
-- **Phase 9, first part (REU detection, block copies and the clipboard through it):** passes the
-  automated checks (2026-09-29; PAL, NTSC, old NTSC, Drean, with and without an REU); waiting for
-  Jim's Human Test, on branch `phase9`. **Open: documents larger than main RAM held in the REU**
-  (the Build Order's last part of phase 9) — a big structural change that doesn't fit in the memory
-  left; asked Jim whether to build it, drop it, or leave it for after phase 11 (see REU).
+- **Phase 9, first part done** (2026-09-29; REU detection, block copies and the clipboard through
+  it), merged into `main`. Changed after Jim's test: with the mark key, F3/F5 put the cursor on the
+  top/bottom row. **Long documents held in the REU: after phase 11** (Jim, 2026-09-29; see REU and
+  Build Order 11b).
+- **Phase 10 (file formats), in progress on branch `phase10`:** magic, ASCII and PRG files done and
+  tested; SpeedScript waits for real SpeedScript files from Jim (asked 2026-09-29).
 - **Memory:** ~1.3 KB left below the sprite blocks and ~1 KB under the KERNAL for phases 10–11
   (see Memory Map). Watch it.
 
@@ -242,6 +243,10 @@ and shown in Stats; the same editing session — big jumps, copy, paste twice, c
 same text with and without an REU; the clipboard is in the REU; the jump to the top of 20 KB is
 quicker; and `late_irqs` stays 0). **Run the whole suite with `MT_REU=512` too** (every older test
 then goes through the REU copies and clipboard).
+`python tools/test_phase10.py [c64|ntsc]` (formats: magic saved and loaded back with its settings, as
+SEQ and as PRG; ASCII saved (after the colors warning) and loaded with mixed line ends; PETSCII;
+the Save format following the loaded one and CLEAR ALL going back; the saved bytes checked with
+c1541).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -1194,13 +1199,37 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
 - **SpeedScript**: PRG of **screen codes** with a special character as the return marker. It keeps
   SpeedScript's own load address, not $0000.
   **Verify the return code and load address against real SpeedScript files before implementing.**
-- Format chosen in the Load/Save menus; default PETSCII.
+- Format chosen in the Load/Save menus; Load default PETSCII, Save default magic (see Menus).
 - Saving as plain PETSCII keeps colors but not the background or default text color; text with no color
   code will show in whatever color the reading program uses.
 - Saving as ASCII or SpeedScript loses colors (and, for ASCII, reverse). If the document has any, warn:
   "COLORS WILL BE LOST Y/N".
 - SpeedScript format is always a PRG; when the Save format is speedscript, ignore the File type setting.
 
+**As built (phase 10, `src/fileio.asm`):**
+- **Loading reads the file as it is** into the buffer, then `convert_loaded` makes it text in place
+  (nothing gets longer, so writing never overtakes reading): a load address $0000 at the start
+  (our PRG) is skipped (SpeedScript: its own address, always skipped); a magic header ($00 "MTW"
+  at the start) is recognized whatever the Load format says, its bytes go through `defaults_buf` and
+  `defaults_apply` (so a version other than "1" keeps its settings out), and the text starts after
+  its RETURN; a case code first (magic and PETSCII) is the character set; then PETSCII/magic as is
+  (the first $0E/$8E picks the set if nothing did), or ASCII converted (A–Z ↔ $C1–$DA, a–z ↔ $41–$5A,
+  CR, LF or CR LF → CR, tab → space, other control codes dropped). **The Save format becomes the
+  format loaded.**
+- **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it closes and opens
+  `name,P,R`. Save opens `,S,W` or `,P,W` (File type); a PRG starts with $00 $00.
+- **Saving** (`save_file`): PRG address, then the magic header (made by `defaults_make` before
+  `io_begin`: some settings live in the editor, hidden once the KERNAL ROM is in), then the case code
+  (magic, PETSCII), then the text: as is, or ASCII (`.ascii`: the reverse mapping; a line end → CR LF;
+  SHIFT-SPACE → space; graphics, colors, RVS and other codes left out). ASCII asks "COLORS WILL BE
+  LOST Y/N" first if `has_codes` finds any color or RVS code.
+- **The magic text part starts with the case code too** (decided in phase 10): TYPEing the file then
+  shows the right character set, and loading treats it as for PETSCII files.
+- **Save format for a new document:** `default_save_format` = the Save format after start-up
+  (built-in **magic**, or the Save defaults file's); CLEAR ALL goes back to it.
+- **A magic document applies all 13 settings** (as specified), including Load/Save formats, File
+  type and devices: loading a PRG saved one sets the File type to PRG. Asked Jim whether a document
+  should only carry its look (colors, character set, wordwrap, mode, mark key).
 ## REU (optional)
 
 - Detect by writing and reading back the address registers at $DF02–$DF05. Size by writing marker bytes
@@ -1250,11 +1279,14 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
   monitor: a fetch from bank 1 into the free top of the gap. **VICE does such a DMA only once the
   emulation runs on**, so it resumes briefly before reading. Measured (PAL, 20 KB of short lines): jump to the top 35 → 16 frames; the
   rest of the time is drawing.
-- **Not built: documents larger than main RAM** (see Status). It needs 24-bit positions throughout
-  the editor, a window of the document paged in around the cursor, and load/save/find/stats/marker
-  walking the whole document: several KB of code, more than is left. Options put to Jim: leave it
-  out; do it after phase 11 if space remains; or give REU machines their own code (e.g. copied under
-  $C000 at start-up, making the window smaller).
+- **Not built yet: documents larger than main RAM.** It needs 24-bit positions throughout the
+  editor, a window of the document paged in around the cursor, and load/save/find/stats/marker
+  walking the whole document: several KB of code, more than is left. **Decided (Jim, 2026-09-29):
+  after phases 10 and 11, in the same PRG.** The REU code travels in the PRG; at start-up, with an
+  REU it is put in place (e.g. $C000–$CFFF, making the text window $4000–$BFFF), and **without an
+  REU it is dropped and that RAM is document space**, so a stock C64 loses nothing. Detection
+  already handles REUs up to 16 MB. Practical limits to tell Jim about: disk sizes, and Find/Stats
+  walking every byte (roughly 10–20 s per MB).
 
 ## Cartridge version (future idea)
 
@@ -1300,10 +1332,12 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
    Stats, Quit, then CTRL-F Find. **Done 2026-09-29.**
-9. REU detection, fast moves, clipboard, then large documents held in the REU. (First part —
-   detection, fast moves, clipboard — passes the automated checks 2026-09-29; large documents: ask Jim.)
-10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type.
+9. REU detection, fast moves, clipboard. **Done 2026-09-29.** (Large documents held in the REU moved
+   to 11b.)
+10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type. (Magic, ASCII and
+    PRG done 2026-09-29; SpeedScript waits for real files.)
 11. Print menu, then tape load/save (device 1).
+11b. Long documents held in the REU (same PRG; the REU code's RAM is document space without an REU).
 12. Test pass on every target platform.
 
 ## Open Questions

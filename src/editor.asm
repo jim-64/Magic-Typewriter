@@ -3576,6 +3576,8 @@ clear_all
         jsr empty_buffer
         lda #0
         sta file_name_len
+        lda default_save_format ; a new document: the Save format a new
+        sta save_format         ; one gets
         jsr redraw_all
         jsr locate_cursor
 +       rts

@@ -213,6 +213,8 @@ msg_no_device
         !scr "device not present", 0
 msg_bad_name
         !scr "no * ? or , in a file name", 0
+msg_colors_lost
+        !scr "colors will be lost y/n", 0
 msg_too_long
         !scr "too long: only part loaded", 0
 msg_break
@@ -226,3 +228,7 @@ suffix_read
         !byte $2c, $53, $2c, $52        ; ,S,R
 suffix_write
         !byte $2c, $53, $2c, $57        ; ,S,W
+suffix_prg_read
+        !byte $2c, $50, $2c, $52        ; ,P,R
+suffix_prg_write
+        !byte $2c, $50, $2c, $57        ; ,P,W

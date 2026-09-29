@@ -289,10 +289,11 @@ def read_seq(name):
     return open(out, "rb").read() if os.path.exists(out) else b""
 
 saved = read_seq("phase8")
-check("PHASE8 on disk: the document (with the case code first)", saved[1:] == doc, saved[:20])
+check("PHASE8 on disk: the magic header, the case code, the document",
+      saved[:4] == b"\x00MTW" and saved[21:] == doc, saved[:24])
 d = read_seq("magic t defaults")
 exp = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + 13]) + bytes(0x40 + x for x in
-      [3, 15, 1, 0, 0, 1, 1, 8, 1, 0, 8, 0, 4]) + b"\r"
+      [3, 15, 1, 0, 0, 1, 1, 8, 0, 0, 8, 0, 4]) + b"\r"
 check("MAGIC T DEFAULTS on disk: the header with every setting", d == exp, (d, exp))
 check("SAMPLE still on disk (the refused 'SA*' scratched nothing)", len(read_seq("sample")) > 20)
 

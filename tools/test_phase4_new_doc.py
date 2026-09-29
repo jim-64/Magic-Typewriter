@@ -126,11 +126,16 @@ if not readonly:
         os.remove(os.path.join(S, out))
     subprocess.run([c1541, "-attach", "p4b.d64", "-read", "note,s", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
+    if saved[:4] == b"\x00MTW":                 # (a new document saves in
+        saved = saved[20:]                      # the magic format: after
+                                                # its header, as PETSCII)
     check("NOTE on disk = $0e (upper/lower) + 'HELLO DISK' + RETURN", saved == b"\x0eHELLO DISK\r", saved)
     out = "other_saved.seq"
     if os.path.exists(os.path.join(S, out)):
         os.remove(os.path.join(S, out))
     subprocess.run([c1541, "-attach", "p4b.d64", "-read", "other,s", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
+    if saved[:4] == b"\x00MTW":
+        saved = saved[20:]
     check("OTHER on disk = $8e (upper case/graphics) + 'OTHER'", saved == b"\x8eOTHER", saved)
 print("ALL PASS" if ok else "SOME FAILED")

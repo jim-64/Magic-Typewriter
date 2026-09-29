@@ -42,7 +42,11 @@ FORMAT_SPEEDSCRIPT = 3
 load_dev        !byte 8         ; device (1 = tape)
 load_format     !byte FORMAT_PETSCII
 save_dev        !byte 8
-save_format     !byte FORMAT_PETSCII ; (the magic format comes in phase 10)
+save_format     !byte FORMAT_MAGIC ; (a loaded document: the format it
+                                ; was loaded as, so it saves back the same)
+default_save_format !byte 0     ; the Save format for a new document: as
+                                ; set at start-up (built in, or Save
+                                ; defaults); CLEAR ALL goes back to it
 save_type       !byte 0         ; 0 = SEQ, 1 = PRG
 print_ascii     !byte 0         ; 1 = convert to ASCII
 print_dev       !byte 4
@@ -312,11 +316,13 @@ name_to_input
 ; Loading
 ;============================================================================
 
-; load_file - ask for a name and load a PETSCII file in place of the
-; document.
+; load_file - ask for a name and load a file in place of the document. It
+; is read as it is into the buffer, then made into text (convert_loaded):
+; the Load format says how, but a file with the Magic Typewriter header is
+; always read as one. SEQ and PRG files both load.
 !zone load_file
 load_file
-        jsr check_load          ; (tape and other formats: not yet)
+        jsr check_load          ; (tape and SpeedScript: not yet)
         bcc +
         rts
 +       lda modified            ; changes not saved: ask first
@@ -334,7 +340,7 @@ load_file
         rts                     ; cancelled
 +       lda load_dev
         sta cur_dev
-        lda #<suffix_read
+        lda #<suffix_read       ; a SEQ file first ...
         ldx #>suffix_read
         jsr name_plus
         lda #<msg_loading
@@ -349,14 +355,31 @@ load_file
         bcc +
         jmp .no_device
 +       jsr read_status         ; e.g. 62, FILE NOT FOUND
+        bcc .opened
+        lda status_buf          ; ... but "64, FILE TYPE MISMATCH": it is
+        cmp #$36                ; a PRG file, so open it as one
+        bne .to_fail
+        lda status_buf+1
+        cmp #$34
+        bne .to_fail
+        lda #FILE_LFN
+        jsr CLOSE
+        lda #<suffix_prg_read
+        ldx #>suffix_prg_read
+        jsr name_plus
+        jsr open_file
         bcc +
+        jmp .no_device
++       jsr read_status
+        bcc .opened
+.to_fail
         jmp .fail
 
         ; The file is there: from here on it replaces the document. Empty
         ; the text: the gap covers the whole buffer below the clipboard.
         ; (Done here, not with the editor's empty_buffer, which is out of
         ; reach while the KERNAL ROM is in; .show does the rest.)
-+       lda #<BUF_START
+.opened lda #<BUF_START
         sta gap_start
         lda #>BUF_START
         sta gap_start+1
@@ -364,10 +387,6 @@ load_file
         sta gap_end
         lda text_end+1
         sta gap_end+1
-        lda #0
-        sta .charset
-        lda #1
-        sta .first
         ldx #FILE_LFN
         jsr CHKIN
         bcc .byte
@@ -375,41 +394,21 @@ load_file
 .byte   jsr STOP                ; RUN/STOP breaks off
         bne +
         jmp .break
-+       jsr CHRIN
-        sta .b
-        lda .first              ; the very first byte of the file?
-        beq .store
-        lda #0
-        sta .first
-        lda .b                  ; a case code there is the document's
-        cmp #$0e                ; character set (save_file writes it), so
-        beq +                   ; it becomes that setting, not text
-        cmp #$8e
-        bne .store
-+       sta .charset
-        jmp .next
-
-.store  lda gap_start           ; room left?
++       jsr CHRIN               ; the file as it comes (made into text
+        tax                     ; afterwards, by convert_loaded)
+        lda gap_start           ; room left?
         cmp gap_end
         bne +
         lda gap_start+1
         cmp gap_end+1
         beq .full
-+       lda .b
++       txa
         ldy #0
         sta (gap_start),y
         inc gap_start
         bne +
         inc gap_start+1
-+       lda .charset            ; no case code at the start: the first
-        bne .next               ; $0e or $8e in the text picks the
-        lda .b                  ; character set (it stays in the text)
-        cmp #$0e                ; switch to lower case
-        beq +
-        cmp #$8e                ; switch to upper case
-        bne .next
-+       sta .charset
-.next   jsr READST
++       jsr READST
         beq .byte               ; 0: more to come
         and #%01000000
         beq .read_error         ; not the end: something went wrong
@@ -460,14 +459,15 @@ load_file
         ldx #>status_buf
         jmp message_box
 
-; .show - show the loaded document from the top, cursor at the start
-; (after io_end: this uses the editor)
+; .show - make the file into text and show it from the top, cursor at the
+; start (after io_end: this uses the editor)
 .show   lda #0                  ; nothing marked
         sta sel_on
+        jsr convert_loaded
         jsr gap_to_start
         jsr empty_view
         jsr count_colors
-        lda .charset
+        lda load_charset
         beq +
         ldx #MEMPTR_UPPER       ; $8e: upper case/graphics
         cmp #$8e
@@ -480,25 +480,204 @@ load_file
         jsr redraw_all
         jmp locate_cursor
 
-.b              !byte 0
-.charset        !byte 0         ; $0e, $8e, or 0 = none found
-.first          !byte 0         ; 1 until the first byte is read
+load_charset    !byte 0         ; $0e, $8e, or 0 = none found
+
+;----------------------------------------------------------------------------
+; convert_loaded - the file just read lies at BUF_START..gap_start as it
+; came. Take off what is not text - a PRG's load address, the Magic
+; Typewriter header (its settings are used), a case code at the very
+; start (it picks the character set) - and make the rest PETSCII text as
+; the Load format says, in place. The Save format becomes the format it
+; was loaded as, so that it saves back the same way.
+;   ptr reads the file, ptr2 writes the text (never ahead of ptr: nothing
+;   gets longer)
+;----------------------------------------------------------------------------
+!zone convert_loaded
+convert_loaded
+        lda #<BUF_START
+        sta ptr
+        sta ptr2
+        lda #>BUF_START
+        sta ptr+1
+        sta ptr2+1
+        lda #0
+        sta load_charset
+        lda load_format         ; how to read it (unless it has the header)
+        sta .fmt
+
+        ; A PRG file saved here starts with the load address $0000; a
+        ; SpeedScript file is always a PRG, with its own load address.
+        lda #2
+        jsr .has
+        bcc .text
+        ldy #0
+        lda (ptr),y
+        iny
+        ora (ptr),y
+        beq +
+        lda .fmt
+        cmp #FORMAT_SPEEDSCRIPT
+        bne .header
++       jsr .skip2
+
+.header ; The Magic Typewriter header: $00 "MTW", its version, the number
+        ; of settings, the settings, a RETURN (as MAGIC T DEFAULTS).
+        lda #6
+        jsr .has
+        bcc .text
+        ldy #3
+-       lda (ptr),y
+        cmp defaults_head,y
+        bne .text
+        dey
+        bpl -
+        ldy #DEFAULTS_LEN-1     ; its settings are used the way Save
+-       lda (ptr),y             ; defaults' are at start-up (another
+        sta defaults_buf,y      ; version's are left alone)
+        dey
+        bpl -
+        jsr defaults_apply
+        lda #FORMAT_MAGIC
+        sta .fmt
+-       jsr .get                ; the text starts after its RETURN
+        bcs .done
+        cmp #$0d
+        bne -
+
+.text   lda .fmt                ; PETSCII and magic files: a case code
+        cmp #FORMAT_ASCII       ; first is the character set (save_file
+        bcs .copy               ; writes one), not text
+        jsr .get
+        bcs .done
+        cmp #$0e
+        beq +
+        cmp #$8e
+        bne .keep
++       sta load_charset
+
+.copy   jsr .get                ; then the rest, byte by byte
+        bcs .done
+.keep   ldx .fmt
+        cpx #FORMAT_ASCII
+        beq .ascii
+        ldx load_charset        ; PETSCII and magic: as it is. If nothing
+        bne .put                ; picked the character set yet, the first
+        cmp #$0e                ; $0e or $8e in the text does (and stays)
+        beq +
+        cmp #$8e
+        bne .put
++       sta load_charset
+.put    ldy #0
+        sta (ptr2),y
+        inc ptr2
+        bne .copy
+        inc ptr2+1
+        bne .copy               ; (always)
+
+.ascii  ; ASCII: capitals and small letters change places; a RETURN, a
+        ; line feed, or both, is a line end; a tab is a space; other
+        ; control codes go.
+        cmp #$0d
+        bne +
+        jsr .lf_after
+        lda #$0d
+        bne .put
++       cmp #$0a
+        bne +
+        lda #$0d
+        bne .put
++       cmp #$09
+        bne +
+        lda #$20
+        bne .put
++       cmp #$20
+        bcc .copy               ; (other control codes)
+        cmp #$7f
+        beq .copy
+        cmp #$41
+        bcc .put
+        cmp #$5b
+        bcs +
+        ora #$80                ; A-Z: PETSCII capitals ($c1-$da)
+        bne .put
++       cmp #$61
+        bcc .put
+        cmp #$7b
+        bcs .put
+        and #$df                ; a-z: PETSCII small letters ($41-$5a)
+        bne .put
+
+.done   lda ptr2                ; the text ends here
+        sta gap_start
+        lda ptr2+1
+        sta gap_start+1
+        lda .fmt
+        sta save_format
+        rts
+
+; .get - A = the next byte of the file, ptr past it. Carry set at the end.
+.get    lda ptr
+        cmp gap_start
+        bne +
+        lda ptr+1
+        cmp gap_start+1
+        bne +
+        sec
+        rts
++       ldy #0
+        lda (ptr),y
+        inc ptr
+        bne +
+        inc ptr+1
++       clc
+        rts
+
+; .has - carry set if at least A bytes of the file are left from ptr
+.has    clc
+        adc ptr
+        sta .t
+        lda ptr+1
+        adc #0
+        sta .t+1
+        lda gap_start
+        cmp .t
+        lda gap_start+1
+        sbc .t+1
+        rts
+
+; .skip2 - ptr on by 2 (a load address)
+.skip2  jsr .get
+        jmp .get
+
+; .lf_after - after a RETURN: a line feed straight after it goes too
+.lf_after
+        lda #1
+        jsr .has
+        bcc +
+        ldy #0
+        lda (ptr),y
+        cmp #$0a
+        bne +
+        jsr .get
++       rts
+
+.fmt    !byte 0
+.t      !word 0
 
 ;============================================================================
 ; Saving
 ;============================================================================
 
 ; check_load, check_save - carry set (after saying so) if the Load or Save
-; settings ask for something not built yet: tape (phase 11), a format
-; other than PETSCII or a PRG file (phase 10).
+; settings ask for something not built yet: tape (phase 11), SpeedScript.
 !zone check_load
 check_load
         lda load_dev
         cmp #1
         beq .no
         lda load_format
-        cmp #FORMAT_PETSCII
-        bne .no
+        cmp #FORMAT_SPEEDSCRIPT
+        beq .no
         clc
         rts
 check_save
@@ -506,10 +685,8 @@ check_save
         cmp #1
         beq .no
         lda save_format
-        cmp #FORMAT_PETSCII
-        bne .no
-        lda save_type
-        bne .no
+        cmp #FORMAT_SPEEDSCRIPT
+        beq .no
         clc
         rts
 .no     jsr not_yet
@@ -546,11 +723,20 @@ save_key
 +       jsr name_to_input
         ; (falls into save_file)
 
-; save_file - save the document as a PETSCII SEQ file named input_buf.
-; An old file of that name is scratched first ("S0:name"), then the new one
-; is written. (Not "@0:": some drives have a bug in save-with-replace.)
+; save_file - save the document under the name in input_buf, in the Save
+; format and file type. An old file of that name is scratched first
+; ("S0:name"), then the new one is written. (Not "@0:": some drives have a
+; bug in save-with-replace.) What goes into the file:
+;   a PRG file:        the load address $0000 first (a document, not a
+;                      program: LOAD"NAME",8,1 is not for it)
+;   magic:             the header (the settings, as in MAGIC T DEFAULTS)
+;   magic and PETSCII: the character set as a case code ($0e / $8e)
+;   then the text:     as it is (magic, PETSCII), or made ASCII: small
+;                      letters and capitals swapped, a line end as RETURN
+;                      and line feed, colors, reverse and other codes left
+;                      out (it asks first if there are colors to lose)
 save_file
-        jsr check_save          ; (tape, other formats, PRG: not yet)
+        jsr check_save          ; (tape, SpeedScript: not yet)
         bcc +
         rts
 +       jsr name_ok             ; no * ? or , in the name
@@ -558,7 +744,19 @@ save_file
         lda #<msg_bad_name
         ldx #>msg_bad_name
         jmp message_box
-+       lda save_dev
++       lda save_format         ; ASCII can't keep colors or reverse: ask
+        cmp #FORMAT_ASCII       ; first if there are any
+        bne +
+        jsr has_codes
+        bcc +
+        lda #<msg_colors_lost
+        ldx #>msg_colors_lost
+        jsr prompt_yes_no
+        bcs +
+        rts
++       jsr defaults_make       ; (the magic header: made now, while the
+                                ; editor's settings can be read)
+        lda save_dev
         sta cur_dev
         lda #<msg_saving
         ldx #>msg_saving
@@ -569,10 +767,13 @@ save_file
         jsr scratch_input       ; the old file goes first ("S0:" + name)
         bcc +
         jmp .fail
-+
-        lda #<suffix_write      ; now the file: name + ",S,W"
++       lda #<suffix_write      ; now the file: name + ",S,W" or ",P,W"
         ldx #>suffix_write
-        jsr name_plus
+        ldy save_type
+        beq +
+        lda #<suffix_prg_write
+        ldx #>suffix_prg_write
++       jsr name_plus
         jsr open_file
         bcc +
         jmp .no_device
@@ -581,23 +782,41 @@ save_file
         jmp .fail
 +       ldx #FILE_LFN
         jsr CHKOUT
-        bcs .no_device
+        bcc +
+        jmp .no_device
+.to_bus jmp .bus_error          ; (for branches that cannot reach)
 
-        ; First the character set, as the standard PETSCII case code:
-        ; $0e = upper/lower case, $8e = upper case/graphics. load_file
-        ; takes it back as the setting, and other programs that print the
-        ; file switch to the right set with it.
-        lda VIC_MEMPTR
-        and #%00000010          ; bit 1 set: upper/lower case
++       lda save_type           ; a PRG: the load address $0000
         beq +
+        lda #0
+        jsr .out
+        bcs .to_bus
+        lda #0
+        jsr .out
+        bcs .to_bus
++       lda save_format         ; magic: the header
+        cmp #FORMAT_MAGIC
+        bne +
+        ldx #0
+-       lda defaults_buf,x
+        jsr .out
+        bcs .bus_error
+        inx
+        cpx #DEFAULTS_LEN
+        bcc -
++       lda save_format         ; magic and PETSCII: the character set, as
+        cmp #FORMAT_ASCII       ; the standard PETSCII case code ($0e for
+        bcs .text               ; upper/lower case, $8e for upper case/
+        lda VIC_MEMPTR          ; graphics). load_file takes it back as the
+        and #%00000010          ; setting, and other programs that print
+        beq +                   ; the file switch to the right set with it.
         lda #$0e
         bne ++
 +       lda #$8e
-++      jsr CHROUT
-        jsr READST
-        bne .bus_error
+++      jsr .out
+        bcs .bus_error
 
-        ; Then the text before the gap, and the text after it.
+.text   ; Then the text before the gap, and the text after it.
         lda #<BUF_START
         sta ptr
         lda #>BUF_START
@@ -654,8 +873,15 @@ save_file
         ldx #>status_buf
         jmp message_box
 
-; .write - send the bytes from ptr up to .end to the file. Carry set if it
-; stopped early: A = 0 for RUN/STOP, else a bus error.
+; .out - A to the file. Carry set if the bus reports an error. Keeps X.
+.out    jsr CHROUT
+        jsr READST
+        cmp #1
+        rts
+
+; .write - send the text from ptr up to .end to the file, in the Save
+; format. Carry set if it stopped early: A = 0 for RUN/STOP, else a bus
+; error.
 .write
 -       lda ptr
         cmp .end
@@ -667,8 +893,13 @@ save_file
         beq .break
         ldy #0
         lda (ptr),y
-        jsr CHROUT
-        jsr READST
+        ldx save_format
+        cpx #FORMAT_ASCII
+        bne +
+        jsr .ascii              ; (ASCII: made so first)
+        jmp ++
++       jsr CHROUT
+++      jsr READST
         bne .error
         inc ptr
         bne -
@@ -682,7 +913,87 @@ save_file
 .error  lda #1
         sec
         rts
+
+; .ascii - A = a byte of the text: send it as ASCII (or nothing)
+.ascii  tax
+        lda ctype,x
+        cmp #CT_EOL
+        bne +
+        lda #$0d                ; a line end: RETURN and line feed
+        jsr CHROUT
+        lda #$0a
+        jmp CHROUT
++       cmp #CT_CHAR
+        bne .none               ; codes: nothing
+        txa
+        cmp #$a0                ; SHIFT + SPACE: a space
+        bne +
+        lda #$20
+        bne .send
++       cmp #$c1                ; capitals ($c1-$da): A-Z
+        bcc +
+        cmp #$db
+        bcs .none               ; (graphics)
+        and #$7f
+        bne .send
++       cmp #$80
+        bcs .none               ; (graphics)
+        cmp #$41
+        bcc .send               ; space, digits, punctuation, @
+        cmp #$5b
+        bcs +
+        ora #$20                ; small letters ($41-$5a): a-z
+        bne .send
++       cmp #$60                ; [ pound ] up-arrow left-arrow: as
+        bcc .send               ; [ \ ] ^ _
+        beq .none
+        cmp #$7b
+        bcs .none               ; (graphics)
+        and #$df                ; capitals ($61-$7a) too: A-Z
+.send   jmp CHROUT
+.none   rts
+
 .end    !word 0
+
+;----------------------------------------------------------------------------
+; has_codes - carry set if the text has color or reverse codes in it
+; (which ASCII can't keep)
+;----------------------------------------------------------------------------
+!zone has_codes
+has_codes
+        lda #<BUF_START
+        sta ptr
+        lda #>BUF_START
+        sta ptr+1
+.loop   lda ptr                 ; at the gap? jump over it
+        cmp gap_start
+        bne +
+        lda ptr+1
+        cmp gap_start+1
+        bne +
+        lda gap_end
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
++       jsr ptr_at_end
+        bcs .none
+        ldy #0
+        lda (ptr),y
+        tax
+        lda ctype,x
+        bpl .yes                ; 0-15: a color code
+        cmp #CT_RVSON
+        beq .yes
+        cmp #CT_RVSOFF
+        beq .yes
+        inc ptr
+        bne .loop
+        inc ptr+1
+        bne .loop
+.none   clc
+        rts
+.yes    sec
+        rts
 
 ;============================================================================
 ; Disk directory and disk command (the Load and Save menus)

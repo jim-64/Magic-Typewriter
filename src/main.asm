@@ -188,6 +188,8 @@ start                           ; must be at $080d = 2061
         jsr init_irq
         cli
         jsr load_defaults       ; the settings saved with Save defaults
+        lda save_format         ; (a new document's Save format, for
+        sta default_save_format ; CLEAR ALL to go back to)
         jsr editor_init         ; an empty document, ready to type
 
 ;============================================================================
