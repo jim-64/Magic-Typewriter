@@ -641,6 +641,11 @@ With mark key = C=:
 
 Both settings:
 - Mark key + F3/F5 marks by page. F7 and SHIFT-F7 (F8) are not movement keys, so they never mark.
+  **As built (Jim, 2026-09-29):** with the mark key, F3 puts the cursor on the top row and F5 on the
+  bottom row (`mark_page_up` / `mark_page_down`), so the page marked fills the screen behind it.
+  Plain F3/F5 keep the cursor on its screen row; marking that way looked as if it went the wrong
+  way (the cursor seemed to stay put and the text on the other side lit up). The F3/F5 badges
+  do the same (`.page_up` / `.page_down` in editor_key).
   (No F2/F4/F6 functions.)
 - Either SHIFT types capitals normally; marking only happens with movement keys.
 - Mark key + mouse click extends the selection.

@@ -156,6 +156,23 @@ try:
     c = copied(14, [(KEY["DOWN"], CBM | RS)])
     check("from the R of RED (a color code before it), up: the line and the R",
           c.replace(bytes([RED]), b"") == b"ONE TWO THREE\rR", c)
+
+    # Marking by page: the cursor goes to the top (F3) or bottom (F5) row,
+    # so the page marked fills the screen behind it
+    load_doc(e, b"".join(b"LINE %02d\r" % i for i in range(80)))
+    e.keys([(KEY["F5"], 0)] * 2 + [(KEY["DOWN"], 0)] * 5)   # LINE 53, row 5
+    row = lambda: e.peek(e.lab["cur_row"])[0]
+    marked = lambda: [r for r in range(25) if any(ch & 0x80 for ch in e.peek(0x0400 + 40 * r, 7))]
+    e.keys([(KEY["F3"], CBM)])
+    t = e.text()
+    check("C= + F3: 24 lines up, the cursor on the top row, the page marked below it",
+          t[1] == 29 * 8 and row() == 0 and marked() == list(range(25)), (t[1], row(), marked()))
+    e.keys([(KEY["RIGHT"], 0)] + [(KEY["F5"], CBM)])
+    t = e.text()
+    check("C= + F5: 24 lines down, the cursor on the bottom row, the page marked above it",
+          t[1] == 53 * 8 + 1 and row() == 24 and marked() == list(range(25)), (t[1], row(), marked()))
+    e.keys([(KEY["RIGHT"], 0), (KEY["F3"], 0)])
+    check("plain F3 still keeps the cursor on its row", row() == 24 and marked() == [], (row(), marked()))
 finally:
     try:
         e.m.quit()

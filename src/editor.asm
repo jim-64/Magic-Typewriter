@@ -2472,14 +2472,7 @@ page_down
         tax                     ; the end of the text is on the screen:
         jmp goto_row            ; go to its row
 +       ldx #ROWS-1             ; row 24 becomes the top row
-        lda row_off_lo,x
-        sta row_off_lo
-        lda row_off_hi,x
-        sta row_off_hi
-        lda row_color,x
-        sta row_color
-        lda row_rvs,x
-        sta row_rvs
+        jsr .row_to_top
         jsr redraw_all
         ldx cur_row
         cpx eof_row             ; (if the text ends above that row, go to
@@ -2497,6 +2490,48 @@ page_up
         bcc +
         ldx eof_row
 +       jmp goto_row
+
+; mark_page_down, mark_page_up - F5 / F3 with the mark key: the cursor goes
+; a page (24 rows) down or up, and is shown on the bottom or top row. So
+; where the marking started ends up on the other edge of the screen, and
+; the page marked fills the screen between. (Plain F3/F5 keep the cursor
+; on its row: marking that way looked as if it went the wrong way.)
+mark_page_down
+        jsr leave_cursor
+        lda eof_row             ; the end of the text on the screen: go to
+        bmi +                   ; its row, as page_down does
+        tax
+        jmp goto_row
++       ldx cur_row             ; the cursor's row becomes the top row ...
+        jsr .row_to_top
+        jsr redraw_all
+        ldx #ROWS-1             ; ... and the cursor goes to the bottom row
+        cpx eof_row             ; (or the last row of the text)
+        bcc +
+        ldx eof_row
++       jmp goto_row
+
+mark_page_up
+        jsr leave_cursor
+        ldx cur_row             ; from the cursor's row ...
+        jsr .row_to_top
+        lda #ROWS-1             ; ... 24 rows up (or to the start of the
+        jsr rows_back           ; text) is the new top row, and the cursor
+        jsr redraw_all          ; goes there
+        ldx #0
+        jmp goto_row
+
+; .row_to_top - screen row X becomes the top row (its start and state)
+.row_to_top
+        lda row_off_lo,x
+        sta row_off_lo
+        lda row_off_hi,x
+        sta row_off_hi
+        lda row_color,x
+        sta row_color
+        lda row_rvs,x
+        sta row_rvs
+        rts
 
 ; home_key - HOME: to the start of the line; if already there, to the top
 ; of the document.
@@ -3617,14 +3652,10 @@ editor_key
         bcs .to_move
 +       cmp #KEY_F3
         bne +
-        lda #<page_up
-        ldx #>page_up
-        bne .to_move
+        jmp .page_up
 +       cmp #KEY_F5
         bne +
-        lda #<page_down
-        ldx #>page_down
-        bne .to_move
+        jmp .page_down
 +       cmp #KEY_HOME
         bne +
         lda .mods
@@ -3687,16 +3718,31 @@ editor_key
         beq .drag
         lda click_icon          ; left button: on a border icon?
         beq .click
-        cmp #ICON_F3
-        bne +
-        lda #<page_up           ; (with the mark key: marking by page, as
-        ldx #>page_up           ; with the F3 key)
-        jmp .move
-+       cmp #ICON_F5
+        cmp #ICON_F3            ; (the badges work as the F3 and F5 keys,
+        beq .page_up            ; with the mark key too)
+        cmp #ICON_F5
+        beq .page_down
         bne .menu               ; (the menu icon)
+
+; .page_up, .page_down - F3 / F5: a page up or down. With the mark key the
+; cursor goes to the top (F3) or bottom (F5) row, so the page it marked
+; fills the screen behind it.
+.page_up
+        jsr .marking
+        lda #<page_up
+        ldx #>page_up
+        bcc +
+        lda #<mark_page_up
+        ldx #>mark_page_up
++       jmp .move
+.page_down
+        jsr .marking
         lda #<page_down
         ldx #>page_down
-        jmp .move
+        bcc +
+        lda #<mark_page_down
+        ldx #>mark_page_down
++       jmp .move
 .drag   lda mark_key            ; dragging marks, as if the mark key were
         beq +                   ; held (MARK_LSHIFT = 0)
         lda #MOD_CBM
