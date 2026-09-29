@@ -103,11 +103,17 @@ try:
     key(e, "F")
     key(e, "G")
     check("G: background white", v(e, "text_bg") == 1 and "BACKGROUND: WHITE" in rows(e)[ITEM_ROW + 6])
+    check("... mouse pointer red", e.peek(0xd027)[0] & 15 == 2, e.peek(0xd027))
     key(e, "G")
     check("G again: red", v(e, "text_bg") == 2)
+    check("... mouse pointer black on red", e.peek(0xd027)[0] & 15 == 0, e.peek(0xd027))
+    pointer = {}
     for _ in range(14):
         key(e, "G", settle=0.1)
+        pointer[v(e, "text_bg")] = e.peek(0xd027)[0] & 15
     check("... round the 16 back to black", v(e, "text_bg") == 0)
+    check("... pointer black on purple and brown only", [c for c in pointer if pointer[c] == 0] == [4, 9]
+          and all(pointer[c] == 2 for c in pointer if c not in (4, 9)), pointer)
 
     # Submenus: A opens Load, X backs out
     key(e, "A")
@@ -156,11 +162,14 @@ try:
     # Stats
     key(e, "F1"); key(e, "I", settle=1.5)
     r = rows(e)
-    nums = [int(re.findall(r"(\d+)\s*\S?\s*$", r[ITEM_ROW + i])[0]) for i in range(4)]
+    nums = [int(re.findall(r"(\d+)\s*\S?\s*$", r[ITEM_ROW + i])[0]) for i in range(3)]
+    free = re.findall(r"(\d+) \((\d+)%\)", r[ITEM_ROW + 3])
     exp = stats_model(doc)
     gap = int.from_bytes(e.peek(0x0a, 2), "little") - int.from_bytes(e.peek(0x08, 2), "little")
-    check("Stats: characters, words, sentences as counted here", tuple(nums[:3]) == exp, (nums, exp))
-    check("Stats: free = the gap", nums[3] == gap, (nums[3], gap))
+    check("Stats: characters, words, sentences as counted here", tuple(nums) == exp, (nums, exp))
+    check("Stats: free = the gap, with its share of the 36 KB buffer",
+          free and int(free[0][0]) == gap and int(free[0][1]) == gap * 100 // 0x9000, (r[ITEM_ROW + 3], gap))
+    check("Stats: no 'any key' line", not any("ANY KEY" in x for x in r), r[ITEM_ROW + 4:ITEM_ROW + 10])
     key(e, "SPACE")
     check("any key: back to the menu", "MAGIC TYPEWRITER" in rows(e)[TITLE_ROW])
 
@@ -176,19 +185,41 @@ try:
     key(e, "RETURN", settle=0.5)
     check("saved (modified cleared)", wait_for(e, lambda: v(e, "modified") == 0))
 
+    # A name with * ? or , is refused: the scratch that comes first would
+    # take other files with it ("S0:SA*" = every file starting with SA)
+    key(e, "F1"); key(e, "B"); key(e, "A")
+    e.keys([(KEY["DEL"], 0)] * 6)
+    e.type_text("sa*")
+    key(e, "RETURN", settle=0.5)
+    check("Save as 'SA*': refused", "NO * ? OR , IN A FILE NAME" in rows(e)[12], rows(e)[12])
+    key(e, "SPACE")
+
     # Disk command (empty: the status) and disk directory, from the Load menu
     key(e, "F1"); key(e, "A"); key(e, "E")
     check("Disk command: asks", "COMMAND:" in rows(e)[12], rows(e)[12])
     key(e, "RETURN", settle=0.5)
     check("empty command: the drive's status", wait_for(e, lambda: "00, OK" in rows(e)[12]), rows(e)[12])
     key(e, "SPACE")
+    # A key already in the KERNAL's buffer (as the D key, still held when
+    # the KERNAL starts reading the keyboard, used to be) must not end it
+    memptr = e.peek(0xd018)[0]
+    e.poke(0x0277, [0x44]); e.poke(0xc6, [1])
     key(e, "D", settle=0.3)
     check("Disk directory: listed", wait_for(e, lambda: any("PHASE8" in x for x in rows(e))), rows(e)[:5])
+    time.sleep(2)
     r = rows(e)
+    check("... and it stays (a key collected before it does not end it)",
+          any("PHASE8" in x for x in r) and e.peek(0xc6)[0] == 0, (e.peek(0xc6), r[:3]))
     check("... with the disk's name and the program", "MAGIC TYPEWRITER" in r[0] and any("SEQ" in x for x in r), r[:6])
-    kernal_key(e)
-    check("any key: back to the Load menu", wait_for(e, lambda: "LOAD" in rows(e)[TITLE_ROW]
-          and "MAGIC" not in rows(e)[TITLE_ROW]), rows(e)[TITLE_ROW])
+    check("... no 'any key' line at the end", not any("ANY KEY" in x for x in r), r[24])
+    e.poke(0xd018, [memptr ^ 2])                   # C= + SHIFT in the listing
+    for _ in range(10):                            # any key: back
+        kernal_key(e)
+        if wait_for(e, lambda: "LOAD" in rows(e)[TITLE_ROW] and "MAGIC" not in rows(e)[TITLE_ROW], 3):
+            break
+    check("any key: back to the Load menu", "LOAD" in rows(e)[TITLE_ROW]
+          and "MAGIC" not in rows(e)[TITLE_ROW], rows(e)[TITLE_ROW])
+    check("... the character set as before the listing", e.peek(0xd018)[0] == memptr, (e.peek(0xd018), memptr))
     key(e, "X")
 
     # Save defaults: needs the disk the program came from
@@ -263,6 +294,7 @@ d = read_seq("magic t defaults")
 exp = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + 13]) + bytes(0x40 + x for x in
       [3, 15, 1, 0, 0, 1, 1, 8, 1, 0, 8, 0, 4]) + b"\r"
 check("MAGIC T DEFAULTS on disk: the header with every setting", d == exp, (d, exp))
+check("SAMPLE still on disk (the refused 'SA*' scratched nothing)", len(read_seq("sample")) > 20)
 
 # Start again from the disk: the settings come back
 vice = start_vice(disk, disk=disk, model=model)
@@ -273,6 +305,13 @@ try:
     check("start-up from disk: background cyan again", v(e, "text_bg") == 3, v(e, "text_bg"))
     check("... and wordwrap off", v(e, "wrap_on") == 0, v(e, "wrap_on"))
     check("... loaded from device 8", v(e, "load_device") == 8)
+
+    # Loading with a pattern works, but the pattern is no name to save under
+    key(e, "F1"); key(e, "A"); key(e, "A")
+    e.type_text("sam*")
+    key(e, "RETURN", settle=0.5)
+    check("load 'SAM*': SAMPLE loaded", wait_for(e, lambda: len(e.text()[0]) > 20), e.text()[0][:20])
+    check("... but no name kept (CTRL-S will ask for one)", v(e, "file_name_len") == 0)
 finally:
     try:
         e.m.quit()

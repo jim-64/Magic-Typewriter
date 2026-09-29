@@ -27,7 +27,15 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
 - **Phase 8 (menus, Stats, Save defaults, disk directory/command, Find):** passes the automated checks
   (2026-09-28); waiting for Jim's Human Test. Work is on branch `phase8`; merge into `main` when Jim
   accepts it. The temporary keys CTRL-L (load) and CTRL-W (wrap) are gone; the menus do both now.
-- **Memory:** ~2.1 KB left below the sprite blocks and ~1.1 KB under the KERNAL for phases 9–11
+  **Jim's first test (2026-09-29), changed since:** the directory ended at once (the key that chose it
+  reached the KERNAL too); Stats shows the free share in % and no "any key" line; "QUIT MAGIC
+  TYPEWRITER", "EXIT MENU"; C= + SHIFT during the directory no longer changes the document's
+  character set; the mouse pointer is black on red, purple and brown backgrounds; a scratch answered
+  with 62 counts as fine (that was Jim's Save "FILE NOT FOUND": **VICE 2.4's host-folder drive
+  answers 62 to a scratch of a file that isn't there**; confirmed in his 2.4, see VICE gotchas);
+  names with `* ? ,` are refused for saving. His "LOAD: NOT READY YET" came from a MAGIC T DEFAULTS on
+  his disk with Load Format = MAGIC (and File Type = PRG).
+- **Memory:** ~1.8 KB left below the sprite blocks and ~1.1 KB under the KERNAL for phases 9–11
   (see Memory Map). Watch it.
 
 ## Working with Jim
@@ -171,6 +179,21 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   in the normal border mode it works (scratch `grab.py` wrote it to a PNG). For debug-border pictures,
   start VICE with `-exitscreenshot out.png`, set things up through the monitor, then quit (0xbb): the
   picture is written at exit — one VICE run per picture (phase 7's pointer/strip check did this).
+
+### VICE 2.4 (Jim's favorite; `G:\My Drive\retro computers 2\vice 2.4\x64sc.exe`)
+
+- Jim's 2.4 settings (its `vice.ini`, read only): **AutostartPrgMode=0, DriveTrueEmulation=0,
+  VirtualDevices=1** — autostarting a PRG makes **drive 8 the PRG's folder** (VICE's file system
+  device), not a disk image. The test files are not there (they are only on the .d64).
+- That folder drive answers **"62, FILE NOT FOUND" to scratching a missing file** (VICE 3.9's
+  answers 01). Found in Jim's phase 8 test; `scratch_input` accepts it.
+- No binary monitor in 2.4, but a throwaway instance can be driven: start it with `-config
+  <empty scratch file> -autostartprgmode 0 -virtualdev +truedrive -remotemonitor
+  -remotemonitoraddress ip4://127.0.0.1:6511 -autostart <prg>` and talk to the **text** monitor
+  (`m a b` to read, `> addr bytes` to write, `x` to go on; it prints its prompt before a command's
+  output, so read until it has been quiet a moment). Keys go through the mailbox the same way
+  (at most 7 queued at a time). A scratch script (`save24.py`, phase 8) did this; rewrite if needed.
+  Never change Jim's own `vice.ini`.
 
 ### Notes for later (C64 Ultimate, phase 12)
 
@@ -319,9 +342,9 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, end of phase 8): lower part $0801–$31B3, tables to $364D (debug builds add a
-  256-byte mouse trace); editor $E000–$FB80, so **~1.1 KB free under the KERNAL and ~2.1 KB below the
-  sprite blocks**. Phase 8 took about 3.7 KB. Phases 9–11 (REU, formats, printer, tape) must fit in
+- Space (debug build, end of phase 8): lower part $0801–$3297, tables to $3731 (debug builds add a
+  256-byte mouse trace); editor $E000–$FB80, so **~1.1 KB free under the KERNAL and ~1.8 KB below the
+  sprite blocks**. Phase 8 took about 4 KB. Phases 9–11 (REU, formats, printer, tape) must fit in
   what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
   part from now on; code that runs during disk work must
   go in the lower part anyway.
@@ -357,7 +380,7 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 | Text background (default; menu option and SHIFT-F7 change it) | Black (0) |
 | Default text color (menu option; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
 | Border icon sprites | Light blue (14) |
-| Mouse pointer sprite | Red (2) |
+| Mouse pointer sprite | Red (2); black on red, purple and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm) |
 
 ### Color splits
 
@@ -891,6 +914,7 @@ Editing rules:
 - Build menus from **data tables** (title, items, action / submenu / value list) so nesting costs little code.
 - Opened by RUN/STOP, F1, or clicking the menu icon.
 - Prompts (file name, disk command, "CLEAR ALL Y/N") use the same centered box. RUN/STOP always cancels.
+- **A box that waits for any key does not say so** (Jim, 2026-09-29): no "ANY KEY" lines.
 
 ### Menu tree (Jim's design)
 
@@ -908,8 +932,8 @@ Editing rules:
 | H | Text color | 16 C64 colors, default **light grey**; also the menu text color |
 | I | Stats → shows a stats box | |
 | J | Save defaults (disk only) | |
-| Q | Quit → back to BASIC | |
-| X | Exit | |
+| Q | Quit Magic Typewriter → back to BASIC | |
+| X | Exit Menu | |
 
 **LOAD**
 
@@ -920,7 +944,7 @@ Editing rules:
 | C | Device | **8**, tape, 9, 10, 11, 12, 13, 14 |
 | D | Disk directory | |
 | E | Disk command | |
-| X | Exit | |
+| X | Exit Menu | |
 
 **SAVE**
 
@@ -932,7 +956,7 @@ Editing rules:
 | D | Device | **8**, tape, 9, 10, 11, 12, 13, 14 |
 | E | Disk directory | |
 | F | Disk command | |
-| X | Exit | |
+| X | Exit Menu | |
 
 **PRINT**
 
@@ -941,7 +965,7 @@ Editing rules:
 | A | Print | |
 | B | Convert to ASCII | **no**, yes |
 | C | Device | **4**, 5, 6, 7 |
-| X | Exit | |
+| X | Exit Menu | |
 
 Bold = default. "tape" is KERNAL device 1 (Datasette); the menu shows the word TAPE, not 1. Load and Save keep their own device and format settings, as the design shows them
 separately. "magic" = the Magic Typewriter format (see Formats).
@@ -1004,11 +1028,20 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   step already. **The Save format is PETSCII for now**; the "follows the loaded format, magic for a new
   document" rule comes with the magic format in phase 10.
 - **Stats** counts on demand (`count_text`) into 24-bit counters (`inc24`, `num24_text`, up to 8
-  digits); free = the size of the gap. No "COUNTING..." yet (only needed for REU documents, phase 9).
+  digits), numbers from column 14; free = the size of the gap, followed by its share of the whole
+  36 KB buffer, e.g. `36833 (99%)` (`free_percent`; Jim asked for the %). No "COUNTING..." yet (only
+  needed for REU documents, phase 9).
 - **Disk directory** (`dir_load` / `dir_save`) runs in the plain disk display (between `io_begin` and
   `io_end`), a screenful at a time with "MORE" on the bottom row; keys come through the KERNAL there.
   **Gotcha:** GETIN reads from the current input channel, so the wait routine does CLRCHN before it and
   CHKIN again after — without that it read a byte of the directory as the key and ended at once.
+  **Gotcha 2 (Jim's test):** the key that chose Disk directory is usually still down when the KERNAL's
+  IRQ starts scanning, so the KERNAL collects it and the listing ended at once. The wait routine
+  (`.let_go`) now waits until no key is held (`SFDX` $CB = 64) and empties the KERNAL buffer before
+  waiting, and again before leaving (so RUN/STOP, still held, doesn't then close all the menus).
+  The harness can't hold a real key; test_phase8 puts a key in the KERNAL buffer before choosing it.
+- **Character set during disk work:** the KERNAL's own C= + SHIFT works while it reads the keyboard
+  (Jim switched case to read the directory), so `io_begin` keeps $D018 and `io_end` puts it back.
 - **Disk command** (`cmd_load` / `cmd_save`): a "COMMAND:" box (27 characters; an empty answer allowed,
   `input_empty_ok`), sent on channel 15; the drive's answer shows in a box.
 - **Save defaults / start-up:** `MAGIC T DEFAULTS` holds the magic header only: `$00 "MTW" "1"`,
@@ -1018,6 +1051,13 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   to the device in $BA at start-up (`load_device`, 8–30), else "DEFAULTS NEED A DISK". `load_defaults`
   runs after `init_irq` and before `editor_init`, silently; reading the status clears a drive error.
 - **Quit** (Q) asks "QUIT WITHOUT SAVING Y/N" if there are changes.
+- **Scratch before writing** (`scratch_input`, used by Save and Save defaults): "01, FILES SCRATCHED"
+  is the usual answer even when there was no file; "62, FILE NOT FOUND" is accepted too (VICE 2.4's
+  host-folder drive answers that way).
+- **File names with `*`, `?` or `,` can't be saved under** (`name_ok`): the scratch would take other
+  files with it (`S0:SA*` = every file starting with SA, `S0:A,B` = A and B). Save shows "NO * ? OR ,
+  IN A FILE NAME". Loading with a pattern works, but the pattern is not kept as the document's name
+  (`keep_name`), so CTRL-S asks for one.
 
 ## Find (CTRL-F)
 

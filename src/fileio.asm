@@ -28,6 +28,7 @@ READST          = $ffb7
 STOP            = $ffe1
 BLNSW           = $cc           ; KERNAL: 0 = blink its cursor
 NDX             = $c6           ; KERNAL: keys waiting in its buffer
+SFDX            = $cb           ; KERNAL: the key held now (64 = none)
 
 FILE_LFN        = 2             ; logical file number (and secondary
                                 ; address) for the document file
@@ -101,8 +102,10 @@ io_begin
         sta VIC_BORDER
         lda text_bg
         sta VIC_BG0
-        cli
-        rts
+        lda VIC_MEMPTR          ; the character set, for io_end: C= + SHIFT
+        sta io_memptr           ; works for the KERNAL meanwhile (e.g. in
+        cli                     ; the directory), but must not change the
+        rts                     ; document's
 
 ; io_end - KERNAL ROM out, our IRQs and the full display again
 io_end  sei
@@ -110,11 +113,14 @@ io_end  sei
         sta CPU_PORT            ; is back
         lda #0                  ; forget keys the KERNAL collected
         sta NDX
+        lda io_memptr           ; the character set as it was
+        sta VIC_MEMPTR
         jsr init_irq            ; (switches the timer IRQ off again)
         lda #SPR_ON_ICONS       ; (the pointer is back from the next frame,
         sta VIC_SPR_ENABLE      ; if it shows)
         cli
         rts
+io_memptr       !byte 0         ; the character set during disk work
 
 ;============================================================================
 ; Talking to the drive
@@ -247,16 +253,43 @@ name_plus
         stx name_len
         rts
 
-; keep_name - input_buf becomes the document's file name
+; keep_name - input_buf becomes the document's file name - unless it holds
+; * ? or , (loading takes a pattern like "SAM*", but saving must not use
+; one): then the document has no name, and CTRL-S asks for one.
 !zone keep_name
 keep_name
-        ldx input_len
+        jsr name_ok
+        bcc +
+        lda #0
+        sta file_name_len
+        rts
++       ldx input_len
         stx file_name_len
         dex
 -       lda input_buf,x
         sta file_name,x
         dex
         bpl -
+        rts
+
+; name_ok - carry set if input_buf holds * ? or , - not allowed in a name
+; to save under: the scratch that comes first would take other files
+; with it ("S0:SA*" scratches every file starting with SA, "S0:A,B" both
+; A and B).
+!zone name_ok
+name_ok ldx input_len
+-       dex
+        bmi .ok                 ; (all checked)
+        lda input_buf,x
+        cmp #$2a                ; *
+        beq .bad
+        cmp #$3f                ; ?
+        beq .bad
+        cmp #$2c                ; ,
+        bne -
+.bad    sec
+        rts
+.ok     clc
         rts
 
 ; name_to_input - put the document's file name in input_buf (to show it
@@ -520,6 +553,11 @@ save_file
         jsr check_save          ; (tape, other formats, PRG: not yet)
         bcc +
         rts
++       jsr name_ok             ; no * ? or , in the name
+        bcc +
+        lda #<msg_bad_name
+        ldx #>msg_bad_name
+        jmp message_box
 +       lda save_dev
         sta cur_dev
         lda #<msg_saving
@@ -528,27 +566,7 @@ save_file
         jsr box_open
         jsr io_begin
 
-        ; Scratch the old file: "S0:" + name, sent on channel 15.
-        lda #$53                ; S
-        sta name_buf
-        lda #$30                ; 0
-        sta name_buf+1
-        lda #$3a                ; :
-        sta name_buf+2
-        ldx #0
--       lda input_buf,x
-        sta name_buf+3,x
-        inx
-        cpx input_len
-        bcc -
-        txa
-        clc
-        adc #3
-        tay                     ; Y = length
-        lda #<name_buf
-        ldx #>name_buf
-        jsr open_cmd
-        jsr read_status         ; 01, FILES SCRATCHED is fine
+        jsr scratch_input       ; the old file goes first ("S0:" + name)
         bcc +
         jmp .fail
 +
@@ -773,11 +791,9 @@ disk_directory
         beq .done
         jsr .clear
         jmp .line
-.end    lda #<m_any_key         ; the end
-        ldx #>m_any_key
-        jsr .bottom
-        jsr .wait
-.done   jsr close_all
+.end    jsr .wait               ; the end: any key goes back
+.done   jsr .let_go             ; (so the key is not seen by the menu too)
+        jsr close_all
         jsr io_end
         jmp redraw_all          ; (the document again; the menu goes back
                                 ; on top of it)
@@ -819,16 +835,30 @@ disk_directory
         ldy #0
         jmp box_print
 
-; .wait - wait for a key (the KERNAL's, while the disk is in use). GETIN
-; reads from the current input, so the keyboard first, and afterwards the
+; .wait - wait for a key (the KERNAL's, while the disk is in use): first
+; for the keys held now to be let go, then for a new one. (Otherwise the
+; key that chose Disk directory, still down when the KERNAL starts reading
+; the keyboard, would count as the key that ends the listing.) GETIN reads
+; from the current input, so the keyboard first, and afterwards the
 ; directory again. Returns A = the key.
 .wait   jsr CLRCHN              ; (input from the keyboard)
+        jsr .let_go
 -       jsr GETIN
         beq -
         pha
         ldx #FILE_LFN           ; (input from the directory again)
         jsr CHKIN
         pla
+        rts
+
+; .let_go - wait until no key is held, then forget the keys the KERNAL has
+; collected so far
+.let_go
+-       lda SFDX                ; the key held now (64 = none), from the
+        cmp #64                 ; KERNAL's keyboard scan
+        bne -
+        lda #0
+        sta NDX
         rts
 
 .link   !byte 0
@@ -1106,7 +1136,9 @@ load_defaults
 .ok     !byte 0
 
 ; scratch_input - send "S0:" + input_buf on channel 15 (it is opened for
-; that) and read the answer. Carry set on an error.
+; that) and read the answer. Carry set on an error. "01, FILES SCRATCHED"
+; is the usual answer, even when there was no such file; some drives say
+; "62, FILE NOT FOUND" then instead, which is fine too.
 !zone scratch_input
 scratch_input
         lda #$53                ; S
@@ -1128,5 +1160,16 @@ scratch_input
         lda #<name_buf
         ldx #>name_buf
         jsr open_cmd
-        jmp read_status         ; 01, FILES SCRATCHED is fine
+        jsr read_status
+        bcc .ok                 ; (01, FILES SCRATCHED)
+        lda status_buf          ; 62? (status_buf, not status_raw: when the
+        cmp #$36                ; drive does not answer, it holds "device
+        bne .error              ; not present" instead)
+        lda status_buf+1
+        cmp #$32
+        bne .error
+        clc                     ; nothing to scratch: fine
+.ok     rts
+.error  sec
+        rts
 

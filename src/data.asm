@@ -169,6 +169,13 @@ contrast_color
         !byte WHITE, BLACK, WHITE, BLACK, WHITE, BLACK, WHITE, BLACK
         !byte WHITE, WHITE, BLACK, WHITE, BLACK, BLACK, BLACK, BLACK
 
+; The mouse pointer's color on each background color: red, but black on
+; the backgrounds where red hardly shows (red, purple and brown). The
+; line 10 IRQ (irq_frame_top) puts it in every frame.
+pointer_colors
+        !byte RED, RED, BLACK, RED, BLACK, RED, RED, RED
+        !byte RED, BLACK, RED, RED, RED, RED, RED, RED
+
 ; Questions for prompt_yes_no. Written in lower case: that gives screen
 ; codes 1-26, which the prompt shows as capitals in either character set.
 msg_quit_unsaved
@@ -203,6 +210,8 @@ msg_saving
         !scr "saving", 0
 msg_no_device
         !scr "device not present", 0
+msg_bad_name
+        !scr "no * ? or , in a file name", 0
 msg_too_long
         !scr "too long: only part loaded", 0
 msg_break

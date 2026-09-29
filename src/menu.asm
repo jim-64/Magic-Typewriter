@@ -854,7 +854,8 @@ not_yet lda #<msg_not_yet
 ;               ends
 ;   sentences:  . ! or ? followed by a space, a line end or the end of the
 ;               text (a run like ... counts once)
-;   free:       the room left in the buffer (the gap)
+;   free:       the room left in the buffer (the gap), and as a share of
+;               the whole buffer ("12345 (33%)")
 ; The counts are 24-bit, ready for documents held in an REU (phase 9).
 ;----------------------------------------------------------------------------
 !zone show_stats
@@ -890,7 +891,7 @@ show_stats
         pla
         ldy #2
         jsr box_print           ; its name ...
-        lda .i                  ; ... and its number, from column 16
+        lda .i                  ; ... and its number, from column 14
         asl
         adc .i                  ; (3 bytes a count)
         tax
@@ -901,7 +902,7 @@ show_stats
         lda st_counts+2,x
         sta num24+2
         jsr num24_text
-        ldy #16
+        ldy #14
         lda #<num_text
         ldx #>num_text
         jsr box_print
@@ -909,16 +910,29 @@ show_stats
         inx
         cpx #4
         bcc .line
-        ldx #MENU_TOP+MENU_ROWS-2 ; and how to go back
-        jsr box_row_ptrs
-        ldy #2
-        lda #<m_any_key
-        ldx #>m_any_key
+
+        ; After the room left (the last row, Y just after its number): its
+        ; share of the whole buffer, " (33%)"
+        sty .col                ; (num24_text uses Y)
+        jsr free_percent
+        jsr num24_text
+        ldy .col
+        lda #$20                ; " ("
+        jsr box_put
+        lda #$28
+        jsr box_put
+        lda #<num_text
+        ldx #>num_text
         jsr box_print
-        jmp wait_key
+        lda #$25                ; "%)"
+        jsr box_put
+        lda #$29
+        jsr box_put
+        jmp wait_key            ; shown until a key is pressed
 
 .labels !word m_characters, m_words, m_sentences, m_free
 .i      !byte 0
+.col    !byte 0
 
 ; count_text - count the characters, words and sentences into st_counts,
 ; and the room left
@@ -1019,6 +1033,54 @@ ST_SENTENCES    = 6
 ST_FREE         = 9
 st_counts       !fill 12, 0
 
+; free_percent - num24 = the room left as a percentage of the whole buffer
+; (rounded down): free * 100 / (BUF_END - BUF_START). The multiplying is
+; 100 additions, the dividing subtracting the buffer's size while it fits
+; (at most 100 times).
+!zone free_percent
+free_percent
+        lda #0                  ; free * 100
+        sta num24
+        sta num24+1
+        sta num24+2
+        ldx #100
+-       clc
+        lda num24
+        adc st_counts+ST_FREE
+        sta num24
+        lda num24+1
+        adc st_counts+ST_FREE+1
+        sta num24+1
+        lda num24+2
+        adc #0
+        sta num24+2
+        dex
+        bne -
+        ldx #0                  ; X = how many times the size fits
+-       sec
+        lda num24
+        sbc #<(BUF_END - BUF_START)
+        sta .t
+        lda num24+1
+        sbc #>(BUF_END - BUF_START)
+        sta .t+1
+        lda num24+2
+        sbc #0
+        bcc +                   ; no more
+        sta num24+2
+        lda .t+1
+        sta num24+1
+        lda .t
+        sta num24
+        inx
+        bne -
++       stx num24               ; the answer (0-100)
+        lda #0
+        sta num24+1
+        sta num24+2
+        rts
+.t      !word 0
+
 ; inc24 - one more in the 24-bit count at st_counts + X
 inc24   inc st_counts,x
         bne +
@@ -1087,7 +1149,6 @@ m_characters    !scr "characters", 0
 m_words         !scr "words", 0
 m_sentences     !scr "sentences", 0
 m_free          !scr "free", 0
-m_any_key       !scr "any key: back", 0
 
 
 ;----------------------------------------------------------------------------
@@ -1192,8 +1253,8 @@ n_background    !scr "background", 0
 n_textcolor     !scr "text color", 0
 n_stats         !scr "stats", 0
 n_defaults      !scr "save defaults", 0
-n_quit          !scr "quit", 0
-n_exit          !scr "exit", 0
+n_quit          !scr "quit magic typewriter", 0
+n_exit          !scr "exit menu", 0
 n_format        !scr "format", 0
 n_device        !scr "device", 0
 n_directory     !scr "disk directory", 0

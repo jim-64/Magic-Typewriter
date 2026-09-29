@@ -327,6 +327,9 @@ irq_frame_top
         sta VIC_SPR0_COLOR+1,x
         dex
         bpl -
+        ldx text_bg             ; the pointer: red, or black on backgrounds
+        lda pointer_colors,x    ; where red hardly shows (data.asm)
+        sta VIC_SPR0_COLOR
 
         lda ptr_next_on         ; the five icons back on, and the pointer
         ora #SPR_ON_ICONS       ; if it shows
