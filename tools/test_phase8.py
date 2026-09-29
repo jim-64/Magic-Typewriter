@@ -112,8 +112,8 @@ try:
         key(e, "G", settle=0.1)
         pointer[v(e, "text_bg")] = e.peek(0xd027)[0] & 15
     check("... round the 16 back to black", v(e, "text_bg") == 0)
-    check("... pointer black on purple and brown only", [c for c in pointer if pointer[c] == 0] == [4, 9]
-          and all(pointer[c] == 2 for c in pointer if c not in (4, 9)), pointer)
+    check("... pointer black on purple, orange and brown only", sorted(c for c in pointer if pointer[c] == 0) == [4, 8, 9]
+          and all(pointer[c] == 2 for c in pointer if c not in (4, 8, 9)), pointer)
 
     # Submenus: A opens Load, X backs out
     key(e, "A")

@@ -788,15 +788,16 @@ mouse_frame
 .set_icon
         sty mouse_sprite
         ldx #4                  ; the icons light blue, the one under the
-        lda #LIGHT_BLUE         ; pointer red (while the mouse is in use)
--       sta icon_colors,x
+        lda #LIGHT_BLUE         ; pointer in the pointer's color (while the
+-       sta icon_colors,x       ; mouse is in use)
         dex
         bpl -
         ldx mouse_sprite
         beq +
         jsr .is_idle
         bcs +
-        lda #RED
+        ldy text_bg             ; (red, or black on some backgrounds -
+        lda pointer_colors,y    ; see data.asm)
         sta icon_colors-1,x
 +
         ; 5. The pointer sprite, for the next frame.

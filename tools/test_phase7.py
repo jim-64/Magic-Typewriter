@@ -133,6 +133,12 @@ try:
     e.move_to(350, 40)
     colors = list(e.peek(e.lab["icon_colors"], 5))
     check("over the right F3 badge: it is red", colors[2] == RED, colors)
+    e.poke(e.lab["text_bg"], [8])                   # orange background:
+    time.sleep(0.5)                                 # the pointer is black,
+    colors = list(e.peek(e.lab["icon_colors"], 5))  # and so is the badge
+    check("... black (as the pointer) on an orange background", colors[2] == 0, colors)
+    e.poke(e.lab["text_bg"], [0])
+    time.sleep(0.3)
 
     # F5 badge click: page down; F3 badge click: page up
     e.move_to(350, 255)

@@ -24,17 +24,18 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   open the menu (phase 8). **Jim tested it in VICE 2.4: works.** In VICE 3.9 on his laptop the grabbed
   mouse only ever moves right/down (a VICE/host problem, see VICE gotchas). **Still to do: test with a
   real 1351 on real hardware** when Jim is home (feel, speed, Y direction).
-- **Phase 8 (menus, Stats, Save defaults, disk directory/command, Find):** passes the automated checks
-  (2026-09-28); waiting for Jim's Human Test. Work is on branch `phase8`; merge into `main` when Jim
-  accepts it. The temporary keys CTRL-L (load) and CTRL-W (wrap) are gone; the menus do both now.
-  **Jim's first test (2026-09-29), changed since:** the directory ended at once (the key that chose it
+- **Phase 8 done** (2026-09-29; menus, Stats, Save defaults, disk directory/command, Find), merged
+  into `main`. The temporary keys CTRL-L (load) and CTRL-W (wrap) are gone; the menus do both now.
+  **Changed after Jim's test:** the directory ended at once (the key that chose it
   reached the KERNAL too); Stats shows the free share in % and no "any key" line; "QUIT MAGIC
   TYPEWRITER", "EXIT MENU"; C= + SHIFT during the directory no longer changes the document's
-  character set; the mouse pointer is black on red, purple and brown backgrounds; a scratch answered
+  character set; the mouse pointer is black on red, purple, orange and brown backgrounds, and a
+  border icon under it lights up in the pointer's color (so black there too); a scratch answered
   with 62 counts as fine (that was Jim's Save "FILE NOT FOUND": **VICE 2.4's host-folder drive
   answers 62 to a scratch of a file that isn't there**; confirmed in his 2.4, see VICE gotchas);
   names with `* ? ,` are refused for saving. His "LOAD: NOT READY YET" came from a MAGIC T DEFAULTS on
   his disk with Load Format = MAGIC (and File Type = PRG).
+- Next: phase 9, the REU (branch `phase9`).
 - **Memory:** ~1.8 KB left below the sprite blocks and ~1.1 KB under the KERNAL for phases 9–11
   (see Memory Map). Watch it.
 
@@ -380,7 +381,7 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 | Text background (default; menu option and SHIFT-F7 change it) | Black (0) |
 | Default text color (menu option; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
 | Border icon sprites | Light blue (14) |
-| Mouse pointer sprite | Red (2); black on red, purple and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm) |
+| Mouse pointer sprite | Red (2); black on red, purple, orange and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm). A border icon under the pointer lights up in the pointer's color. |
 
 ### Color splits
 
@@ -694,7 +695,8 @@ movement keys** — C= + digit still selects a color.
 **As built (phase 7, "The 1351 mouse" in `src/input.asm`; read its header comment first):**
 - **Where the pointer goes (Jim, 2026-09-28): over the text area only.** A sprite's fetches steal CPU
   cycles on all 21 of its lines, and the strips are exact-timed, so the pointer never enters them.
-  Moved on past the text, it **hides and the border icon under it turns red** (the pointer's color);
+  Moved on past the text, it **hides and the border icon under it turns red** (the pointer's color:
+  since phase 8 black on some backgrounds, `pointer_colors`);
   a click then works that icon: F3 badges page up, F5 badges page down (with the mark key held: marking
   by page), the menu icon opens the menu. Hit zones in the strips (box left
   edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60.
@@ -1238,7 +1240,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
    **Done 2026-09-28** (tested by Jim in VICE 2.4; real hardware still to test).
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
-   Stats, Quit, then CTRL-F Find. (Automated checks passed 2026-09-28; Human Test pending.)
+   Stats, Quit, then CTRL-F Find. **Done 2026-09-29.**
 9. REU detection, fast moves, clipboard, then large documents held in the REU.
 10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type.
 11. Print menu, then tape load/save (device 1).

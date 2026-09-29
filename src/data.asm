@@ -170,11 +170,12 @@ contrast_color
         !byte WHITE, WHITE, BLACK, WHITE, BLACK, BLACK, BLACK, BLACK
 
 ; The mouse pointer's color on each background color: red, but black on
-; the backgrounds where red hardly shows (red, purple and brown). The
-; line 10 IRQ (irq_frame_top) puts it in every frame.
+; the backgrounds where red hardly shows (red, purple, orange and brown).
+; The line 10 IRQ (irq_frame_top) puts it in every frame, and a border
+; icon under the pointer lights up in the same color (mouse_frame).
 pointer_colors
         !byte RED, RED, BLACK, RED, BLACK, RED, RED, RED
-        !byte RED, BLACK, RED, RED, RED, RED, RED, RED
+        !byte BLACK, BLACK, RED, RED, RED, RED, RED, RED
 
 ; Questions for prompt_yes_no. Written in lower case: that gives screen
 ; codes 1-26, which the prompt shows as capitals in either character set.
