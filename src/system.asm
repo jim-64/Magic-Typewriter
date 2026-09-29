@@ -1,6 +1,6 @@
 ;============================================================================
 ; system.asm - video system detection, timing tables, math helpers
-; (REU detection and DMA come here in phase 9.)
+; (The REU has its own file: reu.asm.)
 ;============================================================================
 
 ; system_type values

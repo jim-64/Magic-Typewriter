@@ -928,7 +928,34 @@ show_stats
         jsr box_put
         lda #$29
         jsr box_put
-        jmp wait_key            ; shown until a key is pressed
+
+        lda reu_banks           ; with an REU: its size, two rows further
+        beq .wait               ; down ("REU  512 KB")
+        ldx #MENU_ITEM_ROW+5
+        jsr box_row_ptrs
+        ldy #2
+        lda #<m_reu
+        ldx #>m_reu
+        jsr box_print
+        lda reu_banks           ; banks of 64 KB
+        sta num24
+        lda #0
+        sta num24+1
+        sta num24+2
+        ldx #6                  ; (times 64)
+-       asl num24
+        rol num24+1
+        dex
+        bne -
+        jsr num24_text
+        ldy #14
+        lda #<num_text
+        ldx #>num_text
+        jsr box_print
+        lda #<m_kb
+        ldx #>m_kb
+        jsr box_print
+.wait   jmp wait_key            ; shown until a key is pressed
 
 .labels !word m_characters, m_words, m_sentences, m_free
 .i      !byte 0
@@ -1034,52 +1061,28 @@ ST_FREE         = 9
 st_counts       !fill 12, 0
 
 ; free_percent - num24 = the room left as a percentage of the whole buffer
-; (rounded down): free * 100 / (BUF_END - BUF_START). The multiplying is
-; 100 additions, the dividing subtracting the buffer's size while it fits
-; (at most 100 times).
+; (rounded down): free * 100 / (BUF_END - BUF_START), with the math
+; helpers in system.asm.
 !zone free_percent
 free_percent
-        lda #0                  ; free * 100
+        lda st_counts+ST_FREE   ; free * 100 (24 bits) ...
+        sta math_num
+        lda st_counts+ST_FREE+1
+        sta math_num+1
+        lda #100
+        sta math_mul
+        jsr mul_16x8
+        lda #<(BUF_END - BUF_START) ; ... / the buffer's size
+        sta math_div
+        lda #>(BUF_END - BUF_START)
+        sta math_div+1
+        jsr div_24x16
+        lda math_num            ; the answer (0-100)
         sta num24
-        sta num24+1
-        sta num24+2
-        ldx #100
--       clc
-        lda num24
-        adc st_counts+ST_FREE
-        sta num24
-        lda num24+1
-        adc st_counts+ST_FREE+1
-        sta num24+1
-        lda num24+2
-        adc #0
-        sta num24+2
-        dex
-        bne -
-        ldx #0                  ; X = how many times the size fits
--       sec
-        lda num24
-        sbc #<(BUF_END - BUF_START)
-        sta .t
-        lda num24+1
-        sbc #>(BUF_END - BUF_START)
-        sta .t+1
-        lda num24+2
-        sbc #0
-        bcc +                   ; no more
-        sta num24+2
-        lda .t+1
-        sta num24+1
-        lda .t
-        sta num24
-        inx
-        bne -
-+       stx num24               ; the answer (0-100)
         lda #0
         sta num24+1
         sta num24+2
         rts
-.t      !word 0
 
 ; inc24 - one more in the 24-bit count at st_counts + X
 inc24   inc st_counts,x
@@ -1149,6 +1152,8 @@ m_characters    !scr "characters", 0
 m_words         !scr "words", 0
 m_sentences     !scr "sentences", 0
 m_free          !scr "free", 0
+m_reu           !scr "reu", 0
+m_kb            !scr " kb", 0
 
 
 ;----------------------------------------------------------------------------

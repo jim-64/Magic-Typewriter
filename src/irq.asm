@@ -213,6 +213,25 @@ STRIP_BG        = BLUE
         }
 }
 
+; late_check - (debug builds) in irq_top_a / irq_bot_a, just after CLI,
+; while they wait for the second IRQ: Y = the raster line they started
+; on. Count the times one started a line late or more (late_irqs), with
+; that line (late_line) and where the main program was (late_pc: below
+; the A, X, Y that irq_entry saved and the flags the CPU saved; X = the
+; stack pointer). Nothing in the main program may hold these IRQs up.
+; Done here, after the second IRQ is set up, so it takes no time before.
+!macro late_check .line {
+        cpy #.line+1
+        bcc .ok
+        inc late_irqs
+        sty late_line
+        lda $0105,x
+        sta late_pc
+        lda $0106,x
+        sta late_pc+1
+.ok
+}
+
 ; next_irq - set the raster line and handler of the next IRQ.
 ; (Every IRQ line we use is below 256, so bit 7 of $D011 stays 0.)
 !macro next_irq .line, .handler {
@@ -348,6 +367,9 @@ spr_bottom      !byte 0         ; sprites on from the top strip down
 ; irq_top_a - line 25: prepare the stable IRQ for line 27.
 !zone irq_top_a
 irq_top_a
+!if DEBUG {
+        ldy VIC_RASTER          ; (debug builds: the line now, for the late
+}                               ; check further down)
         lda border_top_vec      ; second IRQ goes to border_top_pal/ntsc/...
         sta IRQ_VECTOR
         lda border_top_vec+1
@@ -359,6 +381,9 @@ irq_top_a
         tsx                     ; remember the stack; the second IRQ
         stx saved_sp            ; will throw its own stack frame away
         cli                     ; let the second IRQ in ...
+!if DEBUG {
+        +late_check TOP_A_LINE
+}
         !for .i, 1, 45 {        ; ... while we run NOPs (90 cycles, more
                 nop             ; than enough to reach line 27)
         }
@@ -488,6 +513,9 @@ mark_top_next
 ; irq_bot_a - line 247: prepare the stable IRQ for line 249.
 !zone irq_bot_a
 irq_bot_a
+!if DEBUG {
+        ldy VIC_RASTER          ; (debug builds: as in irq_top_a)
+}
         lda border_bot_vec      ; second IRQ goes to border_bot_pal/ntsc/...
         sta IRQ_VECTOR
         lda border_bot_vec+1
@@ -499,6 +527,9 @@ irq_bot_a
         tsx
         stx saved_sp
         cli
+!if DEBUG {
+        +late_check BOT_A_LINE
+}
         !for .i, 1, 45 {
                 nop
         }
@@ -576,6 +607,11 @@ border_bot_done
 ; IRQ variables
 ;----------------------------------------------------------------------------
 saved_sp        !byte 0         ; stack pointer saved by the first IRQ
+!if DEBUG {
+late_irqs       !byte 0         ; (debug) line 25/247 IRQs that came late
+late_line       !byte 0         ; (debug) the line the last late one began
+late_pc         !word 0         ; (debug) and where the main program was
+}
 border_top_vec  !word 0         ; second-IRQ handlers for this system
 border_bot_vec  !word 0
 frame_count     !word 0
@@ -661,18 +697,19 @@ marker_set
         bcs +
         ldx #GREY               ; band starts at line 51
         lda #0                  ; no marker-top IRQ
-+       php                     ; hand over all three values together,
-        sei                     ; with IRQs held off for a moment
-        stx new_color51
-        sta new_mark_top
-        lda band_bot
-        cmp #MARK_MAX_LINE+1
++       ldy band_bot
+        cpy #MARK_MAX_LINE+1
         bcc +
-        lda #0                  ; no marker-bottom IRQ
-+       sta new_mark_bot
+        ldy #0                  ; no marker-bottom IRQ
++       pha                     ; Hand over all three values together:
+        lda #0                  ; the bottom IRQ takes them only when
+        sta marker_pending      ; marker_pending is set, so clear it while
+        pla                     ; they change. (Not with IRQs held off:
+        stx new_color51         ; that could make the line 25 IRQ late.)
+        sta new_mark_top
+        sty new_mark_bot
         lda #1
         sta marker_pending
-        plp                     ; IRQs back as they were
 !if DEBUG {
         lda band_top            ; results for the test harness
         sta MB_MK_TOP

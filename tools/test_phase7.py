@@ -134,8 +134,11 @@ try:
     colors = list(e.peek(e.lab["icon_colors"], 5))
     check("over the right F3 badge: it is red", colors[2] == RED, colors)
     e.poke(e.lab["text_bg"], [8])                   # orange background:
-    time.sleep(0.5)                                 # the pointer is black,
+    e.mouse([(1, 0, 0), (-1, 0, 0)], settle=0.1)    # the pointer is black,
     colors = list(e.peek(e.lab["icon_colors"], 5))  # and so is the badge
+                                                    # (the nudge: in warp, a
+                                                    # pause soon adds up to
+                                                    # the 10-second idle)
     check("... black (as the pointer) on an orange background", colors[2] == 0, colors)
     e.poke(e.lab["text_bg"], [0])
     time.sleep(0.3)

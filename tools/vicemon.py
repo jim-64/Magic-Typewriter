@@ -114,6 +114,9 @@ def start_vice(prg, disk=None, model="c64", port=6510, warp=True, extra=()):
         args.append("-warp")
     if disk:
         args += ["-8", disk]
+    reu = os.environ.get("MT_REU")                # e.g. MT_REU=512: an REU
+    if reu and "-reu" not in extra:               # of that many KB for every
+        args += ["-reu", "-reusize", reu]         # test run
     args += list(extra)
     args += ["-autostartprgmode", "1", "-autostart", prg]
     return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

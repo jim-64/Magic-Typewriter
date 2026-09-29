@@ -35,8 +35,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   answers 62 to a scratch of a file that isn't there**; confirmed in his 2.4, see VICE gotchas);
   names with `* ? ,` are refused for saving. His "LOAD: NOT READY YET" came from a MAGIC T DEFAULTS on
   his disk with Load Format = MAGIC (and File Type = PRG).
-- Next: phase 9, the REU (branch `phase9`).
-- **Memory:** ~1.8 KB left below the sprite blocks and ~1.1 KB under the KERNAL for phases 9–11
+- **Phase 9, first part (REU detection, block copies and the clipboard through it):** passes the
+  automated checks (2026-09-29; PAL, NTSC, old NTSC, Drean, with and without an REU); waiting for
+  Jim's Human Test, on branch `phase9`. **Open: documents larger than main RAM held in the REU**
+  (the Build Order's last part of phase 9) — a big structural change that doesn't fit in the memory
+  left; asked Jim whether to build it, drop it, or leave it for after phase 11 (see REU).
+- **Memory:** ~1.3 KB left below the sprite blocks and ~1 KB under the KERNAL for phases 10–11
   (see Memory Map). Watch it.
 
 ## Working with Jim
@@ -137,8 +141,9 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   `VICII`, `CIA`, `Joy`, `Sound`.
   - PAL/NTSC: `MachineVideoStandard` is allowed (verify the values in VICE; reset after changing).
   - 1351 mouse in port 1: `JoyPort1Device` is allowed.
-  - **REU can't be switched this way** (`REU` is not an allowed prefix). For REU tests, add
-    `"VICE_ARGS": "-reu -reusize 512"` to `.mcp.json` and restart. Sort this out in phase 9.
+  - **REU can't be switched this way** (`REU` is not an allowed prefix). Our own harness does it
+    instead (phase 9): `start_vice(..., extra=["-reu", "-reusize", "512"])`, or set **`MT_REU=512`**
+    in the environment to give every test run an REU of that size.
 - **Disk drive names:** run `c64_disk` → `list_drives` to see what `mount` expects for drive 8. On the
   Ultimate it was `"a"`, not `"drive8"`.
 - **Use full paths** in PowerShell build commands and MCP calls. The project path contains spaces, so
@@ -232,6 +237,11 @@ right button, drag-scrolling, the 10-second hide). `mtest` has `mouse(events)` a
 Stats against a Python count, Save menu, disk command and directory, Save defaults and reading them
 back at a fresh start, Find with a color code inside a match and wrapping, Quit asking first). The
 phase 4 tests load through F1 A A now, test_phase6 turns wrap off with F1 D X.
+`python tools/test_phase9.py [c64|ntsc|oldntsc|drean]` (the REU: found and sized at 0/128/512/16384 KB
+and shown in Stats; the same editing session — big jumps, copy, paste twice, cut — gives exactly the
+same text with and without an REU; the clipboard is in the REU; the jump to the top of 20 KB is
+quicker; and `late_irqs` stays 0). **Run the whole suite with `MT_REU=512` too** (every older test
+then goes through the REU copies and clipboard).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -305,6 +315,7 @@ src/editor.asm      gap buffer, cursor, selection, clipboard, redraw, wrap
 src/menu.asm        boxes, prompts, the menus (table-driven), Stats
 src/fileio.asm      KERNAL disk I/O, directory, disk command, MAGIC T DEFAULTS
 src/find.asm        CTRL-F Find
+src/reu.asm         REU detection and sizing, DMA copies, clipboard in the REU
 src/data.asm        sprite data, menu strings, tables
 test/               sample SEQ, ASCII, and SpeedScript files
 build.bat           assemble + make d64 (Windows)
@@ -343,10 +354,10 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, end of phase 8): lower part $0801–$3297, tables to $3731 (debug builds add a
-  256-byte mouse trace); editor $E000–$FB80, so **~1.1 KB free under the KERNAL and ~1.8 KB below the
-  sprite blocks**. Phase 8 took about 4 KB. Phases 9–11 (REU, formats, printer, tape) must fit in
-  what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
+- Space (debug build, phase 9): lower part $0801–$34CB, tables to $3965 (debug builds add a
+  256-byte mouse trace); editor $E000–$FBEE, so **~1 KB free under the KERNAL and ~1.3 KB below the
+  sprite blocks** (release: tables to $361E, ~2.1 KB). Phase 8 took about 4 KB, phase 9's REU part
+  about 0.6 KB. Phases 10–11 (formats, printer, tape) must fit in what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
   part from now on; code that runs during disk work must
   go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
@@ -1197,6 +1208,49 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
   them while the beam is in the text area.
 - Undo is out of scope for now.
 
+**As built (phase 9, first part; `src/reu.asm`, read its header first):**
+- `detect_reu` at start-up (interrupts off, right after `detect_system`): two patterns written to and
+  read back from $DF02–$DF05, then each bank's number stashed into its first byte from bank 255 down
+  and read back from bank 0 up; the first bank without its own number is the size. `reu_banks` = 64 KB
+  banks (16 MB counts as 255; fewer than 2 = none). Stats shows "REU  512 KB" when there is one.
+- **Bank 0 = stopover for block copies, bank 1 = the clipboard.** `block_copy_fwd` / `block_copy_back`
+  (editor) hand copies of 256 bytes or more to `reu_copy`: stash to bank 0, fetch to the new place
+  (overlap doesn't matter). `gap_to_start` (after loading) now uses `block_copy_back` too.
+- **Clipboard in the REU:** `copy_selection` stashes the marked text to bank 1 (`clip_size`); the buffer
+  keeps no clipboard (`text_end` stays $D000), so the text gets the whole 36 KB. `paste` fetches it to
+  the top of the gap (the room check guarantees 4 bytes to spare) and inserts from there as before.
+- **IRQ safety (`reu_move`):** pieces of 128 bytes; each starts only when the raster (low 8 bits) is
+  not within 8 lines before line 25, line 247 or a page marker line (`irq_mark_top/bot`). It **waits
+  with interrupts on** (the first version waited with them mostly off and made IRQs late), confirms
+  the beam has moved at most 2 lines since the check — first with interrupts on, then once more with
+  them off (so the interrupts-off moment almost never fails and holds an IRQ up) — then starts the
+  piece. (A too-long confirm, 4 subroutine calls, made most attempts start over: no faster than the
+  CPU. Inline checks fixed that.)
+  After a piece the REU's address registers point past it, so only the length is written each time.
+- Debug builds count line 25/247 IRQs that start a line late or more in **`late_irqs`** (irq.asm),
+  with the line of the last one in `late_line` and where the main program was in `late_pc`;
+  test_phase9 requires 0. The check reads the line into Y at entry (4 cycles) and counts only
+  after the second IRQ is set up (`late_check` macro, in the NOP wait), so it can't make things
+  worse. **Found with it (2026-09-29): `marker_set` handed its values over with `php`/`sei`…`plp`
+  (~30 cycles), and a line 25 IRQ due then started on line 26** — rare, since phase 6, harmless on
+  its own. A first version of the debug check that did its work *before* setting up line 27 turned
+  that into a missed line 27 IRQ and a crash (NTSC, "keys not handled"; `late_pc` pointed into
+  marker_set). Now marker_set clears `marker_pending`, writes the values, sets it again — no `sei`.
+  **Rule: the main program never turns interrupts off while our IRQs run** (only `reu_move`, for the
+  moment of starting a piece, placed well away from the exact IRQs). The stress test (a scratch
+  script) repeats test_phase9's editing 20 times on one system and reads `late_irqs` after every
+  step; a hang catcher wrapped `Editor.keys` to dump PC/SP, the stack page and `late_pc` on a
+  time-out. Rewrite them if needed.
+- The harness reads the REU clipboard (`mtest.clipboard()`) by programming the REU through the
+  monitor: a fetch from bank 1 into the free top of the gap. **VICE does such a DMA only once the
+  emulation runs on**, so it resumes briefly before reading. Measured (PAL, 20 KB of short lines): jump to the top 35 → 16 frames; the
+  rest of the time is drawing.
+- **Not built: documents larger than main RAM** (see Status). It needs 24-bit positions throughout
+  the editor, a window of the document paged in around the cursor, and load/save/find/stats/marker
+  walking the whole document: several KB of code, more than is left. Options put to Jim: leave it
+  out; do it after phase 11 if space remains; or give REU machines their own code (e.g. copied under
+  $C000 at start-up, making the window smaller).
+
 ## Cartridge version (future idea)
 
 Jim may want a cartridge version later, like an earlier 16K cartridge of his: Exomizer-compressed code
@@ -1241,7 +1295,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 8. Menus and prompts (lettered, nested, table-driven), Disk directory, Disk command, mark-key option,
    background and text color options, Save defaults and startup config loading,
    Stats, Quit, then CTRL-F Find. **Done 2026-09-29.**
-9. REU detection, fast moves, clipboard, then large documents held in the REU.
+9. REU detection, fast moves, clipboard, then large documents held in the REU. (First part —
+   detection, fast moves, clipboard — passes the automated checks 2026-09-29; large documents: ask Jim.)
 10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type.
 11. Print menu, then tape load/save (device 1).
 12. Test pass on every target platform.

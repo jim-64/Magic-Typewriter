@@ -151,33 +151,23 @@ empty_view
 ; text is all before the gap).
 !zone gap_to_start
 gap_to_start
-        lda gap_start           ; ptr copies from here down ...
+        sec                     ; all of the text: from BUF_START up to
+        lda gap_start           ; gap_start ...
+        sbc #<BUF_START
+        sta blk_count
+        lda gap_start+1
+        sbc #>BUF_START
+        sta blk_count+1
+        lda gap_start
         sta ptr
         lda gap_start+1
         sta ptr+1
-        lda gap_end             ; ... to here down
+        lda gap_end             ; ... to just below gap_end
         sta ptr2
         lda gap_end+1
         sta ptr2+1
-        ldy #0
--       lda ptr
-        cmp #<BUF_START
-        bne +
-        lda ptr+1
-        cmp #>BUF_START
-        beq .done
-+       lda ptr
-        bne +
-        dec ptr+1
-+       dec ptr
+        jsr block_copy_back     ; (leaves ptr2 where it now starts)
         lda ptr2
-        bne +
-        dec ptr2+1
-+       dec ptr2
-        lda (ptr),y
-        sta (ptr2),y
-        jmp -
-.done   lda ptr2
         sta gap_end
         lda ptr2+1
         sta gap_end+1
@@ -3078,6 +3068,8 @@ copy_selection
         lda sel_e+1
         sbc sel_s+1
         sta .len+1
+        lda reu_banks           ; with an REU the clipboard is there, in a
+        bne .room               ; bank of its own: always room
         sec                     ; the clipboard's size now
         lda #<BUF_END
         sbc text_end
@@ -3133,10 +3125,13 @@ copy_selection
         sta clip_color
         jsr rvs_before
         sta clip_rvs
+        lda reu_banks           ; (with an REU nothing needs moving)
+        beq +
+        jmp .copy
 
         ; Make the clipboard exactly .len bytes: move the text after the gap
         ; down (clipboard bigger) or up (smaller).
-        sec                     ; blk_count = text after the gap
++       sec                     ; blk_count = text after the gap
         lda text_end
         sbc gap_end
         sta blk_count
@@ -3222,16 +3217,20 @@ copy_selection
         lda sel_s+1
         adc #>BUF_START
         sta ptr+1
-        lda text_end
-        sta ptr2
-        lda text_end+1
-        sta ptr2+1
         lda .len
         sta blk_count
         lda .len+1
         sta blk_count+1
+        lda reu_banks           ; (with an REU: into its bank 1)
+        beq +
+        jsr clip_stash
+        jmp .back
++       lda text_end
+        sta ptr2
+        lda text_end+1
+        sta ptr2+1
         jsr block_copy_fwd
-        lda .cursor             ; the cursor back where it was
+.back   lda .cursor             ; the cursor back where it was
         sta off
         lda .cursor+1
         sta off+1
@@ -3248,14 +3247,22 @@ copy_selection
 ; it bring back the state the text after the cursor had.
 !zone paste
 paste
-        sec                     ; the clipboard's size
+        lda reu_banks           ; the clipboard's size: in the REU ...
+        beq +
+        lda clip_size
+        sta .len
+        lda clip_size+1
+        sta .len+1
+        jmp ++
++       sec                     ; ... or at the top of the buffer
         lda #<BUF_END
         sbc text_end
         sta .len
         lda #>BUF_END
         sbc text_end+1
         sta .len+1
-        ora .len
+++      lda .len
+        ora .len+1
         bne +
         rts                     ; empty
 +       lda sel_on
@@ -3300,13 +3307,38 @@ paste
         beq ++
         lda #$12
 ++      jsr insert_byte
-+       lda text_end            ; then the clipboard, byte by byte
++       lda reu_banks           ; then the clipboard, byte by byte: from
+        bne .from_reu           ; the top of the buffer ...
+        lda text_end
         sta ptr
         lda text_end+1
         sta ptr+1
--       jsr ptr_at_buf_end
-        bcs .done
-        ldy #0
+        lda #<BUF_END
+        sta .end
+        lda #>BUF_END
+        sta .end+1
+        jmp .bytes
+.from_reu                       ; ... or from the REU, fetched first to the
+        sec                     ; top of the gap (what goes in stays below
+        lda gap_end             ; it: the gap has room for 4 more bytes)
+        sbc .len
+        sta ptr
+        lda gap_end+1
+        sbc .len+1
+        sta ptr+1
+        jsr clip_fetch
+        lda gap_end
+        sta .end
+        lda gap_end+1
+        sta .end+1
+.bytes
+-       lda ptr                 ; up to .end
+        cmp .end
+        bne +
+        lda ptr+1
+        cmp .end+1
+        beq .done
++       ldy #0
         lda (ptr),y
         pha
         jsr insert_byte
@@ -3342,16 +3374,11 @@ paste
         sta modified
         jmp after_edit
 .len    !word 0
+.end    !word 0
 .c0     !byte 0
 .r0     !byte 0
 .c      !byte 0
 .r      !byte 0
-
-; ptr_at_buf_end - carry set if ptr has reached BUF_END
-ptr_at_buf_end
-        lda ptr+1
-        cmp #>BUF_END
-        rts
 
 ; select_all - CTRL-A: mark the whole text (the cursor goes to its end).
 !zone select_all
@@ -3390,7 +3417,13 @@ no_room
 ; bytes, and blk_count 0.
 !zone block_copy_fwd
 block_copy_fwd
-        ldy #0
+        lda blk_count+1         ; 256 bytes or more, and an REU: through the
+        beq +                   ; REU, which is faster (reu.asm)
+        lda reu_banks
+        beq +
+        lda #0
+        jmp reu_copy
++       ldy #0
         ldx blk_count+1         ; whole pages
         beq .rest
 .page   lda (ptr),y
@@ -3431,7 +3464,13 @@ block_copy_fwd
 ; at the start of the bytes, and blk_count 0.
 !zone block_copy_back
 block_copy_back
-        sec                     ; the pointers down by the odd bytes
+        lda blk_count+1         ; (the same: through the REU)
+        beq +
+        lda reu_banks
+        beq +
+        lda #1
+        jmp reu_copy
++       sec                     ; the pointers down by the odd bytes
         lda ptr
         sbc blk_count
         sta ptr

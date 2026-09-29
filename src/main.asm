@@ -160,6 +160,7 @@ start                           ; must be at $080d = 2061
 
         jsr copy_high           ; the editor to its place under the KERNAL
         jsr detect_system       ; PAL / NTSC / old NTSC / Drean
+        jsr detect_reu          ; an REU? (reu.asm)
 !if DEBUG {
         jsr mailbox_init
 }
@@ -334,6 +335,7 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 ; The other source files: first the lower part of the program ...
 ;----------------------------------------------------------------------------
 !source "src/system.asm"
+!source "src/reu.asm"
 !source "src/irq.asm"
 !source "src/input.asm"
 !source "src/menu.asm"

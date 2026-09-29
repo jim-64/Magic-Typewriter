@@ -160,5 +160,29 @@ class Editor:
         return before + after, gs - 0x4000
 
     def clipboard(self):
+        if self.peek(self.lab["reu_banks"])[0]:
+            return self.reu_clipboard()
         te = int.from_bytes(self.peek(0x1a, 2), "little")
         return self.peek(te, 0xd000 - te) if te < 0xd000 else b""
+
+    def reu_clipboard(self):
+        """With an REU the clipboard is in its bank 1 (reu.asm). Fetch it
+        into the free space at the top of the gap by programming the REU
+        through the monitor (only while the editor is idle), then read it."""
+        size = int.from_bytes(self.peek(self.lab["clip_size"], 2), "little")
+        if size == 0:
+            return b""
+        gs = int.from_bytes(self.peek(0x08, 2), "little")
+        ge = int.from_bytes(self.peek(0x0a, 2), "little")
+        if ge - gs < size:
+            raise RuntimeError("not enough free space to read the REU clipboard")
+        dst = ge - size
+        regs = bytes([dst & 255, dst >> 8, 0, 0, 1, size & 255, size >> 8])
+        self.m.write(0xdf0a, bytes([0]))           # both addresses count up
+        self.m.write(0xdf02, regs)                 # C64 addr, REU addr, bank 1,
+        self.m.write(0xdf01, bytes([0x91]))        # length; fetch, at once
+        self.m.resume()                            # (VICE does the copy as
+        time.sleep(0.1)                            # the emulation runs on)
+        data = self.m.read(dst, size)
+        self.m.resume()
+        return data
