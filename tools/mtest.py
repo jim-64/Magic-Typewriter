@@ -142,6 +142,8 @@ class Editor:
                     s += "@"
                 elif 1 <= c <= 26:
                     s += chr(c + 96) if lower else chr(c + 64)
+                elif 27 <= c <= 31:
+                    s += "[\\]^_"[c - 27]           # [ pound ] up-arrow left-arrow
                 elif 32 <= c <= 63:
                     s += chr(c)
                 elif 65 <= c <= 90:

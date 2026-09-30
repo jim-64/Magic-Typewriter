@@ -72,6 +72,19 @@ try:
     key(e, "STOP")
     check("... cancelled: upper/lower again", e.peek(0xd018)[0] == LOWER, e.peek(0xd018))
 
+    # The File type, fixed by the format and the device: shown in [ ]
+    key(e, "F1"); key(e, "B")
+    check("magic: 'C FILE TYPE: [PRG]'", "FILE TYPE: [PRG]" in rows(e)[9], rows(e)[9])
+    key(e, "C")
+    check("... C changes nothing", v(e, "save_type") == 0 and "[PRG]" in rows(e)[9], rows(e)[9])
+    key(e, "B")                                     # format: PETSCII
+    check("PETSCII on disk: 'FILE TYPE: SEQ', free to change",
+          "FILE TYPE: SEQ" in rows(e)[9] and "[" not in rows(e)[9], rows(e)[9])
+    key(e, "D")                                     # device: tape
+    check("PETSCII on tape: 'FILE TYPE: [SEQ]'", "FILE TYPE: [SEQ]" in rows(e)[9], rows(e)[9])
+    e.poke(e.lab["save_format"], [0]); e.poke(e.lab["save_dev"], [8])
+    key(e, "STOP")
+
     # Magic (a new document's format) always as a PRG, File type SEQ or not
     check("File type SEQ, Save format magic", v(e, "save_type") == 0 and v(e, "save_format") == 0)
     load_doc(e, big)

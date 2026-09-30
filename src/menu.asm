@@ -533,11 +533,14 @@ menu_open
         jmp .push
 +       cmp #MI_SET
         bne +
-        lda .what               ; a setting: its next value
-        sta ptr2
+        lda .what               ; a setting: its next value (unless other
+        sta ptr2                ; settings fix it now)
         lda .what+1
         sta ptr2+1
+        jsr set_locked
+        bcs .set_done
         jsr set_next
+.set_done
         jmp .show
 +       cmp #MI_RUN
         bne +
@@ -656,12 +659,23 @@ menu_draw
         sta ptr2
         lda .what+1
         sta ptr2+1
+        jsr set_locked          ; fixed by other settings? then in [ ]
+        bcs .locked
         jsr set_name            ; A/X = the value's name
         ldy .col
         jsr box_print
+        jmp .next
+.locked pha
+        ldy .col
+        lda #$1b                ; [
+        jsr box_put
+        pla
+        jsr box_print
+        lda #$1d                ; ]
+        jsr box_put
 .next   ldx .i
         inx
-        bne .item               ; (always)
+        jmp .item
 
 .title  !word 0
 .letter !byte 0
@@ -829,6 +843,35 @@ set_name
         pla
         rts
 .i      !byte 0
+
+; set_locked - ptr2 = a setting: carry set if other settings fix its
+; value now, with A/X = the name to show (in [ ], and choosing it does
+; nothing; the setting itself is kept for when it is free again). Only the
+; File type: a magic document is always a PRG file, and on tape PETSCII
+; and ASCII documents are always SEQ (data) files (Jim, 2026-09-30).
+!zone set_locked
+set_locked
+        lda ptr2
+        cmp #<set_save_type
+        bne .free
+        lda ptr2+1
+        cmp #>set_save_type
+        bne .free
+        lda save_format
+        bne +                   ; (FORMAT_MAGIC is 0)
+        lda #<n_prg
+        ldx #>n_prg
+        sec
+        rts
++       lda save_dev
+        cmp #1
+        bne .free
+        lda #<n_seq
+        ldx #>n_seq
+        sec
+        rts
+.free   clc
+        rts
 
 ; set_next - ptr2 = a setting: step it to the next value in its list
 ; (after the last, back to the first)

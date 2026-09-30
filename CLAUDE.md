@@ -41,11 +41,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   Build Order 11b).
 - **Phase 10 done** (2026-09-30; magic, ASCII, PRG files), merged into `main`. Jim: Epyx FastLoad
   loads a PRG document in 8 s against 18 s for the same as SEQ. **SpeedScript skipped for now.**
-- **Phase 11** (branch `phase11`, automated checks passed 2026-09-30; waiting for Jim's Human Test):
+- **Phase 11 done** (2026-09-30; Jim OK'd moving on), merged into `main`:
   room made (the debug mouse trace is now `-DMOUSE_TRACE=1` only; `find.asm` moved under the
   KERNAL); **magic files always PRG** (Jim); a **spinner** in the LOADING/SAVING/PRINTING box (Jim);
   **upper case/graphics** for the disk directory and the LOAD:/SAVE: name boxes (Jim); the **Print
-  menu**; **tape** (magic as program files, PETSCII/ASCII as data files — see Tape).
+  menu**; **tape** (magic as program files, PETSCII/ASCII as data files — Jim agreed); a File type
+  fixed by the format and device shows in [ ] (Jim). Real tape and printer still to try (Jim).
 - Next: 11b, long documents held in the REU (Jim, 2026-09-29).
 
 ## Working with Jim
@@ -1171,8 +1172,8 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
   Human Test. Check which other target platforms support tape at all (see Target Platforms).
 
 **As built (phase 11, `.tape` parts of `load_file` and `save_file`):**
-- **Which kind of tape file (decided in phase 11; Jim may change it): the format decides, File type
-  is ignored on tape.** Magic documents are **program files** (KERNAL SAVE / LOAD — tape turbos
+- **Which kind of tape file (Jim agreed, 2026-09-30): the format decides, File type is ignored on
+  tape.** Magic documents are **program files** (KERNAL SAVE / LOAD — tape turbos
   speed these up, and Jim wants magic always PRG); PETSCII and ASCII documents are **data files**
   (OPEN 1,1,1 / 1,1,0 and the same byte writer/reader as disk). The tape's LOAD skips data files
   and OPEN skips program files, so loading needs to know which to look for: Load format MAGIC →
@@ -1219,6 +1220,10 @@ PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arr
   `io_begin` points the KERNAL's IRQ vector at `io_irq`, which turns a quarter block ($7E, $7C, $6C,
   $7B: clockwise) every 8 ticks and then jumps to $EA31. Fast loaders usually keep interrupts off,
   so it may stand still during an Epyx fast load.
+- **A setting fixed by other settings shows in [ ]** (Jim): `set_locked` (menu.asm) — only the
+  File type: `[PRG]` for magic, `[SEQ]` for PETSCII/ASCII on tape; choosing it then does nothing,
+  and the setting itself is kept for when it is free again. (Watch anonymous `+` labels in
+  menu_open: a new one captured an older `bne +` there once.)
 - **Upper case/graphics** while the disk directory shows (set after `io_begin`; `io_end` restores
   the document's set) and while the LOAD:/SAVE: name boxes are up (`prompt_name` wraps
   `prompt_input`). File names then look as they do on the disk.
@@ -1406,8 +1411,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
    to 11b.)
 10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type. (Magic, ASCII and
     PRG done 2026-09-30; SpeedScript skipped for now, Jim may want it later.)
-11. Print menu, then tape load/save (device 1). (Automated checks passed 2026-09-30; real tape and
-    printer: Human Test.)
+11. Print menu, then tape load/save (device 1). **Done 2026-09-30** (real tape and printer still to
+    try).
 11b. Long documents held in the REU (same PRG; the REU code's RAM is document space without an REU).
 12. Test pass on every target platform.
 
