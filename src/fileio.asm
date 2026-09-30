@@ -28,6 +28,7 @@ READST          = $ffb7
 LOAD            = $ffd5
 SETMSG          = $ff90
 EAL             = $ae           ; KERNAL: where LOAD has got to (lo/hi)
+SAVE            = $ffd8
 STOP            = $ffe1
 BLNSW           = $cc           ; KERNAL: 0 = blink its cursor
 NDX             = $c6           ; KERNAL: keys waiting in its buffer
@@ -216,7 +217,20 @@ open_file
 ; answer ("device not present").
 !zone read_status
 read_status
-        ldx #CMD_LFN
+        lda cur_dev             ; tape: no drive to ask. The KERNAL's
+        cmp #1                  ; status tells: a short or long block, a
+        bne .disk               ; read or checksum error
+        jsr READST
+        and #%00111100
+        beq +
+        lda #<msg_tape_error
+        ldx #>msg_tape_error
+        jsr copy_message
+        sec
+        rts
++       clc
+        rts
+.disk   ldx #CMD_LFN
         jsr CHKIN
         bcs .no_drive
         lda #0
@@ -379,7 +393,11 @@ load_file
         bcs +
         rts
 +       jsr name_to_input
-        lda #<msg_load
+        lda load_dev            ; (tape: no name is fine too - the next
+        cmp #1                  ; file on the tape)
+        bne +
+        sta input_empty_ok
++       lda #<msg_load
         ldx #>msg_load
         jsr prompt_name
         bcc +
@@ -388,6 +406,11 @@ load_file
         sta cur_dev
         lda #0
         sta load_fast
+        lda cur_dev
+        cmp #1
+        bne +
+        jmp .tape
++
         lda #<suffix_read       ; a SEQ file first ...
         ldx #>suffix_read
         jsr name_plus
@@ -457,6 +480,7 @@ load_file
         bpl -
         lda #1
         sta load_fast
+        jsr .eal_start
         lda #0                  ; (no KERNAL messages)
         jsr SETMSG
         lda input_len
@@ -575,6 +599,76 @@ load_file
         lda #<status_buf
         ldx #>status_buf
         jmp message_box
+
+; .tape - from tape (device 1), with the KERNAL's own routines; our box
+; asks for PLAY (the KERNAL says so only at the READY prompt), and the
+; KERNAL waits for it and blanks the screen meanwhile. A magic document
+; is a program file (LOAD, to BUF_START); PETSCII and ASCII documents are
+; data files, read as from disk. A blank name: the next such file.
+.tape   lda #<msg_press_play
+        ldx #>msg_press_play
+        jsr busy_box
+        jsr io_begin
+        lda input_len
+        ldx #<input_buf
+        ldy #>input_buf
+        jsr SETNAM
+        lda #FILE_LFN
+        ldx #1
+        ldy #0                  ; (0: read; LOAD: to the address we give)
+        jsr SETLFS
+        lda load_format
+        beq +                   ; (FORMAT_MAGIC is 0)
+        jsr OPEN                ; a data file
+        bcs .tape_break
+        jmp .opened
++       lda #0                  ; a program file
+        jsr SETMSG
+        jsr .eal_start
+        lda #0
+        ldx #<BUF_START
+        ldy #>BUF_START
+        jsr LOAD
+        lda EAL                 ; got nowhere (RUN/STOP): the document is
+        cmp #<BUF_START         ; untouched
+        bne +
+        lda EAL+1
+        cmp #>BUF_START
+        beq .tape_break
++       lda EAL                 ; the text: BUF_START up to there
+        sta gap_start
+        lda EAL+1
+        sta gap_start+1
+        lda text_end            ; (past the clipboard? then it is gone)
+        cmp EAL
+        lda text_end+1
+        sbc EAL+1
+        bcs +
+        lda #<BUF_END
+        sta text_end
+        lda #>BUF_END
+        sta text_end+1
++       lda text_end
+        sta gap_end
+        lda text_end+1
+        sta gap_end+1
+        jmp .end
+.tape_break
+        lda #<msg_break
+        ldx #>msg_break
+        jsr copy_message
+        jmp .fail
+
+; .eal_start - EAL (where LOAD gets to) = BUF_START before LOAD: on tape
+; the KERNAL sets it only once it has found the file, so after RUN/STOP
+; at PRESS PLAY it would still hold an old address - "got nowhere" must
+; show as BUF_START.
+.eal_start
+        lda #<BUF_START
+        sta EAL
+        lda #>BUF_START
+        sta EAL+1
+        rts
 
 ; .show - make the file into text and show it from the top, cursor at the
 ; start (after io_end: this uses the editor)
@@ -867,21 +961,15 @@ prg_fits
 ;============================================================================
 
 ; check_load, check_save - carry set (after saying so) if the Load or Save
-; settings ask for something not built yet: tape (phase 11), SpeedScript.
+; settings ask for something not built: SpeedScript (skipped for now).
 !zone check_load
 check_load
-        lda load_dev
-        cmp #1
-        beq .no
         lda load_format
         cmp #FORMAT_SPEEDSCRIPT
         beq .no
         clc
         rts
 check_save
-        lda save_dev
-        cmp #1
-        beq .no
         lda save_format
         cmp #FORMAT_SPEEDSCRIPT
         beq .no
@@ -958,7 +1046,10 @@ save_file
                                 ; editor's settings can be read)
         lda save_dev
         sta cur_dev
-        lda #<msg_saving
+        cmp #1
+        bne +
+        jmp .tape
++       lda #<msg_saving
         ldx #>msg_saving
         jsr busy_box
         jsr io_begin
@@ -986,11 +1077,11 @@ save_file
         jmp .fail
 +       ldx #FILE_LFN
         jsr CHKOUT
-        bcc +
+        bcc .body
         jmp .no_device
 .to_bus jmp .bus_error          ; (for branches that cannot reach)
 
-+       lda .prg                ; a PRG: the load address, where the text
+.body   lda .prg                ; a PRG: the load address, where the text
         beq +                   ; goes (BUF_START)
         lda #<BUF_START
         jsr .out
@@ -1011,13 +1102,9 @@ save_file
 +       lda save_format         ; magic and PETSCII: the character set, as
         cmp #FORMAT_ASCII       ; the standard PETSCII case code ($0e for
         bcs .text               ; upper/lower case, $8e for upper case/
-        lda VIC_MEMPTR          ; graphics). load_file takes it back as the
-        and #%00000010          ; setting, and other programs that print
-        beq +                   ; the file switch to the right set with it.
-        lda #$0e
-        bne ++
-+       lda #$8e
-++      jsr .out
+        jsr .case_code          ; graphics). load_file takes it back as the
+        jsr .out                ; setting, and other programs that print
+                                ; the file switch to the right set with it.
         bcs .bus_error
 
 .text   lda #OUT_ASIS           ; then the text, as the Save format says
@@ -1063,6 +1150,119 @@ save_file
         lda #<status_buf
         ldx #>status_buf
         jmp message_box
+
+; .tape - to tape (device 1), with the KERNAL's own routines; our box asks
+; for RECORD & PLAY (the KERNAL says so only at the READY prompt), and the
+; KERNAL waits for it. A magic document goes as a program file: KERNAL
+; SAVE, all in one piece (below). PETSCII and ASCII as a data file,
+; written as to disk.
+.tape   lda save_format
+        beq .tape_prg           ; (FORMAT_MAGIC is 0)
+        lda #<msg_press_record
+        ldx #>msg_press_record
+        jsr busy_box
+        jsr io_begin
+        jsr .tape_name
+        ldy #1                  ; (1: write)
+        jsr SETLFS
+        jsr OPEN
+        bcs .tape_break
+        ldx #FILE_LFN
+        jsr CHKOUT
+        bcs .tape_break
+        lda #0                  ; (no load address on a data file)
+        sta .prg
+        jmp .body
+.tape_break                     ; (RUN/STOP while it waited)
+        jsr close_all
+        jsr io_end
+        jsr box_close
+.tape_stopped
+        lda #<msg_break
+        ldx #>msg_break
+        jmp message_box
+
+.tape_prg
+        ; KERNAL SAVE writes one piece of memory: so the gap goes to the
+        ; start (the text all after it), and the header and the case code
+        ; go just below the text. The cursor goes back afterwards.
+        jsr gap_size            ; room for those 21 bytes?
+        lda work+1
+        bne +
+        lda work
+        cmp #DEFAULTS_LEN+1
+        bcs +
+        jmp no_room
++       jsr get_cursor_off
+        lda work
+        sta .cursor
+        lda work+1
+        sta .cursor+1
+        lda #0
+        sta off
+        sta off+1
+        jsr move_gap_to
+        sec                     ; ptr = gap_end - 21
+        lda gap_end
+        sbc #DEFAULTS_LEN+1
+        sta ptr
+        lda gap_end+1
+        sbc #0
+        sta ptr+1
+        ldy #DEFAULTS_LEN-1     ; the header ...
+-       lda defaults_buf,y
+        sta (ptr),y
+        dey
+        bpl -
+        jsr .case_code          ; ... and the case code
+        ldy #DEFAULTS_LEN
+        sta (ptr),y
+        lda #<msg_press_record
+        ldx #>msg_press_record
+        jsr busy_box
+        jsr io_begin
+        jsr .tape_name
+        ldy #0                  ; (0: a program that loads anywhere)
+        jsr SETLFS
+        lda #ptr                ; from ptr up to text_end
+        ldx text_end
+        ldy text_end+1
+        jsr SAVE
+        php
+        jsr io_end
+        jsr box_close
+        lda .cursor             ; the cursor back where it was
+        sta off
+        lda .cursor+1
+        sta off+1
+        jsr move_gap_to
+        plp
+        bcc +
+        jmp .tape_stopped
++       lda #0
+        sta modified
+        jmp keep_name
+
+; .tape_name - the name (SETNAM) and A/X for SETLFS: the file, tape
+.tape_name
+        lda input_len
+        ldx #<input_buf
+        ldy #>input_buf
+        jsr SETNAM
+        lda #FILE_LFN
+        ldx #1
+        rts
+
+; .case_code - A = the character set as the PETSCII case code: $0e for
+; upper/lower case, $8e for upper case/graphics
+.case_code
+        lda VIC_MEMPTR
+        and #%00000010          ; bit 1 set: upper/lower case
+        beq +
+        lda #$0e
+        rts
++       lda #$8e
+        rts
 
 ; .out - A to the file. Carry set if the bus reports an error. Keeps X.
 .out    jsr CHROUT
@@ -1195,6 +1395,7 @@ write_doc
 
 .end    !word 0
 .prg    !byte 0                 ; 1: a PRG file
+.cursor !word 0                 ; (tape: the cursor, to put back)
 out_mode        !byte 0         ; how write_doc sends the text: OUT_...
 
 ;============================================================================

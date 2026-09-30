@@ -41,10 +41,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   Build Order 11b).
 - **Phase 10 done** (2026-09-30; magic, ASCII, PRG files), merged into `main`. Jim: Epyx FastLoad
   loads a PRG document in 8 s against 18 s for the same as SEQ. **SpeedScript skipped for now.**
-- **Phase 11 in progress** (branch `phase11`). Done so far (2026-09-30): room made (the debug mouse
-  trace is now `-DMOUSE_TRACE=1` only; `find.asm` moved under the KERNAL); **magic files always PRG**
-  (Jim); a **spinner** in the LOADING/SAVING/PRINTING box (Jim); **upper case/graphics** for the
-  disk directory and the LOAD:/SAVE: name boxes (Jim); the **Print menu**. Next: tape.
+- **Phase 11** (branch `phase11`, automated checks passed 2026-09-30; waiting for Jim's Human Test):
+  room made (the debug mouse trace is now `-DMOUSE_TRACE=1` only; `find.asm` moved under the
+  KERNAL); **magic files always PRG** (Jim); a **spinner** in the LOADING/SAVING/PRINTING box (Jim);
+  **upper case/graphics** for the disk directory and the LOAD:/SAVE: name boxes (Jim); the **Print
+  menu**; **tape** (magic as program files, PETSCII/ASCII as data files — see Tape).
+- Next: 11b, long documents held in the REU (Jim, 2026-09-29).
 
 ## Working with Jim
 
@@ -248,7 +250,11 @@ then goes through the REU copies and clipboard).
 `python tools/test_phase10.py [c64|ntsc]` (formats: magic saved and loaded back with its settings, as
 SEQ and as PRG; ASCII saved (after the colors warning) and loaded with mixed line ends; PETSCII;
 the Save format following the loaded one and CLEAR ALL going back; the saved bytes checked with
-c1541).
+c1541; KERNAL LOAD for our PRGs, the byte reader for too-big and foreign ones).
+`python tools/test_phase11.py [c64|ntsc]` (magic always PRG; the spinner turning during a long save;
+upper case/graphics in the directory and the name box, and back; tape boxes and RUN/STOP at PRESS
+PLAY / PRESS RECORD, document and cursor untouched; printing through VICE's raw printer 4, both
+ways, and "DEVICE NOT PRESENT").
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -361,10 +367,11 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, phase 10): lower part $0801–$382A, tables to $3CC4 (debug builds add a
-  256-byte mouse trace); editor $E000–$FC3E, so **~950 bytes free under the KERNAL and ~440 below
-  the sprite blocks** (release: tables to $397D, ~1.25 KB). Phase 8 took about 4 KB, phase 9's REU
-  part about 0.6 KB, phase 10 about 0.9 KB. Phase 11 (printer, tape) must fit in what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
+- Space (debug build, phase 11): lower part $0801–$397E, tables to $3D18 (a `-DMOUSE_TRACE=1` build
+  adds a 256-byte mouse trace); editor + find $E000–$FE01, so **~500 bytes free under the KERNAL and
+  ~360 below the sprite blocks** (release: tables to $3AF4, ~900). Phase 8 took about 4 KB, phase
+  9's REU part about 0.6 KB, phase 10 about 0.9 KB, phase 11 about 1.3 KB. 11b's REU code goes in
+  the REU-only area (see REU). Keep new code lean: keep them lean, and tell Jim early if they won't. New code goes in the lower
   part from now on; code that runs during disk work must
   go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
@@ -1163,6 +1170,31 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
 - Testing: VICE can attach a `.tap` image for automated load/save checks. Real Datasette testing is a
   Human Test. Check which other target platforms support tape at all (see Target Platforms).
 
+**As built (phase 11, `.tape` parts of `load_file` and `save_file`):**
+- **Which kind of tape file (decided in phase 11; Jim may change it): the format decides, File type
+  is ignored on tape.** Magic documents are **program files** (KERNAL SAVE / LOAD — tape turbos
+  speed these up, and Jim wants magic always PRG); PETSCII and ASCII documents are **data files**
+  (OPEN 1,1,1 / 1,1,0 and the same byte writer/reader as disk). The tape's LOAD skips data files
+  and OPEN skips program files, so loading needs to know which to look for: Load format MAGIC →
+  program file, PETSCII/ASCII → data file. A blank name (allowed on tape) takes the next such file.
+- **Magic to tape:** KERNAL SAVE writes one piece of memory, so the gap goes to the start (the text
+  all after it), the header and case code (21 bytes) go just below the text, and SAVE writes from
+  there to `text_end` with secondary address 0 (a program that loads anywhere); then the cursor
+  goes back (`move_gap_to`). Needs 21 free bytes ("not enough room" otherwise).
+- **Magic from tape:** LOAD with secondary address 0 to BUF_START. **Set EAL ($AE/$AF) to BUF_START
+  before LOAD** (`.eal_start`): on tape the KERNAL sets it only once it has found the file, so after
+  RUN/STOP at PRESS PLAY it held an old address and the "partial load" looked like garbage (found in
+  phase 11). If the file ran past `text_end`, the clipboard is gone (`text_end` = BUF_END). **Not
+  guarded: a foreign tape program over 36 KB, or an absolute one (type 3, loads at its own address)
+  — only possible with files not made here.**
+- Our own boxes: "PRESS PLAY ON TAPE" / "PRESS RECORD & PLAY ON TAPE" (with the spinner). The
+  KERNAL waits for the button; RUN/STOP there → "BREAK", the document untouched.
+- `read_status` knows tape has no drive to ask: it reports the KERNAL's status (short/long block,
+  read or checksum error → "TAPE ERROR").
+- Testing: VICE's datasette buttons can't be pressed through the binary monitor, and its tape traps
+  don't skip the PRESS PLAY wait. test_phase11 checks the boxes and RUN/STOP at them (writing $7F to
+  STKEY $91 and resuming in one monitor stop). **Real tape load/save is a Human Test.**
+
 ### Printer (devices 4–7)
 
 - Open the printer with the KERNAL and send the document line by line, a line ending after each line.
@@ -1374,7 +1406,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
    to 11b.)
 10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type. (Magic, ASCII and
     PRG done 2026-09-30; SpeedScript skipped for now, Jim may want it later.)
-11. Print menu, then tape load/save (device 1).
+11. Print menu, then tape load/save (device 1). (Automated checks passed 2026-09-30; real tape and
+    printer: Human Test.)
 11b. Long documents held in the REU (same PRG; the REU code's RAM is document space without an REU).
 12. Test pass on every target platform.
 

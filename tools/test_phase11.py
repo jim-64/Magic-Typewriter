@@ -142,6 +142,60 @@ finally:
     except Exception:
         vice.terminate()
     time.sleep(1)
+# Tape: VICE's datasette can't be pressed from here, so the checks are the
+# boxes and RUN/STOP while the KERNAL waits for PLAY or RECORD (the KERNAL
+# looks at STKEY $91; one monitor stop writes $7f there and goes on). The
+# real loading and saving is a Human Test.
+def tape_stop(e):
+    for _ in range(20):
+        e.m.write(0x91, bytes([0x7f]))
+        e.m.resume()
+        time.sleep(0.2)
+        if "BREAK" in rows(e)[12]:
+            return True
+    return False
+
+vice = start_vice(os.path.join(PROJ, "build/magictypewriter.prg"), model=model)
+try:
+    e = Editor(Mon())
+    e.wait_ready()
+    tdoc = b"LINE ONE" + CR + b"LINE TWO" + CR + b"LINE THREE"
+    load_doc(e, tdoc)
+    e.keys([(KEY["DOWN"], 0), (KEY["RIGHT"], 0), (KEY["RIGHT"], 0)])   # the cursor mid-text
+    where = e.text()[1]
+    e.poke(e.lab["load_dev"], [1]); e.poke(e.lab["save_dev"], [1])
+    for fmt, kind in ((0, "program file"), (1, "data file")):
+        e.poke(e.lab["load_format"], [fmt])
+        key(e, "F1"); key(e, "A"); key(e, "A")
+        key(e, "RETURN", settle=0.5)                # (no name: the next file)
+        check("tape load, %s: PRESS PLAY ON TAPE" % kind, "PRESS PLAY ON TAPE" in rows(e)[12], rows(e)[12])
+        check("... RUN/STOP: BREAK, the document untouched", tape_stop(e) and e.text()[0] == tdoc,
+              (rows(e)[12], e.text()[0][:20]))
+        key(e, "SPACE")
+    for fmt, kind in ((0, "program file"), (1, "data file")):
+        e.poke(e.lab["save_format"], [fmt]); e.poke(e.lab["modified"], [1])
+        key(e, "F1"); key(e, "B"); key(e, "A")
+        name_box(e, "tapedoc")
+        time.sleep(0.5)
+        check("tape save, %s: PRESS RECORD & PLAY ON TAPE" % kind,
+              "PRESS RECORD & PLAY ON TAPE" in rows(e)[12], rows(e)[12])
+        check("... RUN/STOP: BREAK, the text and the cursor as they were",
+              tape_stop(e) and e.text() == (tdoc, where), (rows(e)[12], e.text()))
+        key(e, "SPACE")
+    e.keys([(KEY["DOWN"], 0)])
+    check("editing goes on; no line 25/247 IRQ late", v(e, "late_irqs") == 0 and e.text()[1] > where,
+          (v(e, "late_irqs"), e.text()[1]))
+finally:
+    try:
+        e.m.quit()
+    except Exception as ex:
+        print("quit:", ex)
+    try:
+        vice.wait(timeout=10)
+    except Exception:
+        vice.terminate()
+    time.sleep(1)
+
 got = open(out, "rb").read() if os.path.exists(out) else b""
 pet = b"Plain red" + CR + b"\x12REV\x92 end" + CR
 asc = b"pLAIN RED\r\nrev END\r\n"
