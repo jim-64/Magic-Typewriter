@@ -342,7 +342,6 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 !source "src/input.asm"
 !source "src/menu.asm"
 !source "src/fileio.asm"
-!source "src/find.asm"
 !source "src/data.asm"
 
 ;----------------------------------------------------------------------------
@@ -354,6 +353,7 @@ HIGH_CODE       = $e000
 high_load                               ; where the PRG file has it
 !pseudopc HIGH_CODE {
 !source "src/editor.asm"
+!source "src/find.asm"
 high_end                                ; (an address under the KERNAL ROM)
 }
 program_end                             ; the end of the PRG file
@@ -378,7 +378,7 @@ row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
 row_len         = row_rvs + MROWS       ;   how many cursor places it has
 dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
 prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
-!if DEBUG {
+!ifdef MOUSE_TRACE {
 mouse_trace     = prompt_save + 240     ; 256: mouse trace (input.asm)
 tables_end      = mouse_trace + 256
 } else {

@@ -61,7 +61,7 @@ try:
         # Y goes on to the name box, with the last name filled in
         e.keys([(KEY["F1"], 0), (KEY["A"], 0), (KEY["A"], 0)])   # Load menu: Load
         e.keys([(KEY["Y"], 0)])
-        check("name box shows the last name", "LOAD: note" in box(), box())
+        check("name box shows the last name", "LOAD: NOTE" in box().upper(), box())
         e.keys([(KEY["RETURN"], 0)], settle=1.0)
         for _ in range(100):
             txt, _ = e.text()
@@ -124,18 +124,19 @@ if not readonly:
     out = "note_saved.seq"
     if os.path.exists(os.path.join(S, out)):
         os.remove(os.path.join(S, out))
-    subprocess.run([c1541, "-attach", "p4b.d64", "-read", "note,s", out], capture_output=True, cwd=S)
+    subprocess.run([c1541, "-attach", "p4b.d64", "-read", "note,p", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
-    if saved[:4] == b"\x00MTW":                 # (a new document saves in
-        saved = saved[20:]                      # the magic format: after
-                                                # its header, as PETSCII)
+    if saved[2:6] == b"\x00MTW":                # (a new document saves in
+        saved = saved[22:]                      # the magic format, a PRG:
+                                                # after its load address and
+                                                # header, as PETSCII)
     check("NOTE on disk = $0e (upper/lower) + 'HELLO DISK' + RETURN", saved == b"\x0eHELLO DISK\r", saved)
     out = "other_saved.seq"
     if os.path.exists(os.path.join(S, out)):
         os.remove(os.path.join(S, out))
-    subprocess.run([c1541, "-attach", "p4b.d64", "-read", "other,s", out], capture_output=True, cwd=S)
+    subprocess.run([c1541, "-attach", "p4b.d64", "-read", "other,p", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
-    if saved[:4] == b"\x00MTW":
-        saved = saved[20:]
+    if saved[2:6] == b"\x00MTW":
+        saved = saved[22:]
     check("OTHER on disk = $8e (upper case/graphics) + 'OTHER'", saved == b"\x8eOTHER", saved)
 print("ALL PASS" if ok else "SOME FAILED")

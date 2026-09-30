@@ -190,7 +190,9 @@ finally:
     time.sleep(1)
 
 # The files as the disk has them
-m = read_file("magic1")
+m = read_file("magic1", "p")
+check("MAGIC1 is a PRG ($4000): magic files always are", m[:2] == b"\x00\x40", m[:4])
+m = m[2:]
 settings = m[6:19]
 check("MAGIC1: the header ($00 MTW1, 13 settings, RETURN), then $0e, then the text",
       m[:6] == HEAD and m[19:21] == CR + b"\x0e" and m[21:] == doc and settings[0] == 0x46

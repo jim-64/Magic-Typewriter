@@ -215,6 +215,8 @@ msg_bad_name
         !scr "no * ? or , in a file name", 0
 msg_colors_lost
         !scr "colors will be lost y/n", 0
+msg_printing
+        !scr "printing", 0
 msg_too_long
         !scr "too long: only part loaded", 0
 msg_break

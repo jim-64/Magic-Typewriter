@@ -92,9 +92,9 @@ io_begin
         sta VIC_IRQ_MASK
         lda #$ff
         sta VIC_IRQ_FLAGS
-        lda #<KERNAL_IRQ
+        lda #<io_irq            ; (the KERNAL's, with a spinner first)
         sta IRQ_VECTOR
-        lda #>KERNAL_IRQ
+        lda #>io_irq
         sta IRQ_VECTOR+1
         lda #1                  ; the KERNAL must not blink its cursor on
         sta BLNSW               ; our screen
@@ -117,6 +117,8 @@ io_begin
 
 ; io_end - KERNAL ROM out, our IRQs and the full display again
 io_end  sei
+        lda #0                  ; (no more spinner)
+        sta anim_col
         lda #ROMS_EDIT          ; the KERNAL ROM out: the editor at $e000
         sta CPU_PORT            ; is back
         lda #0                  ; forget keys the KERNAL collected
@@ -129,6 +131,46 @@ io_end  sei
         cli
         rts
 io_memptr       !byte 0         ; the character set during disk work
+
+; io_irq - the KERNAL's timer IRQ during disk work (60 a second), with a
+; spinner first: in the "LOADING"/"SAVING" box a quarter block goes round,
+; so you can see the work goes on (Jim, 2026-09-30). anim_col = its column
+; on the box's text row, 0 for none. (Fast loaders usually keep interrupts
+; off while they work: then it waits.) Lower part: the KERNAL ROM is in.
+io_irq  lda anim_col
+        beq +
+        dec anim_timer
+        bne +
+        lda #8                  ; (a step every 8/60 second)
+        sta anim_timer
+        ldx anim_phase
+        inx
+        txa
+        and #3
+        sta anim_phase
+        tax
+        lda anim_chars,x
+        ldx anim_col
+        sta SCREEN+BOX_TEXT_ROW*40,x
++       jmp KERNAL_IRQ          ; (then the KERNAL's own)
+
+; busy_box - A/X = a text ("loading"): a box with room for the spinner
+busy_box
+        ldy #2                  ; (a space and the spinner)
+        jsr box_open
+        ldx box_col
+        inx
+        stx anim_col
+        lda anim_chars
+        sta SCREEN+BOX_TEXT_ROW*40,x
+        lda #1
+        sta anim_timer
+        rts
+
+anim_col        !byte 0
+anim_timer      !byte 0
+anim_phase      !byte 0
+anim_chars      !byte $7e, $7c, $6c, $7b ; quarter blocks going round
 
 ;============================================================================
 ; Talking to the drive
@@ -339,7 +381,7 @@ load_file
 +       jsr name_to_input
         lda #<msg_load
         ldx #>msg_load
-        jsr prompt_input
+        jsr prompt_name
         bcc +
         rts                     ; cancelled
 +       lda load_dev
@@ -351,8 +393,7 @@ load_file
         jsr name_plus
         lda #<msg_loading
         ldx #>msg_loading
-        ldy #0
-        jsr box_open
+        jsr busy_box
         jsr io_begin
 
         ldy #0                  ; the command channel, no command
@@ -859,7 +900,7 @@ save_as jsr check_save
         jsr name_to_input
         lda #<msg_save
         ldx #>msg_save
-        jsr prompt_input
+        jsr prompt_name
         bcc save_file
         rts                     ; cancelled
 
@@ -874,7 +915,7 @@ save_key
         jsr name_to_input       ; (empty)
         lda #<msg_save
         ldx #>msg_save
-        jsr prompt_input
+        jsr prompt_name
         bcc save_file
         rts                     ; cancelled
 +       jsr name_to_input
@@ -884,7 +925,8 @@ save_key
 ; format and file type. An old file of that name is scratched first
 ; ("S0:name"), then the new one is written. (Not "@0:": some drives have a
 ; bug in save-with-replace.) What goes into the file:
-;   a PRG file:        the load address first: $4000, where the text goes
+;   a PRG file:        (File type PRG, or the magic format, always)
+;                      the load address first: $4000, where the text goes
 ;                      (load_file uses KERNAL LOAD for it, so fast loaders
 ;                      speed it up; a stray LOAD"NAME",8,1 lands there too)
 ;   magic:             the header (the settings, as in MAGIC T DEFAULTS)
@@ -918,16 +960,20 @@ save_file
         sta cur_dev
         lda #<msg_saving
         ldx #>msg_saving
-        ldy #0
-        jsr box_open
+        jsr busy_box
         jsr io_begin
 
         jsr scratch_input       ; the old file goes first ("S0:" + name)
         bcc +
         jmp .fail
-+       lda #<suffix_write      ; now the file: name + ",S,W" or ",P,W"
++       lda save_type           ; a PRG file? File type PRG - and the
+        ldx save_format         ; magic format always (Jim, 2026-09-30)
+        bne +                   ; (FORMAT_MAGIC is 0)
+        lda #1
++       sta .prg
+        lda #<suffix_write      ; now the file: name + ",S,W" or ",P,W"
         ldx #>suffix_write
-        ldy save_type
+        ldy .prg
         beq +
         lda #<suffix_prg_write
         ldx #>suffix_prg_write
@@ -944,7 +990,7 @@ save_file
         jmp .no_device
 .to_bus jmp .bus_error          ; (for branches that cannot reach)
 
-+       lda save_type           ; a PRG: the load address, where the text
++       lda .prg                ; a PRG: the load address, where the text
         beq +                   ; goes (BUF_START)
         lda #<BUF_START
         jsr .out
@@ -974,26 +1020,13 @@ save_file
 ++      jsr .out
         bcs .bus_error
 
-.text   ; Then the text before the gap, and the text after it.
-        lda #<BUF_START
-        sta ptr
-        lda #>BUF_START
-        sta ptr+1
-        lda gap_start
-        sta .end
-        lda gap_start+1
-        sta .end+1
-        jsr .write
-        bcs .stopped
-        lda gap_end
-        sta ptr
-        lda gap_end+1
-        sta ptr+1
-        lda text_end
-        sta .end
-        lda text_end+1
-        sta .end+1
-        jsr .write
+.text   lda #OUT_ASIS           ; then the text, as the Save format says
+        ldx save_format
+        cpx #FORMAT_ASCII
+        bne +
+        lda #OUT_ASCII
++       sta out_mode
+        jsr write_doc
         bcs .stopped
 
         jsr CLRCHN
@@ -1037,9 +1070,36 @@ save_file
         cmp #1
         rts
 
-; .write - send the text from ptr up to .end to the file, in the Save
-; format. Carry set if it stopped early: A = 0 for RUN/STOP, else a bus
-; error.
+; write_doc - send the whole text to the current output (a file or the
+; printer, after CHKOUT) as out_mode says: as it is, as ASCII, or for a
+; Commodore printer. Carry set if it stopped early: A = 0 for RUN/STOP,
+; else a bus error. (Also used by print_doc.)
+OUT_ASIS        = 0             ; out_mode: every byte as it is
+OUT_ASCII       = 1             ;   ASCII (.ascii)
+OUT_PRINTER     = 2             ;   for a Commodore printer (.printer)
+write_doc
+        lda #<BUF_START         ; the text before the gap ...
+        sta ptr
+        lda #>BUF_START
+        sta ptr+1
+        lda gap_start
+        sta .end
+        lda gap_start+1
+        sta .end+1
+        jsr .write
+        bcs +
+        lda gap_end             ; ... and the text after it
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
+        lda text_end
+        sta .end
+        lda text_end+1
+        sta .end+1
+        jsr .write
++       rts
+
+; .write - send the text from ptr up to .end, as out_mode says
 .write
 -       lda ptr
         cmp .end
@@ -1051,12 +1111,15 @@ save_file
         beq .break
         ldy #0
         lda (ptr),y
-        ldx save_format
-        cpx #FORMAT_ASCII
+        ldx out_mode
         bne +
-        jsr .ascii              ; (ASCII: made so first)
+        jsr CHROUT              ; (as it is)
         jmp ++
-+       jsr CHROUT
++       dex
+        bne +
+        jsr .ascii              ; (as ASCII)
+        jmp ++
++       jsr .printer            ; (for the printer)
 ++      jsr READST
         bne .error
         inc ptr
@@ -1111,7 +1174,97 @@ save_file
 .send   jmp CHROUT
 .none   rts
 
+; .printer - A = a byte of the text, for a Commodore printer: characters
+; and reverse on/off as they are, a line end as RETURN, colors and other
+; codes left out
+.printer
+        tax
+        lda ctype,x
+        cmp #CT_EOL
+        bne +
+        lda #$0d
+        jmp CHROUT
++       cmp #CT_CHAR
+        beq +
+        cmp #CT_RVSON
+        beq +
+        cmp #CT_RVSOFF
+        bne .none
++       txa
+        jmp CHROUT
+
 .end    !word 0
+.prg    !byte 0                 ; 1: a PRG file
+out_mode        !byte 0         ; how write_doc sends the text: OUT_...
+
+;============================================================================
+; Printing (the Print menu's Print)
+;
+; The whole document goes to the printer (Print device 4-7) as it is
+; stored, line by line; the printer does its own wrapping. For a Commodore
+; printer (Convert to ASCII: no) as PETSCII: RETURN line ends, reverse on/
+; off kept, colors left out, on secondary address 7 (upper/lower case)
+; when the upper/lower character set is on, else 0. Converted to ASCII
+; (yes): as saving as ASCII does it, RETURN and line feed, secondary
+; address 0. A line end at the very end, so the last line prints too.
+;============================================================================
+!zone print_doc
+print_doc
+        lda print_dev
+        sta cur_dev
+        lda #<msg_printing
+        ldx #>msg_printing
+        jsr busy_box
+        ldy #0                  ; ASCII: secondary address 0
+        lda #OUT_ASCII
+        ldx print_ascii
+        bne +
+        lda VIC_MEMPTR          ; PETSCII: 7 with the upper/lower set on
+        and #%00000010
+        beq ++
+        ldy #7
+++      lda #OUT_PRINTER
++       sta out_mode
+        sty .sa
+        jsr io_begin
+        lda #0                  ; (no name)
+        jsr SETNAM
+        lda #FILE_LFN
+        ldx cur_dev
+        ldy .sa
+        jsr SETLFS
+        jsr OPEN
+        bcs .no_device
+        ldx #FILE_LFN
+        jsr CHKOUT
+        bcs .no_device
+        jsr write_doc
+        bcs .stopped
+        lda #$0d                ; the last line ends too
+        jsr CHROUT
+        lda print_ascii
+        beq +
+        lda #$0a
+        jsr CHROUT
++       jsr .close
+        rts
+.stopped
+        bne .no_device          ; (A = 0: RUN/STOP)
+        jsr .close
+        lda #<msg_break
+        ldx #>msg_break
+        jmp message_box
+.no_device
+        jsr .close
+        lda #<msg_no_device
+        ldx #>msg_no_device
+        jmp message_box
+.close  jsr CLRCHN
+        lda #FILE_LFN
+        jsr CLOSE
+        jsr io_end
+        jmp box_close
+.sa     !byte 0
 
 ;----------------------------------------------------------------------------
 ; has_codes - carry set if the text has color or reverse codes in it
@@ -1180,6 +1333,9 @@ disk_directory
         lda #1
         sta name_len
         jsr io_begin
+        lda #MEMPTR_UPPER       ; in upper case/graphics, as file names are
+        sta VIC_MEMPTR          ; meant to look (io_end puts the document's
+                                ; set back; C= + SHIFT still switches)
         ldy #0                  ; the command channel, to hear from the drive
         jsr open_cmd
         lda name_len            ; "$" with secondary address 0, as LOAD"$"
@@ -1537,8 +1693,7 @@ save_defaults
         jsr defaults_file
         lda #<msg_saving
         ldx #>msg_saving
-        ldy #0
-        jsr box_open
+        jsr busy_box
         jsr io_begin
         jsr scratch_input       ; "S0:MAGIC T DEFAULTS"
         bcs .fail

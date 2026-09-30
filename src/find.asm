@@ -12,8 +12,9 @@
 ; matches. Capitals and small letters count as the same. A match cannot
 ; run over a line end (the search text cannot hold one).
 ;
-; Runs with the KERNAL ROM switched out (it uses the editor), from the
-; lower part of the program.
+; Runs with the KERNAL ROM switched out (it uses the editor), and lives
+; with the editor under the KERNAL ROM (moved there in phase 11 to make
+; room in the lower part: it never runs during disk work).
 ;============================================================================
 FIND_MAX        = 26            ; longest search text (the box fills the
                                 ; screen's width)

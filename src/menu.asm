@@ -369,6 +369,24 @@ prompt_input
         sec
         rts
 
+; prompt_name - prompt_input for a file name (Load, Save): in upper case/
+; graphics while the box is up, so the name looks as it will in the
+; directory (Jim, 2026-09-30). The character set is put back afterwards.
+prompt_name
+        pha
+        lda VIC_MEMPTR
+        sta .memptr
+        lda #MEMPTR_UPPER
+        sta VIC_MEMPTR
+        pla
+        jsr prompt_input
+        php
+        lda .memptr
+        sta VIC_MEMPTR
+        plp
+        rts
+.memptr !byte 0
+
 input_buf       !fill INPUT_SIZE, 0
 input_len       !byte 0
 input_max       !byte 16
@@ -1198,7 +1216,7 @@ menu_save
 
 menu_print
         !word t_print
-        !byte 1,  MI_DO   : !word n_print, not_yet
+        !byte 1,  MI_DO   : !word n_print, print_doc
         !byte 2,  MI_SET  : !word n_toascii, set_print_ascii
         !byte 3,  MI_SET  : !word n_device, set_print_dev
         !byte 24, MI_EXIT : !word n_exit, 0

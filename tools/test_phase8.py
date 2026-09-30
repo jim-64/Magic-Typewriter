@@ -173,9 +173,9 @@ try:
     key(e, "SPACE")
     check("any key: back to the menu", "MAGIC TYPEWRITER" in rows(e)[TITLE_ROW])
 
-    # Print: not ready yet
+    # Print: no printer in this test VICE
     key(e, "C"); key(e, "A")
-    check("Print: 'not ready yet'", "NOT READY YET" in rows(e)[12], rows(e)[12])
+    check("Print, no printer: 'device not present'", "DEVICE NOT PRESENT" in rows(e)[12], rows(e)[12])
     key(e, "SPACE")
 
     # Save menu: A saves under a name
@@ -288,9 +288,13 @@ def read_seq(name):
     subprocess.run([C1541, "-attach", disk, "-read", name + ",s", out], capture_output=True)
     return open(out, "rb").read() if os.path.exists(out) else b""
 
-saved = read_seq("phase8")
-check("PHASE8 on disk: the magic header, the case code, the document",
-      saved[:4] == b"\x00MTW" and saved[21:] == doc, saved[:24])
+out = os.path.join(S, "phase8.out")
+if os.path.exists(out):
+    os.remove(out)
+subprocess.run([C1541, "-attach", disk, "-read", "phase8,p", out], capture_output=True)
+saved = open(out, "rb").read() if os.path.exists(out) else b""
+check("PHASE8 on disk: a PRG ($4000), the magic header, the case code, the document",
+      saved[:2] == b"\x00\x40" and saved[2:6] == b"\x00MTW" and saved[23:] == doc, saved[:26])
 d = read_seq("magic t defaults")
 exp = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + 13]) + bytes(0x40 + x for x in
       [3, 15, 1, 0, 0, 1, 1, 8, 0, 0, 8, 0, 4]) + b"\r"

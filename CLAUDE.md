@@ -39,12 +39,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   it), merged into `main`. Changed after Jim's test: with the mark key, F3/F5 put the cursor on the
   top/bottom row. **Long documents held in the REU: after phase 11** (Jim, 2026-09-29; see REU and
   Build Order 11b).
-- **Phase 10 (file formats):** magic, ASCII and PRG files done and tested (2026-09-30), on branch
-  `phase10`; waiting for Jim's Human Test. **SpeedScript skipped for now** (Jim, 2026-09-30; maybe
-  later). PRG files load with KERNAL LOAD when they fit (Jim's idea: fast loaders speed it up).
-- **Memory is short for phase 11:** ~440 bytes left below the sprite blocks in the debug build
-  (~1.25 KB in release) and ~950 under the KERNAL. Plan: drop the debug mouse trace (256 bytes) and
-  move code that never runs during disk work (Find, perhaps Stats) under the KERNAL. See Memory Map.
+- **Phase 10 done** (2026-09-30; magic, ASCII, PRG files), merged into `main`. Jim: Epyx FastLoad
+  loads a PRG document in 8 s against 18 s for the same as SEQ. **SpeedScript skipped for now.**
+- **Phase 11 in progress** (branch `phase11`). Done so far (2026-09-30): room made (the debug mouse
+  trace is now `-DMOUSE_TRACE=1` only; `find.asm` moved under the KERNAL); **magic files always PRG**
+  (Jim); a **spinner** in the LOADING/SAVING/PRINTING box (Jim); **upper case/graphics** for the
+  disk directory and the LOAD:/SAVE: name boxes (Jim); the **Print menu**. Next: tape.
 
 ## Working with Jim
 
@@ -321,7 +321,7 @@ src/input.asm       keyboard matrix scanner, 1351 mouse, debug test mailbox
 src/editor.asm      gap buffer, cursor, selection, clipboard, redraw, wrap
 src/menu.asm        boxes, prompts, the menus (table-driven), Stats
 src/fileio.asm      KERNAL disk I/O, directory, disk command, MAGIC T DEFAULTS
-src/find.asm        CTRL-F Find
+src/find.asm        CTRL-F Find (assembled with the editor, under the KERNAL, since phase 11)
 src/reu.asm         REU detection and sizing, DMA copies, clipboard in the REU
 src/data.asm        sprite data, menu strings, tables
 test/               sample SEQ, ASCII, and SpeedScript files
@@ -1172,6 +1172,24 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
 - **Convert to ASCII = yes:** apply the same PETSCII→ASCII conversion as saving, with CR+LF line endings, for
   printers or interfaces that expect ASCII.
 - The printer does its own line wrapping; print long lines as they are stored.
+
+**As built (phase 11, `print_doc` in `src/fileio.asm`):** OPEN with no name on the Print device and
+secondary address 7 or 0 (0 for ASCII), CHKOUT (a missing printer fails here: "DEVICE NOT
+PRESENT"), then `write_doc` with `out_mode` = OUT_PRINTER (`.printer`: characters, RVS on/off,
+line end → RETURN; colors and other codes dropped) or OUT_ASCII (`.ascii`, as saving), and a last
+line end (RETURN, or RETURN + LF). `write_doc` is the save code's text writer, shared (OUT_ASIS for
+PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arrives to a file
+(`-device4 1 -iecdevice4 -pr4drv raw -pr4output text -pr4txtdev 0 -prtxtdev1 <file>`).
+
+**Also in phase 11 (Jim, 2026-09-30):**
+- **Magic files are always PRG files** (`save_file`: `.prg` = File type PRG, or format magic).
+- **A spinner while loading, saving and printing:** `busy_box` opens the box with room for it;
+  `io_begin` points the KERNAL's IRQ vector at `io_irq`, which turns a quarter block ($7E, $7C, $6C,
+  $7B: clockwise) every 8 ticks and then jumps to $EA31. Fast loaders usually keep interrupts off,
+  so it may stand still during an Epyx fast load.
+- **Upper case/graphics** while the disk directory shows (set after `io_begin`; `io_end` restores
+  the document's set) and while the LOAD:/SAVE: name boxes are up (`prompt_name` wraps
+  `prompt_input`). File names then look as they do on the disk.
 
 ## Formats
 

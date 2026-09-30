@@ -615,10 +615,10 @@ mouse_frame
         lda SID_POTY
         sta pot_y
 +
-!if DEBUG {
-        ; Trace (debug builds): the last 64 frames' paddle values (this
-        ; reading) and the movement worked out for the frame, 4 bytes a
-        ; frame, for the harness.
+!ifdef MOUSE_TRACE {
+        ; Trace (-DMOUSE_TRACE=1 builds): the last 64 frames' paddle values
+        ; (this reading) and the movement worked out for the frame, 4 bytes
+        ; a frame, for the harness.
         ldx mouse_trace_i
         lda mouse_raw_x
         sta mouse_trace,x
@@ -988,7 +988,7 @@ mouse_frame
 .col    !byte 0
 .icon   !byte 0
 .t      !byte 0
-!if DEBUG {
+!ifdef MOUSE_TRACE {
 mouse_trace_i !byte 0           ; the next slot (counts on in 4s, wraps)
 }
 
