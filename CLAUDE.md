@@ -39,10 +39,12 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   it), merged into `main`. Changed after Jim's test: with the mark key, F3/F5 put the cursor on the
   top/bottom row. **Long documents held in the REU: after phase 11** (Jim, 2026-09-29; see REU and
   Build Order 11b).
-- **Phase 10 (file formats), in progress on branch `phase10`:** magic, ASCII and PRG files done and
-  tested; SpeedScript waits for real SpeedScript files from Jim (asked 2026-09-29).
-- **Memory:** ~1.3 KB left below the sprite blocks and ~1 KB under the KERNAL for phases 10–11
-  (see Memory Map). Watch it.
+- **Phase 10 (file formats):** magic, ASCII and PRG files done and tested (2026-09-30), on branch
+  `phase10`; waiting for Jim's Human Test. **SpeedScript skipped for now** (Jim, 2026-09-30; maybe
+  later). PRG files load with KERNAL LOAD when they fit (Jim's idea: fast loaders speed it up).
+- **Memory is short for phase 11:** ~440 bytes left below the sprite blocks in the debug build
+  (~1.25 KB in release) and ~950 under the KERNAL. Plan: drop the debug mouse trace (256 bytes) and
+  move code that never runs during disk work (Find, perhaps Stats) under the KERNAL. See Memory Map.
 
 ## Working with Jim
 
@@ -359,10 +361,10 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, phase 9): lower part $0801–$34CB, tables to $3965 (debug builds add a
-  256-byte mouse trace); editor $E000–$FBEE, so **~1 KB free under the KERNAL and ~1.3 KB below the
-  sprite blocks** (release: tables to $361E, ~2.1 KB). Phase 8 took about 4 KB, phase 9's REU part
-  about 0.6 KB. Phases 10–11 (formats, printer, tape) must fit in what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
+- Space (debug build, phase 10): lower part $0801–$382A, tables to $3CC4 (debug builds add a
+  256-byte mouse trace); editor $E000–$FC3E, so **~950 bytes free under the KERNAL and ~440 below
+  the sprite blocks** (release: tables to $397D, ~1.25 KB). Phase 8 took about 4 KB, phase 9's REU
+  part about 0.6 KB, phase 10 about 0.9 KB. Phase 11 (printer, tape) must fit in what is left: keep them lean, and tell Jim early if they won't. New code goes in the lower
   part from now on; code that runs during disk work must
   go in the lower part anyway.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
@@ -1137,9 +1139,10 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
 - Read and show drive error channel (15) messages on failure.
 - Saving over an existing file: **scratch then write**, not `@0:` (the 1541 save-with-replace bug).
 - **File type SEQ:** open with `,S,W` / `,S,R`.
-- **File type PRG:** open with `,P,W`; write the 2-byte load address **$0000** first, then the text. $0000
-  is deliberately invalid, marking the file as data, not a program. When loading a PRG, skip the first 2 bytes.
-  (Anyone doing `LOAD"FILE",8,1` will overwrite zero page and crash the machine. That is expected.) (SpeedScript files are PRG by nature — see Formats.)
+- **File type PRG:** open with `,P,W`; write the 2-byte load address first, then the text. **Changed
+  (Jim, 2026-09-30): the load address is $4000, where the text goes** (was $0000), and loading uses
+  KERNAL LOAD so fast loaders (Epyx FastLoad and the like; JiffyDOS speeds both kinds) speed it up.
+  A stray `LOAD"FILE",8,1` now lands at $4000. (SpeedScript files are PRG by nature — see Formats.)
 
 ### Tape (device 1)
 
@@ -1208,16 +1211,23 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
 
 **As built (phase 10, `src/fileio.asm`):**
 - **Loading reads the file as it is** into the buffer, then `convert_loaded` makes it text in place
-  (nothing gets longer, so writing never overtakes reading): a load address $0000 at the start
-  (our PRG) is skipped (SpeedScript: its own address, always skipped); a magic header ($00 "MTW"
-  at the start) is recognized whatever the Load format says, its bytes go through `defaults_buf` and
-  `defaults_apply` (so a version other than "1" keeps its settings out), and the text starts after
+  (nothing gets longer, so writing never overtakes reading): a PRG read byte by byte starts with
+  its load address, which is skipped (`load_prg_skip`; KERNAL LOAD takes it off itself); a magic
+  header ($00 "MTW" at the start) is recognized whatever the Load format says, its bytes go through
+  `defaults_buf` and `doc_apply` (so a version other than "1" keeps its settings out), and the text starts after
   its RETURN; a case code first (magic and PETSCII) is the character set; then PETSCII/magic as is
   (the first $0E/$8E picks the set if nothing did), or ASCII converted (A–Z ↔ $C1–$DA, a–z ↔ $41–$5A,
   CR, LF or CR LF → CR, tab → space, other control codes dropped). **The Save format becomes the
   format loaded.**
-- **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it closes and opens
-  `name,P,R`. Save opens `,S,W` or `,P,W` (File type); a PRG starts with $00 $00.
+- **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it is a PRG: `prg_fits` reads
+  its size from the directory (`$:name` with secondary address 0, as LOAD"$" does: skip the load
+  address, the first line's link, number and text; then the file's line: link, **blocks**; ≤ 254
+  bytes each). If it fits between BUF_START and the clipboard, **KERNAL LOAD** (secondary address 0,
+  to BUF_START; `SETMSG` 0 first; the end from `EAL` $AE/$AF — if it got nowhere, the document is
+  untouched). KERNAL LOAD has no length limit, and past $CFFF lie the I/O chips, hence the check.
+  Otherwise it opens `name,P,R` and reads byte by byte (stops when full: "TOO LONG"). **That is also
+  the way for long REU documents later: KERNAL LOAD can only fill main memory.** Save opens `,S,W`
+  or `,P,W` (File type); a PRG starts with $00 $40.
 - **Saving** (`save_file`): PRG address, then the magic header (made by `defaults_make` before
   `io_begin`: some settings live in the editor, hidden once the KERNAL ROM is in), then the case code
   (magic, PETSCII), then the text: as is, or ASCII (`.ascii`: the reverse mapping; a line end → CR LF;
@@ -1227,9 +1237,11 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
   shows the right character set, and loading treats it as for PETSCII files.
 - **Save format for a new document:** `default_save_format` = the Save format after start-up
   (built-in **magic**, or the Save defaults file's); CLEAR ALL goes back to it.
-- **A magic document applies all 13 settings** (as specified), including Load/Save formats, File
-  type and devices: loading a PRG saved one sets the File type to PRG. Asked Jim whether a document
-  should only carry its look (colors, character set, wordwrap, mode, mark key).
+- **What a magic document brings back (Jim, 2026-09-30): wordwrap, background, text color, Load
+  format, Save format, File type** (`doc_settings` in fileio.asm; `doc_apply`). Its character set
+  comes with the case code at the start of its text. The header still holds all 13 settings, the
+  same layout as MAGIC T DEFAULTS (which applies them all); mode, mark key, devices and the Print
+  settings stay as they are when a document loads.
 ## REU (optional)
 
 - Detect by writing and reading back the address registers at $DF02–$DF05. Size by writing marker bytes
@@ -1335,7 +1347,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 9. REU detection, fast moves, clipboard. **Done 2026-09-29.** (Large documents held in the REU moved
    to 11b.)
 10. Magic Typewriter format, ASCII, then SpeedScript import/export; PRG file type. (Magic, ASCII and
-    PRG done 2026-09-29; SpeedScript waits for real files.)
+    PRG done 2026-09-30; SpeedScript skipped for now, Jim may want it later.)
 11. Print menu, then tape load/save (device 1).
 11b. Long documents held in the REU (same PRG; the REU code's RAM is document space without an REU).
 12. Test pass on every target platform.
@@ -1345,7 +1357,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 - Pasting color codes from a loaded BBS file can include cursor-move or CLR codes. They are invisible and
   harmless here, but will take effect if the file is later printed to screen. Leave as is?
 - Find: add Replace later? Case-sensitive option?
-- SpeedScript return marker and load address (check real files).
+- SpeedScript return marker and load address (check real files) — skipped for now (Jim, 2026-09-30).
 - Emulator arrow keys: VICE and some modern keyboards fake SHIFT + CRSR for Up/Left. **VICE, as tested by
   Jim (phase 5):** PC Up alone = CRSR DOWN + a *virtual right* SHIFT (`!VSHIFT RSHIFT` in every VICE 3.9
   keymap) = cursor up, as designed. But VICE only adds that virtual SHIFT when no SHIFT is held: **PC Left

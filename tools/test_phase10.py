@@ -25,6 +25,12 @@ asc = os.path.join(WORK, "ascii_in.txt")
 open(asc, "wb").write(ASCII)
 subprocess.run([C1541, "-attach", disk, "-write", asc, "asciin,s"], capture_output=True)
 
+# A PRG document too big for the buffer (40 KB): no KERNAL LOAD for it
+BIG = b"".join(b"BIG LINE %05d OF A LONG DOCUMENT\r" % i for i in range(1300))[:40000]
+big = os.path.join(WORK, "big.prg")
+open(big, "wb").write(b"\x00\x40\x0e" + BIG)
+subprocess.run([C1541, "-attach", disk, "-write", big, "big,p"], capture_output=True)
+
 def read_file(name, kind="s"):
     out = os.path.join(WORK, "p10_" + name + ".out")
     if os.path.exists(out):
@@ -100,11 +106,18 @@ try:
     clear_all(e)
     e.poke(e.lab["text_bg"], [0])
     e.poke(e.lab["wrap_on"], [1])
+    mine = {"edit_mode": 1, "mark_key": 0, "save_dev": 10, "print_dev": 5}
+    for n, x in mine.items():                       # settings of my own,
+        e.poke(e.lab[n], [x])                       # not the document's
     load(e, "magic1")
     check("magic loaded, whatever the Load format", e.text()[0] == doc, e.text()[0][:40])
     check("... its settings applied", v(e, "text_bg") == 6 and v(e, "wrap_on") == 0,
           (v(e, "text_bg"), v(e, "wrap_on")))
+    check("... but only a document's: mode, mark key, devices left as they were",
+          all(v(e, n) == x for n, x in mine.items()), {n: v(e, n) for n in mine})
     check("... and it saves back as magic", v(e, "save_format") == 0)
+    e.poke(e.lab["edit_mode"], [0]); e.poke(e.lab["mark_key"], [1])
+    e.poke(e.lab["save_dev"], [8]); e.poke(e.lab["print_dev"], [4])
 
     # The same as a PRG file
     e.poke(e.lab["save_type"], [1])
@@ -114,8 +127,20 @@ try:
     load(e, "prg1")
     check("the PRG loads back (opened as a PRG after 64, FILE TYPE MISMATCH)",
           e.text()[0] == doc, (e.text()[0][:40], rows(e)[12]))
+    check("... with KERNAL LOAD (it fits)", v(e, "load_prg_skip") == 0)
     check("... its header's settings applied, File type PRG too", v(e, "save_type") == 1)
     e.poke(e.lab["save_type"], [0])
+
+    # A PRG too big for the room: read byte by byte, as much as fits
+    clear_all(e)
+    load(e, "big")
+    wait_for(lambda: "TOO LONG" in rows(e)[12], 120)
+    t = e.text()[0]
+    check("a 40 KB PRG: not with KERNAL LOAD", v(e, "load_prg_skip") == 1)
+    check("... 'TOO LONG: ONLY PART LOADED'", "TOO LONG" in rows(e)[12], rows(e)[12])
+    check("... the part that fits, from the start", t == BIG[:len(t)] and len(t) > 36000, len(t))
+    key(e, "SPACE")
+    load_doc(e, doc)                                # (the document again)
 
     # ASCII: asks first (colors to lose), then saves without them
     e.poke(e.lab["save_format"], [2])
@@ -160,8 +185,8 @@ check("MAGIC1: the header ($00 MTW1, 13 settings, RETURN), then $0e, then the te
       m[:6] == HEAD and m[19:21] == CR + b"\x0e" and m[21:] == doc and settings[0] == 0x46
       and settings[3] == 0x40, m[:24])
 p = read_file("prg1", "p")
-check("PRG1: the load address $0000, then the header, $0e and the text",
-      p[:2] == b"\x00\x00" and p[2:8] == HEAD and p[21:23] == CR + b"\x0e" and p[23:] == doc, p[:24])
+check("PRG1: the load address $4000, then the header, $0e and the text",
+      p[:2] == b"\x00\x40" and p[2:8] == HEAD and p[21:23] == CR + b"\x0e" and p[23:] == doc, p[:24])
 a = read_file("ascii1")
 check("ASCII1: no codes, CR LF, small letters and capitals as ASCII",
       a == b"plain red" + CR + LF + b"rev mIXED" + CR + LF + b"end", a)

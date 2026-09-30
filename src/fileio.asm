@@ -25,6 +25,9 @@ CLRCHN          = $ffcc
 CHRIN           = $ffcf
 CHROUT          = $ffd2
 READST          = $ffb7
+LOAD            = $ffd5
+SETMSG          = $ff90
+EAL             = $ae           ; KERNAL: where LOAD has got to (lo/hi)
 STOP            = $ffe1
 BLNSW           = $cc           ; KERNAL: 0 = blink its cursor
 NDX             = $c6           ; KERNAL: keys waiting in its buffer
@@ -340,6 +343,8 @@ load_file
         rts                     ; cancelled
 +       lda load_dev
         sta cur_dev
+        lda #0
+        sta load_prg_skip
         lda #<suffix_read       ; a SEQ file first ...
         ldx #>suffix_read
         jsr name_plus
@@ -364,6 +369,11 @@ load_file
         bne .to_fail
         lda #FILE_LFN
         jsr CLOSE
+        jsr prg_fits            ; small enough for the room? then KERNAL
+        bcs +                   ; LOAD, which fast loaders speed up
+        jmp .kernal_load
++       lda #1                  ; (too big: read what fits, byte by byte)
+        sta load_prg_skip
         lda #<suffix_prg_read
         ldx #>suffix_prg_read
         jsr name_plus
@@ -374,6 +384,42 @@ load_file
         bcc .opened
 .to_fail
         jmp .fail
+
+        ; A PRG file that fits: loaded with the KERNAL's LOAD. With
+        ; secondary address 0 it goes where we say (BUF_START), whatever
+        ; its own load address, which LOAD takes off.
+.kernal_load
+        lda #0                  ; (no KERNAL messages)
+        jsr SETMSG
+        lda input_len
+        ldx #<input_buf
+        ldy #>input_buf
+        jsr SETNAM
+        lda #FILE_LFN
+        ldx cur_dev
+        ldy #0
+        jsr SETLFS
+        lda #0                  ; load, not verify
+        ldx #<BUF_START
+        ldy #>BUF_START
+        jsr LOAD
+        lda EAL                 ; where it stopped (the end, if all went
+        cmp #<BUF_START         ; well): if it got nowhere, the document
+        bne +                   ; is untouched
+        lda EAL+1
+        cmp #>BUF_START
+        bne +
+        jsr read_status
+        jmp .fail
++       lda EAL                 ; the text: BUF_START up to there
+        sta gap_start
+        lda EAL+1
+        sta gap_start+1
+        lda text_end
+        sta gap_end
+        lda text_end+1
+        sta gap_end+1
+        jmp .end                ; (the drive's status, and show it)
 
         ; The file is there: from here on it replaces the document. Empty
         ; the text: the gap covers the whole buffer below the clipboard.
@@ -412,7 +458,7 @@ load_file
         beq .byte               ; 0: more to come
         and #%01000000
         beq .read_error         ; not the end: something went wrong
-        jsr CLRCHN              ; the end of the file
+.end    jsr CLRCHN              ; the end of the file
         jsr read_status
         php
         jsr close_all
@@ -481,6 +527,8 @@ load_file
         jmp locate_cursor
 
 load_charset    !byte 0         ; $0e, $8e, or 0 = none found
+load_prg_skip   !byte 0         ; 1: a PRG read byte by byte (its load
+                                ; address is still in front)
 
 ;----------------------------------------------------------------------------
 ; convert_loaded - the file just read lies at BUF_START..gap_start as it
@@ -505,20 +553,11 @@ convert_loaded
         lda load_format         ; how to read it (unless it has the header)
         sta .fmt
 
-        ; A PRG file saved here starts with the load address $0000; a
-        ; SpeedScript file is always a PRG, with its own load address.
-        lda #2
-        jsr .has
-        bcc .text
-        ldy #0
-        lda (ptr),y
-        iny
-        ora (ptr),y
-        beq +
-        lda .fmt
-        cmp #FORMAT_SPEEDSCRIPT
-        bne .header
-+       jsr .skip2
+        ; A PRG file read byte by byte starts with its load address.
+        ; (KERNAL LOAD takes it off itself.)
+        lda load_prg_skip
+        beq .header
+        jsr .skip2
 
 .header ; The Magic Typewriter header: $00 "MTW", its version, the number
         ; of settings, the settings, a RETURN (as MAGIC T DEFAULTS).
@@ -531,12 +570,12 @@ convert_loaded
         bne .text
         dey
         bpl -
-        ldy #DEFAULTS_LEN-1     ; its settings are used the way Save
--       lda (ptr),y             ; defaults' are at start-up (another
-        sta defaults_buf,y      ; version's are left alone)
+        ldy #DEFAULTS_LEN-1     ; the settings a document brings with it
+-       lda (ptr),y             ; (doc_settings; another version's are
+        sta defaults_buf,y      ; left alone)
         dey
         bpl -
-        jsr defaults_apply
+        jsr doc_apply
         lda #FORMAT_MAGIC
         sta .fmt
 -       jsr .get                ; the text starts after its RETURN
@@ -664,6 +703,101 @@ convert_loaded
 .fmt    !byte 0
 .t      !word 0
 
+;----------------------------------------------------------------------------
+; prg_fits - does the file named in input_buf (a PRG) fit in the room for
+; the text (BUF_START up to the clipboard)? KERNAL LOAD doesn't stop at
+; the end of the buffer, and past $cfff are the I/O chips. Its size comes
+; from the directory ("$:" + the name, read as LOAD"$" would): its blocks,
+; at most 254 bytes each. Carry clear if it fits. (Between io_begin and
+; io_end; channel 15 stays open.)
+;----------------------------------------------------------------------------
+!zone prg_fits
+prg_fits
+        lda #$24                ; "$:" + the name
+        sta name_buf
+        lda #$3a
+        sta name_buf+1
+        ldx #0
+-       lda input_buf,x
+        sta name_buf+2,x
+        inx
+        cpx input_len
+        bcc -
+        inx
+        inx
+        txa
+        ldx #<name_buf
+        ldy #>name_buf
+        jsr SETNAM
+        lda #FILE_LFN
+        ldx cur_dev
+        ldy #0                  ; (secondary address 0: the listing)
+        jsr SETLFS
+        jsr OPEN
+        bcs .no
+        ldx #FILE_LFN
+        jsr CHKIN
+        bcs .no
+        ldx #6                  ; the load address, and the first line's
+-       jsr CHRIN               ; link and number (the disk's name) ...
+        dex
+        bne -
+-       jsr CHRIN               ; ... and its text, up to a 0
+        tax
+        jsr READST
+        bne .no
+        txa
+        bne -
+        jsr CHRIN               ; the next line is the file's: its link,
+        jsr CHRIN               ; then its blocks
+        jsr CHRIN
+        sta .blocks
+        jsr CHRIN
+        sta .blocks+1
+        jsr READST
+        bne .no
+        jsr .close
+        lda .blocks+1           ; 256 blocks or more: no
+        bne .too_big
+        lda .blocks             ; blocks * 254 = blocks * 256 - blocks * 2
+        sta .size+1
+        lda #0
+        sta .size
+        sta .t+1
+        lda .blocks
+        asl
+        sta .t
+        rol .t+1
+        sec
+        lda .size
+        sbc .t
+        sta .size
+        lda .size+1
+        sbc .t+1
+        sta .size+1
+        sec                     ; the room: BUF_START up to text_end
+        lda text_end
+        sbc #<BUF_START
+        tax
+        lda text_end+1
+        sbc #>BUF_START
+        cpx .size               ; room - size: no borrow if it fits
+        sbc .size+1
+        bcc .too_big
+        clc
+        rts
+.no     jsr .close
+.too_big
+        sec
+        rts
+.close  jsr CLRCHN
+        lda #FILE_LFN
+        jmp CLOSE
+
+.blocks !word 0
+.size   !word 0
+.t      !word 0
+
 ;============================================================================
 ; Saving
 ;============================================================================
@@ -727,8 +861,9 @@ save_key
 ; format and file type. An old file of that name is scratched first
 ; ("S0:name"), then the new one is written. (Not "@0:": some drives have a
 ; bug in save-with-replace.) What goes into the file:
-;   a PRG file:        the load address $0000 first (a document, not a
-;                      program: LOAD"NAME",8,1 is not for it)
+;   a PRG file:        the load address first: $4000, where the text goes
+;                      (load_file uses KERNAL LOAD for it, so fast loaders
+;                      speed it up; a stray LOAD"NAME",8,1 lands there too)
 ;   magic:             the header (the settings, as in MAGIC T DEFAULTS)
 ;   magic and PETSCII: the character set as a case code ($0e / $8e)
 ;   then the text:     as it is (magic, PETSCII), or made ASCII: small
@@ -786,12 +921,12 @@ save_file
         jmp .no_device
 .to_bus jmp .bus_error          ; (for branches that cannot reach)
 
-+       lda save_type           ; a PRG: the load address $0000
-        beq +
-        lda #0
++       lda save_type           ; a PRG: the load address, where the text
+        beq +                   ; goes (BUF_START)
+        lda #<BUF_START
         jsr .out
         bcs .to_bus
-        lda #0
+        lda #>BUF_START
         jsr .out
         bcs .to_bus
 +       lda save_format         ; magic: the header
@@ -1281,9 +1416,16 @@ defaults_make
 defaults_head   !byte $00, $4d, $54, $57, $31, $40 + DEFAULTS_COUNT
 
 ; defaults_apply - the settings from defaults_buf (read from a file),
-; if it starts as it should
+; if it starts as it should: all of them (MAGIC T DEFAULTS).
+; doc_apply - the same for a document's header: only the settings that
+; go with a document (doc_settings; Jim, 2026-09-30).
 !zone defaults_apply
 defaults_apply
+        lda #0
+        beq +
+doc_apply
+        lda #1
++       sta .doc
         ldx #4                  ; $00 "MTW1"
 -       lda defaults_buf,x
         cmp defaults_head,x
@@ -1300,7 +1442,11 @@ defaults_apply
         ldx #0
 .next   cpx .count
         bcs .done
-        txa
+        lda .doc                ; a document: only its own settings
+        beq +
+        lda doc_settings,x
+        beq .skip
++       txa
         asl
         tay
         lda defaults_vars,y
@@ -1323,10 +1469,20 @@ defaults_apply
         jmp ++
 +       ldy #0
         sta (zp_ptr2),y
-++      inx
+++
+.skip   inx
         bne .next
 .done   rts
 .count  !byte 0
+.doc    !byte 0
+
+; The settings a Magic Typewriter document brings with it (1), in the
+; order of defaults_vars: background, text color, wordwrap, Load format,
+; Save format, File type. (Its character set comes with the case code at
+; the start of its text, as with PETSCII files.) The header holds all 13,
+; like MAGIC T DEFAULTS; the others are left as they are.
+doc_settings
+        !byte 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0
 
 ; defaults_file - input_buf = "MAGIC T DEFAULTS" (for name_plus)
 !zone defaults_file
