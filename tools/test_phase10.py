@@ -30,6 +30,10 @@ BIG = b"".join(b"BIG LINE %05d OF A LONG DOCUMENT\r" % i for i in range(1300))[:
 big = os.path.join(WORK, "big.prg")
 open(big, "wb").write(b"\x00\x40\x0e" + BIG)
 subprocess.run([C1541, "-attach", disk, "-write", big, "big,p"], capture_output=True)
+# A PRG from elsewhere: load address $0801
+fgn = os.path.join(WORK, "foreign.prg")
+open(fgn, "wb").write(b"\x01\x08\x0eHELLO FOREIGN")
+subprocess.run([C1541, "-attach", disk, "-write", fgn, "foreign,p"], capture_output=True)
 
 def read_file(name, kind="s"):
     out = os.path.join(WORK, "p10_" + name + ".out")
@@ -127,7 +131,7 @@ try:
     load(e, "prg1")
     check("the PRG loads back (opened as a PRG after 64, FILE TYPE MISMATCH)",
           e.text()[0] == doc, (e.text()[0][:40], rows(e)[12]))
-    check("... with KERNAL LOAD (it fits)", v(e, "load_prg_skip") == 0)
+    check("... with KERNAL LOAD (its address is $4000, and it fits)", v(e, "load_fast") == 1)
     check("... its header's settings applied, File type PRG too", v(e, "save_type") == 1)
     e.poke(e.lab["save_type"], [0])
 
@@ -136,10 +140,17 @@ try:
     load(e, "big")
     wait_for(lambda: "TOO LONG" in rows(e)[12], 120)
     t = e.text()[0]
-    check("a 40 KB PRG: not with KERNAL LOAD", v(e, "load_prg_skip") == 1)
+    check("a 40 KB PRG: not with KERNAL LOAD", v(e, "load_fast") == 0)
     check("... 'TOO LONG: ONLY PART LOADED'", "TOO LONG" in rows(e)[12], rows(e)[12])
     check("... the part that fits, from the start", t == BIG[:len(t)] and len(t) > 36000, len(t))
     key(e, "SPACE")
+
+    # A PRG from elsewhere (load address $0801): read byte by byte, never
+    # LOADed to its own address
+    clear_all(e)
+    load(e, "foreign")
+    check("a PRG from elsewhere: not with KERNAL LOAD, its text all there",
+          v(e, "load_fast") == 0 and e.text()[0] == b"HELLO FOREIGN", (v(e, "load_fast"), e.text()[0]))
     load_doc(e, doc)                                # (the document again)
 
     # ASCII: asks first (colors to lose), then saves without them

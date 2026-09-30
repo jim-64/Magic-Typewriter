@@ -1211,23 +1211,31 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
 
 **As built (phase 10, `src/fileio.asm`):**
 - **Loading reads the file as it is** into the buffer, then `convert_loaded` makes it text in place
-  (nothing gets longer, so writing never overtakes reading): a PRG read byte by byte starts with
-  its load address, which is skipped (`load_prg_skip`; KERNAL LOAD takes it off itself); a magic
+  (nothing gets longer, so writing never overtakes reading): a PRG's load address is off already
+  (load_file read it, or KERNAL LOAD took it); a magic
   header ($00 "MTW" at the start) is recognized whatever the Load format says, its bytes go through
   `defaults_buf` and `doc_apply` (so a version other than "1" keeps its settings out), and the text starts after
   its RETURN; a case code first (magic and PETSCII) is the character set; then PETSCII/magic as is
   (the first $0E/$8E picks the set if nothing did), or ASCII converted (A–Z ↔ $C1–$DA, a–z ↔ $41–$5A,
   CR, LF or CR LF → CR, tab → space, other control codes dropped). **The Save format becomes the
   format loaded.**
-- **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it is a PRG: `prg_fits` reads
-  its size from the directory (`$:name` with secondary address 0, as LOAD"$" does: skip the load
-  address, the first line's link, number and text; then the file's line: link, **blocks**; ≤ 254
-  bytes each). If it fits between BUF_START and the clipboard, **KERNAL LOAD** (secondary address 0,
-  to BUF_START; `SETMSG` 0 first; the end from `EAL` $AE/$AF — if it got nowhere, the document is
-  untouched). KERNAL LOAD has no length limit, and past $CFFF lie the I/O chips, hence the check.
-  Otherwise it opens `name,P,R` and reads byte by byte (stops when full: "TOO LONG"). **That is also
-  the way for long REU documents later: KERNAL LOAD can only fill main memory.** Save opens `,S,W`
-  or `,P,W` (File type); a PRG starts with $00 $40.
+- **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it is a PRG: it opens
+  `name,P,R` and reads the load address itself. **Only a file with address $4000 (saved here) that
+  fits** is then closed and loaded again with **KERNAL LOAD, secondary address 1** — to its own
+  address, as `LOAD"NAME",8,1`, which every fast loader supports. (Secondary address 0 with our own
+  target would also work with the real KERNAL, but some simple fast loaders put every relocated
+  load at the start of BASIC, $0801: on top of Magic Typewriter. Jim asked whether the header up
+  front mattered: it doesn't, LOAD copies the bytes as they are.) Our zero page $02–$1B is kept
+  aside around LOAD (`zp_keep`) in case a fast loader borrows some. "Fits": `prg_fits` reads the
+  size from the directory (`$:name`, secondary address 0, on its own `DIR_LFN` = 3 while the file
+  stays open: skip the load address, the first line's link, number and text; then the file's line:
+  link, **blocks**, ≤ 254 bytes each) and compares with the room between BUF_START and the
+  clipboard — KERNAL LOAD has no length limit, and past $CFFF lie the I/O chips. `SETMSG` 0 first;
+  the end comes from `EAL` ($AE/$AF); if it got nowhere, the document is untouched. Everything else
+  (other PRG files, too-big ones) is read on byte by byte from the open file (stops when full:
+  "TOO LONG"). **That is also the way for long REU documents later: KERNAL LOAD can only fill main
+  memory.** `load_fast` = 1 when KERNAL LOAD was used (for the tests). Save opens `,S,W` or `,P,W`
+  (File type); a PRG starts with $00 $40.
 - **Saving** (`save_file`): PRG address, then the magic header (made by `defaults_make` before
   `io_begin`: some settings live in the editor, hidden once the KERNAL ROM is in), then the case code
   (magic, PETSCII), then the text: as is, or ASCII (`.ascii`: the reverse mapping; a line end → CR LF;

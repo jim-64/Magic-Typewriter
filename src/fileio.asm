@@ -36,6 +36,7 @@ SFDX            = $cb           ; KERNAL: the key held now (64 = none)
 FILE_LFN        = 2             ; logical file number (and secondary
                                 ; address) for the document file
 CMD_LFN         = 15            ; the drive's command/error channel
+DIR_LFN         = 3             ; a directory read while a file is open
 
 ; Settings (the Load, Save and Print menus change them)
 FORMAT_MAGIC    = 0             ; file formats (the Format settings)
@@ -344,7 +345,7 @@ load_file
 +       lda load_dev
         sta cur_dev
         lda #0
-        sta load_prg_skip
+        sta load_fast
         lda #<suffix_read       ; a SEQ file first ...
         ldx #>suffix_read
         jsr name_plus
@@ -360,8 +361,9 @@ load_file
         bcc +
         jmp .no_device
 +       jsr read_status         ; e.g. 62, FILE NOT FOUND
-        bcc .opened
-        lda status_buf          ; ... but "64, FILE TYPE MISMATCH": it is
+        bcs +
+        jmp .opened             ; (a SEQ file)
++       lda status_buf          ; ... but "64, FILE TYPE MISMATCH": it is
         cmp #$36                ; a PRG file, so open it as one
         bne .to_fail
         lda status_buf+1
@@ -369,11 +371,6 @@ load_file
         bne .to_fail
         lda #FILE_LFN
         jsr CLOSE
-        jsr prg_fits            ; small enough for the room? then KERNAL
-        bcs +                   ; LOAD, which fast loaders speed up
-        jmp .kernal_load
-+       lda #1                  ; (too big: read what fits, byte by byte)
-        sta load_prg_skip
         lda #<suffix_prg_read
         ldx #>suffix_prg_read
         jsr name_plus
@@ -381,14 +378,44 @@ load_file
         bcc +
         jmp .no_device
 +       jsr read_status
-        bcc .opened
+        bcc +
 .to_fail
         jmp .fail
++       ldx #FILE_LFN           ; its load address (read off here: the
+        jsr CHKIN               ; bytes after it are the document)
+        bcc +
+        jmp .no_device
++       jsr CHRIN
+        sta .addr
+        jsr CHRIN
+        sta .addr+1
+        jsr CLRCHN
+        lda .addr               ; $4000: one saved here. If it fits, it
+        cmp #<BUF_START         ; is loaded again with KERNAL LOAD, which
+        bne .by_bytes           ; fast loaders speed up. Other PRG files,
+        lda .addr+1             ; and ones too big: read on from here,
+        cmp #>BUF_START         ; byte by byte.
+        bne .by_bytes
+        jsr prg_fits
+        bcs .by_bytes
+        lda #FILE_LFN
+        jsr CLOSE
+        jmp .kernal_load
+.by_bytes
+        jmp .opened
 
-        ; A PRG file that fits: loaded with the KERNAL's LOAD. With
-        ; secondary address 0 it goes where we say (BUF_START), whatever
-        ; its own load address, which LOAD takes off.
+        ; A PRG file saved here that fits: loaded with the KERNAL's LOAD,
+        ; with secondary address 1 - to its own load address, $4000 - as
+        ; every fast loader can (LOAD"NAME",8,1). Our zero page is kept
+        ; aside meanwhile, in case a fast loader borrows some of it.
 .kernal_load
+        ldx #ZP_END-ZP_START-1
+-       lda ZP_START,x
+        sta zp_keep,x
+        dex
+        bpl -
+        lda #1
+        sta load_fast
         lda #0                  ; (no KERNAL messages)
         jsr SETMSG
         lda input_len
@@ -397,12 +424,15 @@ load_file
         jsr SETNAM
         lda #FILE_LFN
         ldx cur_dev
-        ldy #0
+        ldy #1                  ; (secondary address 1: its own address)
         jsr SETLFS
         lda #0                  ; load, not verify
-        ldx #<BUF_START
-        ldy #>BUF_START
         jsr LOAD
+        ldx #ZP_END-ZP_START-1
+-       lda zp_keep,x
+        sta ZP_START,x
+        dex
+        bpl -
         lda EAL                 ; where it stopped (the end, if all went
         cmp #<BUF_START         ; well): if it got nowhere, the document
         bne +                   ; is untouched
@@ -527,8 +557,10 @@ load_file
         jmp locate_cursor
 
 load_charset    !byte 0         ; $0e, $8e, or 0 = none found
-load_prg_skip   !byte 0         ; 1: a PRG read byte by byte (its load
-                                ; address is still in front)
+load_fast       !byte 0         ; 1: it came with KERNAL LOAD (the tests
+                                ; look)
+.addr           !word 0         ; a PRG file's load address
+zp_keep         !fill ZP_END-ZP_START, 0 ; our zero page during LOAD
 
 ;----------------------------------------------------------------------------
 ; convert_loaded - the file just read lies at BUF_START..gap_start as it
@@ -553,13 +585,8 @@ convert_loaded
         lda load_format         ; how to read it (unless it has the header)
         sta .fmt
 
-        ; A PRG file read byte by byte starts with its load address.
-        ; (KERNAL LOAD takes it off itself.)
-        lda load_prg_skip
-        beq .header
-        jsr .skip2
-
-.header ; The Magic Typewriter header: $00 "MTW", its version, the number
+.header ; (A PRG file's load address is off already: load_file read it,
+        ; or KERNAL LOAD took it.) The Magic Typewriter header: $00 "MTW", its version, the number
         ; of settings, the settings, a RETURN (as MAGIC T DEFAULTS).
         lda #6
         jsr .has
@@ -684,10 +711,6 @@ convert_loaded
         sbc .t+1
         rts
 
-; .skip2 - ptr on by 2 (a load address)
-.skip2  jsr .get
-        jmp .get
-
 ; .lf_after - after a RETURN: a line feed straight after it goes too
 .lf_after
         lda #1
@@ -709,7 +732,7 @@ convert_loaded
 ; the end of the buffer, and past $cfff are the I/O chips. Its size comes
 ; from the directory ("$:" + the name, read as LOAD"$" would): its blocks,
 ; at most 254 bytes each. Carry clear if it fits. (Between io_begin and
-; io_end; channel 15 stays open.)
+; io_end; the file itself (FILE_LFN) and channel 15 stay open.)
 ;----------------------------------------------------------------------------
 !zone prg_fits
 prg_fits
@@ -729,13 +752,13 @@ prg_fits
         ldx #<name_buf
         ldy #>name_buf
         jsr SETNAM
-        lda #FILE_LFN
+        lda #DIR_LFN
         ldx cur_dev
         ldy #0                  ; (secondary address 0: the listing)
         jsr SETLFS
         jsr OPEN
         bcs .no
-        ldx #FILE_LFN
+        ldx #DIR_LFN
         jsr CHKIN
         bcs .no
         ldx #6                  ; the load address, and the first line's
@@ -791,7 +814,7 @@ prg_fits
         sec
         rts
 .close  jsr CLRCHN
-        lda #FILE_LFN
+        lda #DIR_LFN
         jmp CLOSE
 
 .blocks !word 0
