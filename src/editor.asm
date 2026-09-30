@@ -104,9 +104,9 @@ editor_init
         sta scrcode,x
         inx
         bne -
-        lda #<BUF_END           ; no clipboard yet: the text may use all
-        sta text_end            ; of the buffer
-        lda #>BUF_END
+        lda buf_top             ; no clipboard yet: the text may use all
+        sta text_end            ; of the buffer (to $c000 with long
+        lda buf_top+1           ; documents in an REU)
         sta text_end+1
         ldx system_type
         lda tab_blink_frames,x
@@ -131,7 +131,10 @@ empty_buffer
         sta sel_on
         sta color_count
         sta color_count+1
-        ; (falls into empty_view)
+        lda reu_docs            ; (a long document: nothing in the REU)
+        beq +
+        jsr reudoc_reset
++       ; (falls into empty_view)
 
 ; empty_view - the top of the screen at the start of the text.
 empty_view
@@ -140,7 +143,7 @@ empty_view
         sta row_off_lo          ; top = offset 0
         sta row_off_hi
         sta row_rvs
-        lda text_color          ; the default text color, reverse off
+        jsr start_color         ; the default text color, reverse off
         sta row_color
         lda #1                  ; (a state set_top_ptr can work from)
         sta top_known
@@ -744,8 +747,8 @@ color_before
         bmi -
         rts                     ; A = the color
 .default
-        lda text_color
-        rts
+        jmp start_color         ; (the default text color, or where a long
+                                ; document's window starts)
 
 ;----------------------------------------------------------------------------
 ; Counting the color codes in the text. color_before needs no search when
@@ -790,36 +793,63 @@ color_gone
 ++      dec color_count
 +       rts
 
-; count_colors - count all the color codes in the text
+; count_colors - count all the color codes in the text: before the gap and
+; after it, a page at a time (after loading, and after a long document's
+; window has moved: it must be quick)
 !zone count_colors
 count_colors
         lda #0
         sta color_count
         sta color_count+1
-        lda #<BUF_START
+        lda #<BUF_START         ; the text before the gap ...
         sta ptr
         lda #>BUF_START
         sta ptr+1
-.loop   lda ptr                 ; at the gap? jump over it
-        cmp gap_start
-        bne +
-        lda ptr+1
-        cmp gap_start+1
-        bne +
-        lda gap_end
+        lda gap_start
+        ldx gap_start+1
+        jsr .range
+        lda gap_end             ; ... and after it
         sta ptr
         lda gap_end+1
         sta ptr+1
-+       jsr ptr_at_end
-        bcs .done
+        lda text_end
+        ldx text_end+1
+; .range - count from ptr up to A/X: whole pages, then the rest
+.range  sec
+        sbc ptr
+        sta .rest
+        txa
+        sbc ptr+1
+        sta .pages
         ldy #0
-        lda (ptr),y
-        jsr count_color
-        inc ptr
-        bne .loop
+        tax
+        beq .last
+.page   lda (ptr),y
+        tax
+        lda ctype,x
+        bmi +
+        jsr .one
++       iny
+        bne .page
         inc ptr+1
-        jmp .loop
+        dec .pages
+        bne .page
+.last   cpy .rest
+        beq .done
+        lda (ptr),y
+        tax
+        lda ctype,x
+        bmi +
+        jsr .one
++       iny
+        bne .last
 .done   rts
+.one    inc color_count
+        bne +
+        inc color_count+1
++       rts
+.rest   !byte 0
+.pages  !byte 0
 
 ; rvs_before - A = $80 if reverse is on just before address ptr (at or
 ; before the cursor), else 0. A line end turns reverse off. Keeps ptr.
@@ -1786,6 +1816,9 @@ update_marker
         sta mk_last
         lda row_off_hi+ROWS
         sta mk_last+1
++       lda reu_docs            ; (a long document: in all of it)
+        beq +
+        jsr marker_long
 +       jmp marker_set
 
 ;============================================================================
@@ -2570,7 +2603,12 @@ home_key
         jsr skip_codes
         jmp moved
 .at_start                       ; already at a line start: top of document
-        lda #0
+        lda reu_docs            ; (a long document: its start may be in the
+        beq +                   ; REU - unless text is marked)
+        lda sel_on
+        bne +
+        jsr reu_to_start
++       lda #0
         sta off
         sta off+1
         jsr move_gap_to
@@ -2611,7 +2649,6 @@ st_rvs          !byte 0
 clip_color      !byte 0         ; the state at the start of the clipboard
 clip_rvs        !byte 0
 no_cleanup      !byte 0         ; 1 = leave_cursor leaves the codes alone
-blk_count       !word 0         ; bytes for block_copy
 
 ; mark_here - start marking at the cursor: sel_anchor = the cursor, and
 ; sel_anchor_end = just after the character the cursor is on (past any
@@ -3303,6 +3340,17 @@ paste
 +       lda sel_on
         beq +
         jsr delete_selection
++       lda reu_docs            ; (a long document: the window makes room
+        beq +                   ; for it, if it can)
+        clc
+        lda .len
+        adc #4
+        tay
+        lda .len+1
+        adc #0
+        tax
+        tya
+        jsr reu_room_for
 +       jsr gap_size            ; room for it and 4 codes?
         sec
         lda work
@@ -3418,7 +3466,14 @@ paste
 ; select_all - CTRL-A: mark the whole text (the cursor goes to its end).
 !zone select_all
 select_all
-        jsr text_len
+        lda reu_docs            ; (a long document: all of it must be in
+        beq +                   ; the text buffer)
+        lda #<msg_mark_long
+        ldx #>msg_mark_long
+        jsr reu_all_in
+        bcc +
+        rts
++       jsr text_len
         lda work
         ora work+1
         bne +

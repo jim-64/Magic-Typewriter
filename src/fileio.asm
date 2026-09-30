@@ -435,6 +435,10 @@ load_file
         bne .to_fail
         lda #FILE_LFN
         jsr CLOSE
+        jsr prg_fits            ; its size, from the directory - now, while
+        lda #0                  ; no file is open (a 1581 ended an open
+        rol                     ; file after 2 blocks when the directory
+        sta .too_big            ; was read meanwhile). 1: too big.
         lda #<suffix_prg_read
         ldx #>suffix_prg_read
         jsr name_plus
@@ -460,8 +464,8 @@ load_file
         lda .addr+1             ; and ones too big: read on from here,
         cmp #>BUF_START         ; byte by byte.
         bne .by_bytes
-        jsr prg_fits
-        bcs .by_bytes
+        lda .too_big
+        bne .by_bytes
         lda #FILE_LFN
         jsr CLOSE
         jmp .kernal_load
@@ -506,7 +510,8 @@ load_file
         bne +
         jsr read_status
         jmp .fail
-+       lda EAL                 ; the text: BUF_START up to there
++       jsr .reu_reset          ; (a long document's REU part goes)
+        lda EAL                 ; the text: BUF_START up to there
         sta gap_start
         lda EAL+1
         sta gap_start+1
@@ -528,6 +533,9 @@ load_file
         sta gap_end
         lda text_end+1
         sta gap_end+1
+        lda #0
+        sta conv_started
+        jsr .reu_reset          ; (and nothing in the REU)
         ldx #FILE_LFN
         jsr CHKIN
         bcc .byte
@@ -542,7 +550,11 @@ load_file
         bne +
         lda gap_start+1
         cmp gap_end+1
+        bne +
+        lda reu_docs            ; no: a long document goes on in the REU
         beq .full
+        jsr load_spill
+        bcs .full
 +       txa
         ldy #0
         sta (gap_start),y
@@ -625,6 +637,8 @@ load_file
 +       lda #0                  ; a program file
         jsr SETMSG
         jsr .eal_start
+        lda #REU_STASH          ; (long documents: reudoc.asm kept aside, in
+        jsr reudoc_copy         ; case the file runs on over it)
         lda #0
         ldx #<BUF_START
         ldy #>BUF_START
@@ -635,7 +649,25 @@ load_file
         lda EAL+1
         cmp #>BUF_START
         beq .tape_break
-+       lda EAL                 ; the text: BUF_START up to there
++       lda #0
+        sta .cut
+        lda reu_docs            ; long documents: past $c000 (a file saved
+        beq .tape_fits          ; without an REU)? reudoc.asm back, and the
+        lda #<REUDOC            ; text cut there
+        cmp EAL
+        lda #>REUDOC
+        sbc EAL+1
+        bcs .tape_fits
+        lda #REU_FETCH
+        jsr reudoc_copy
+        lda #<REUDOC
+        sta EAL
+        lda #>REUDOC
+        sta EAL+1
+        inc .cut
+.tape_fits
+        jsr .reu_reset
+        lda EAL                 ; the text: BUF_START up to there
         sta gap_start
         lda EAL+1
         sta gap_start+1
@@ -644,20 +676,31 @@ load_file
         lda text_end+1
         sbc EAL+1
         bcs +
-        lda #<BUF_END
+        lda buf_top
         sta text_end
-        lda #>BUF_END
+        lda buf_top+1
         sta text_end+1
 +       lda text_end
         sta gap_end
         lda text_end+1
         sta gap_end+1
-        jmp .end
+        lda .cut
+        beq +
+        jmp .full               ; ("TOO LONG: ONLY PART LOADED")
++       jmp .end
 .tape_break
         lda #<msg_break
         ldx #>msg_break
         jsr copy_message
         jmp .fail
+
+; .reu_reset - a long document: nothing in the REU any more (a new
+; document is coming)
+.reu_reset
+        lda reu_docs
+        beq +
+        jmp reudoc_reset
++       rts
 
 ; .eal_start - EAL (where LOAD gets to) = BUF_START before LOAD: on tape
 ; the KERNAL sets it only once it has found the file, so after RUN/STOP
@@ -676,7 +719,10 @@ load_file
         sta sel_on
         jsr convert_loaded
         jsr gap_to_start
-        jsr empty_view
+        lda reu_docs            ; (a long document: from its start)
+        beq +
+        jsr reu_to_start
++       jsr empty_view
         jsr count_colors
         lda load_charset
         beq +
@@ -695,6 +741,8 @@ load_charset    !byte 0         ; $0e, $8e, or 0 = none found
 load_fast       !byte 0         ; 1: it came with KERNAL LOAD (the tests
                                 ; look)
 .addr           !word 0         ; a PRG file's load address
+.too_big        !byte 0         ; 1: it doesn't fit (prg_fits)
+.cut            !byte 0         ; 1: a tape program cut short at $c000
 zp_keep         !fill ZP_END-ZP_START, 0 ; our zero page during LOAD
 
 ;----------------------------------------------------------------------------
@@ -709,6 +757,37 @@ zp_keep         !fill ZP_END-ZP_START, 0 ; our zero page during LOAD
 ;----------------------------------------------------------------------------
 !zone convert_loaded
 convert_loaded
+        lda conv_started        ; (a long document's load may have done
+        bne +                   ; some of it already)
+        jsr convert_start
+        jmp ++
++       jsr convert_more
+++      lda ptr2                ; the text ends here
+        sta gap_start
+        lda ptr2+1
+        sta gap_start+1
+        lda .fmt
+        sta save_format
+        lda #0
+        sta conv_started
+        rts
+
+; convert_more - go on from where the last part stopped, up to gap_start
+; (a long document's load: the file goes to the REU a piece at a time)
+convert_more
+        lda conv_rd
+        sta ptr
+        lda conv_rd+1
+        sta ptr+1
+        lda conv_wr
+        sta ptr2
+        lda conv_wr+1
+        sta ptr2+1
+        jmp .copy
+
+; convert_start - from the start of the file (its header, its case code),
+; then as far as it goes
+convert_start
         lda #<BUF_START
         sta ptr
         sta ptr2
@@ -717,6 +796,9 @@ convert_loaded
         sta ptr2+1
         lda #0
         sta load_charset
+        sta .skip_lf
+        lda #1
+        sta conv_started
         lda load_format         ; how to read it (unless it has the header)
         sta .fmt
 
@@ -775,10 +857,26 @@ convert_loaded
         inc ptr2+1
         bne .copy               ; (always)
 
+.done   lda ptr                 ; where it got to, for convert_more
+        sta conv_rd
+        lda ptr+1
+        sta conv_rd+1
+        lda ptr2
+        sta conv_wr
+        lda ptr2+1
+        sta conv_wr+1
+        rts
+
 .ascii  ; ASCII: capitals and small letters change places; a RETURN, a
         ; line feed, or both, is a line end; a tab is a space; other
         ; control codes go.
-        cmp #$0d
+        ldx .skip_lf            ; (a line feed just after a RETURN that
+        beq +                   ; ended the last piece: it goes)
+        ldx #0
+        stx .skip_lf
+        cmp #$0a
+        beq .copy
++       cmp #$0d
         bne +
         jsr .lf_after
         lda #$0d
@@ -807,14 +905,6 @@ convert_loaded
         bcs .put
         and #$df                ; a-z: PETSCII small letters ($41-$5a)
         bne .put
-
-.done   lda ptr2                ; the text ends here
-        sta gap_start
-        lda ptr2+1
-        sta gap_start+1
-        lda .fmt
-        sta save_format
-        rts
 
 ; .get - A = the next byte of the file, ptr past it. Carry set at the end.
 .get    lda ptr
@@ -847,11 +937,15 @@ convert_loaded
         rts
 
 ; .lf_after - after a RETURN: a line feed straight after it goes too
+; (if the file goes on in the next piece: look there)
 .lf_after
         lda #1
         jsr .has
-        bcc +
-        ldy #0
+        bcs ++
+        lda #1
+        sta .skip_lf
+        rts
+++      ldy #0
         lda (ptr),y
         cmp #$0a
         bne +
@@ -860,6 +954,10 @@ convert_loaded
 
 .fmt    !byte 0
 .t      !word 0
+.skip_lf !byte 0
+conv_started    !byte 0         ; 1: convert_start has run for this load
+conv_rd         !word 0         ; where convert_more goes on reading ...
+conv_wr         !word 0         ; ... and writing
 
 ;----------------------------------------------------------------------------
 ; prg_fits - does the file named in input_buf (a PRG) fit in the room for
@@ -867,7 +965,8 @@ convert_loaded
 ; the end of the buffer, and past $cfff are the I/O chips. Its size comes
 ; from the directory ("$:" + the name, read as LOAD"$" would): its blocks,
 ; at most 254 bytes each. Carry clear if it fits. (Between io_begin and
-; io_end; the file itself (FILE_LFN) and channel 15 stay open.)
+; io_end, with channel 15 open but no file: a 1581 cut short a file that
+; was open while the directory was read.)
 ;----------------------------------------------------------------------------
 !zone prg_fits
 prg_fits
@@ -1186,7 +1285,14 @@ save_file
         ; KERNAL SAVE writes one piece of memory: so the gap goes to the
         ; start (the text all after it), and the header and the case code
         ; go just below the text. The cursor goes back afterwards.
-        jsr gap_size            ; room for those 21 bytes?
+        lda reu_docs            ; (a long document: all of it must be in
+        beq +                   ; the text buffer)
+        lda #<msg_tape_long
+        ldx #>msg_tape_long
+        jsr reu_all_in
+        bcc +
+        rts
++       jsr gap_size            ; room for those 21 bytes?
         lda work+1
         bne +
         lda work
@@ -1278,34 +1384,19 @@ OUT_ASIS        = 0             ; out_mode: every byte as it is
 OUT_ASCII       = 1             ;   ASCII (.ascii)
 OUT_PRINTER     = 2             ;   for a Commodore printer (.printer)
 write_doc
-        lda #<BUF_START         ; the text before the gap ...
-        sta ptr
-        lda #>BUF_START
-        sta ptr+1
-        lda gap_start
-        sta .end
-        lda gap_start+1
-        sta .end+1
-        jsr .write
-        bcs +
-        lda gap_end             ; ... and the text after it
-        sta ptr
-        lda gap_end+1
-        sta ptr+1
-        lda text_end
-        sta .end
-        lda text_end+1
-        sta .end+1
-        jsr .write
-+       rts
+        lda #<write_range       ; (each piece of it in turn)
+        sta range_call
+        lda #>write_range
+        sta range_call+1
+        jmp each_range
 
-; .write - send the text from ptr up to .end, as out_mode says
-.write
+; write_range - send the text from ptr up to range_end, as out_mode says
+write_range
 -       lda ptr
-        cmp .end
+        cmp range_end
         bne +
         lda ptr+1
-        cmp .end+1
+        cmp range_end+1
         beq .done
 +       jsr STOP
         beq .break
@@ -1393,7 +1484,6 @@ write_doc
 +       txa
         jmp CHROUT
 
-.end    !word 0
 .prg    !byte 0                 ; 1: a PRG file
 .cursor !word 0                 ; (tape: the cursor, to put back)
 out_mode        !byte 0         ; how write_doc sends the text: OUT_...
@@ -1468,43 +1558,89 @@ print_doc
 .sa     !byte 0
 
 ;----------------------------------------------------------------------------
+; each_range - go through the whole text in order, a piece at a time: the
+; routine at range_call gets each piece as ptr up to range_end, and answers
+; with carry set to stop there (A as it leaves it; carry set comes back).
+; The pieces: the text before the gap and after it - and around them a
+; long document's head and tail, a page at a time (reudoc.asm).
+;----------------------------------------------------------------------------
+!zone each_range
+each_range
+        lda reu_docs            ; (a long document: its head first)
+        beq +
+        jsr each_head
+        bcs .ret
++       lda #<BUF_START         ; the text before the gap ...
+        sta ptr
+        lda #>BUF_START
+        sta ptr+1
+        lda gap_start
+        sta range_end
+        lda gap_start+1
+        sta range_end+1
+        jsr range_go
+        bcs .ret
+        lda gap_end             ; ... and after it
+        sta ptr
+        lda gap_end+1
+        sta ptr+1
+        lda text_end
+        sta range_end
+        lda text_end+1
+        sta range_end+1
+        jsr range_go
+        bcs .ret
+        lda reu_docs            ; (and its tail last)
+        beq .ret
+        jmp each_tail
+.ret    rts
+range_go
+        jmp (range_call)
+
+range_end       !word 0         ; each_range: the piece ends here
+range_call      !word 0         ;   and goes to this routine
+
+; range_byte - for each_range's routines: A = the next byte of the piece
+; (ptr moves on), or carry set at its end
+range_byte
+        lda ptr
+        cmp range_end
+        bne +
+        lda ptr+1
+        cmp range_end+1
+        sec
+        beq ++
++       ldy #0
+        lda (ptr),y
+        inc ptr
+        bne +
+        inc ptr+1
++       clc
+++      rts
+
+;----------------------------------------------------------------------------
 ; has_codes - carry set if the text has color or reverse codes in it
 ; (which ASCII can't keep)
 ;----------------------------------------------------------------------------
 !zone has_codes
 has_codes
-        lda #<BUF_START
-        sta ptr
-        lda #>BUF_START
-        sta ptr+1
-.loop   lda ptr                 ; at the gap? jump over it
-        cmp gap_start
-        bne +
-        lda ptr+1
-        cmp gap_start+1
-        bne +
-        lda gap_end
-        sta ptr
-        lda gap_end+1
-        sta ptr+1
-+       jsr ptr_at_end
+        lda #<.range
+        sta range_call
+        lda #>.range
+        sta range_call+1
+        jmp each_range
+.range  jsr range_byte          ; (each piece)
         bcs .none
-        ldy #0
-        lda (ptr),y
         tax
         lda ctype,x
         bpl .yes                ; 0-15: a color code
         cmp #CT_RVSON
         beq .yes
         cmp #CT_RVSOFF
-        beq .yes
-        inc ptr
-        bne .loop
-        inc ptr+1
-        bne .loop
-.none   clc
-        rts
+        bne .range
 .yes    sec
+        rts
+.none   clc
         rts
 
 ;============================================================================
@@ -1935,51 +2071,6 @@ save_defaults
         lda #<status_buf
         ldx #>status_buf
         jmp message_box
-
-; load_defaults - start-up: the settings from MAGIC T DEFAULTS on the disk
-; the program came from. Anything wrong (no disk, no drive, no file): no
-; message at all, the built-in settings stay. Reading the drive's status
-; clears its error (and its blinking light).
-!zone load_defaults
-load_defaults
-        lda load_device
-        cmp #8
-        bcc .done
-        cmp #31
-        bcs .done
-        sta cur_dev
-        jsr defaults_file
-        lda #<suffix_read
-        ldx #>suffix_read
-        jsr name_plus
-        lda #0
-        sta .ok
-        jsr io_begin
-        ldy #0
-        jsr open_cmd
-        jsr open_file
-        bcs .close
-        jsr read_status         ; e.g. 62, FILE NOT FOUND
-        bcs .close
-        ldx #FILE_LFN
-        jsr CHKIN
-        bcs .close
-        ldx #0
--       jsr CHRIN
-        sta defaults_buf,x
-        inx
-        jsr READST
-        bne +
-        cpx #DEFAULTS_LEN
-        bcc -
-+       inc .ok
-.close  jsr close_all
-        jsr io_end
-        lda .ok
-        beq .done
-        jmp defaults_apply
-.done   rts
-.ok     !byte 0
 
 ; scratch_input - send "S0:" + input_buf on channel 15 (it is opened for
 ; that) and read the answer. Carry set on an error. "01, FILES SCRATCHED"

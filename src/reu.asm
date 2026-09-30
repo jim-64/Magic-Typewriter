@@ -45,89 +45,27 @@ reu_addr        !word 0         ;   the REU address,
 reu_bank        !byte 0         ;   the REU bank,
 reu_len         !word 0         ;   how many bytes
 clip_size       !word 0         ; the clipboard's size, when it is in the REU
+blk_count       !word 0         ; bytes for block_copy / reu_copy (here, not
+                                ; in the editor: long documents copy during
+                                ; disk work too, with the KERNAL ROM in)
+reu_docs        !byte 0         ; 1: long documents in the REU (reudoc.asm)
+win_color       !byte $ff       ; the color in effect at the text buffer's
+                                ; start ($ff: the default text color; with
+                                ; a long document, the window's start may
+                                ; be further on)
+buf_top         !word BUF_END   ; the end of the text buffer ($c000 with
+                                ; long documents: reudoc.asm lies above)
 
 ;----------------------------------------------------------------------------
-; detect_reu - is there an REU, and how big? Sets reu_banks (the editor
-; needs two banks; an REU always has at least two). Call with interrupts
-; off, at start-up.
-;
-; An REU's address registers keep what is written to them; without an
-; REU, $df02-$df05 read back whatever happens to be on the bus. Then the
-; size: write each bank's number into its first byte, from bank 255 down
-; to 0, and read them back from bank 0 up. A smaller REU wraps round (bank
-; 8 of a 512 KB one is bank 0 again), so the first bank that doesn't hold
-; its own number is one past the end.
+; start_color - A = the color in effect at the start of the text buffer:
+; the default text color, or with a long document the color where the
+; window starts (color_before and empty_view in the editor)
 ;----------------------------------------------------------------------------
-!zone detect_reu
-detect_reu
-        lda #$55                ; two patterns, to be sure
-        jsr .regs
-        bne .none
-        lda #$aa
-        jsr .regs
-        bne .none
-        lda #0
-        sta REU_CONTROL
-        sta REU_IRQ_MASK
-        ldx #255                ; each bank's number into its first byte
--       stx .byte
-        lda #REU_STASH
-        jsr .one
-        dex
-        cpx #255
-        bne -
-        ldx #0                  ; read back from bank 0 up
--       lda #REU_FETCH
-        jsr .one
-        cpx .byte
-        bne .size               ; not its own number: one past the end
-        inx
-        bne -
-        dex                     ; (all 256 banks: 16 MB, counted as 255)
-.size   stx reu_banks
-        cpx #2
-        bcs +
-.none   lda #0
-        sta reu_banks
+start_color
+        lda win_color
+        bpl +
+        lda text_color
 +       rts
-
-; .regs - A = a pattern: write it (changed a little for each) into the 4
-; address registers and read them back. Z set if they kept it.
-.regs   sta .p
-        ldx #3
--       txa
-        eor .p
-        sta REU_C64,x
-        dex
-        bpl -
-        ldx #3
--       txa
-        eor .p
-        cmp REU_C64,x
-        bne +
-        dex
-        bpl -
-        lda #0                  ; (Z set: all kept)
-+       rts
-
-; .one - copy .byte to (A = REU_STASH) or from (A = REU_FETCH) the first
-; byte of REU bank X
-.one    ldy #<.byte
-        sty REU_C64
-        ldy #>.byte
-        sty REU_C64+1
-        ldy #0
-        sty REU_ADDR
-        sty REU_ADDR+1
-        sty REU_LEN+1
-        stx REU_BANK
-        iny
-        sty REU_LEN
-        sta REU_COMMAND         ; (the CPU waits until it is done)
-        rts
-
-.byte   !byte 0
-.p      !byte 0
 
 ;----------------------------------------------------------------------------
 ; reu_move - copy reu_len bytes between the C64 (from reu_c64 on) and the
@@ -289,6 +227,33 @@ reu_copy
         rts
 
 .back   !byte 0
+
+;----------------------------------------------------------------------------
+; reudoc_copy - long documents only: reudoc.asm ($c000-$cfff) to REU bank 0
+; at $f000 (A = REU_STASH) or back (A = REU_FETCH). A tape program is
+; loaded with the KERNAL's LOAD, which doesn't stop at $c000; one saved
+; without an REU may be longer (fileio.asm, load_file).
+;----------------------------------------------------------------------------
+reudoc_copy
+        ldx reu_docs
+        beq +
+        pha
+        lda #<REUDOC
+        sta reu_c64
+        lda #>REUDOC
+        sta reu_c64+1
+        lda #$00
+        sta reu_addr
+        sta reu_len
+        lda #$f0
+        sta reu_addr+1
+        lda #REU_BANK_MOVES
+        sta reu_bank
+        lda #$10
+        sta reu_len+1
+        pla
+        jmp reu_move
++       rts
 
 ;----------------------------------------------------------------------------
 ; clip_stash - put blk_count bytes from ptr into the clipboard (REU bank 1)

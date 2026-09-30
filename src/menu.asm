@@ -1033,29 +1033,18 @@ count_text
         bpl -
         sta .in_word
         sta .ended
-        lda #<BUF_START
-        sta ptr
-        lda #>BUF_START
-        sta ptr+1
-.loop   lda ptr                 ; at the gap? jump over it
-        cmp gap_start
-        bne +
-        lda ptr+1
-        cmp gap_start+1
-        bne +
-        lda gap_end
-        sta ptr
-        lda gap_end+1
-        sta ptr+1
-+       jsr ptr_at_end
-        bcs .done
-        ldy #0
-        lda (ptr),y
-        sta .b
-        inc ptr
-        bne +
-        inc ptr+1
-+       tax
+        lda #<.loop             ; the whole text, a piece at a time
+        sta range_call
+        lda #>.loop
+        sta range_call+1
+        jsr each_range
+        jmp .done
+.loop   jsr range_byte          ; (each piece)
+        bcc +
+        clc
+        rts
++       sta .b
+        tax
         lda ctype,x
         cmp #CT_CHAR
         beq .char
@@ -1110,7 +1099,10 @@ count_text
         sta st_counts+ST_FREE
         lda work+1
         sta st_counts+ST_FREE+1
-        rts
+        lda reu_docs            ; (a long document: and in the REU)
+        beq +
+        jmp long_free
++       rts
 .b      !byte 0
 .in_word !byte 0
 .ended  !byte 0
@@ -1126,7 +1118,10 @@ st_counts       !fill 12, 0
 ; helpers in system.asm.
 !zone free_percent
 free_percent
-        lda st_counts+ST_FREE   ; free * 100 (24 bits) ...
+        lda reu_docs            ; (a long document: of the REU's room too)
+        beq +
+        jmp long_percent
++       lda st_counts+ST_FREE   ; free * 100 (24 bits) ...
         sta math_num
         lda st_counts+ST_FREE+1
         sta math_num+1

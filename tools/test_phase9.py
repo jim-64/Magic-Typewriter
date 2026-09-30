@@ -54,14 +54,18 @@ def v(e, name, n=1):
 # Found, and the right size (banks of 64 KB; 16 MB counts as 255)
 def detect(e):
     banks = v(e, "reu_banks")
+    docs = v(e, "reu_docs"), v(e, "buf_top", 2)
     e.keys([(KEY["F1"], 0), (KEY["I"], 0)], settle=1.0)  # Stats shows it
     row = e.screen_rows()[12].upper()
     e.keys([(KEY["SPACE"], 0), (KEY["X"], 0)])
-    return banks, row
+    return banks, row, docs
 
 for kb, banks in ((0, 0), (128, 2), (512, 8), (16384, 255)):
-    got, row = session(kb, detect)
+    got, row, docs = session(kb, detect)
     check("REU of %d KB: reu_banks = %d" % (kb, banks), got == banks, got)
+    want = (1, 0xc000) if banks >= 3 else (0, 0xd000)
+    check("... long documents %s (the text buffer to $%04x)" % ("on" if want[0] else "off", want[1]),
+          docs == want, docs)
     if banks:
         check("... Stats: REU %d KB" % (banks * 64), "REU" in row and "%d KB" % (banks * 64) in row, row)
     else:
@@ -108,7 +112,8 @@ def work(e):
     return r
 
 a = session(0, work)
-b = session(512, work)
+b = session(128, work)                  # (128 KB: no long documents, so the
+                                        # buffer is the same as without)
 print("   without an REU: to the top %d frames, CTRL-A %d" % (a["home frames"], a["end frames"]))
 print("   with an REU:    to the top %d frames, CTRL-A %d" % (b["home frames"], b["end frames"]))
 check("the same text with and without an REU (%d bytes)" % len(a["text"]),

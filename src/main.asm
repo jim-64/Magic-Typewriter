@@ -16,11 +16,15 @@
 ;
 ; MEMORY MAP
 ;   $0400-$07ff  screen
-;   $0801-       the program's lower part: start-up, IRQs, keyboard, boxes,
-;                disk; then a stored copy of the editor (see below)
+;   $0801-       the program's lower part: IRQs, keyboard, boxes, menus,
+;                disk; then a stored copy of the editor (see below), of
+;                reudoc.asm, and the start-up code (startup.asm)
 ;   after that   run-time tables, over the stored copy once it is copied
 ;   $3e80-$3fff  sprite blocks ($3fff must be 0: the open borders show it)
-;   $4000-$cfff  the text buffer (36 KB, with the clipboard at its top)
+;   $4000-$cfff  the text buffer (36 KB, with the clipboard at its top); the
+;                start-up code runs from here once, before the document
+;                takes the room. With an REU of 192 KB or more: $4000-$bfff,
+;                and reudoc.asm at $c000 (long documents)
 ;   $d000-$dfff  I/O
 ;   $e000-$fff9  the editor, in the RAM under the KERNAL ROM
 ;   $fffa-$ffff  NMI and IRQ vectors for while the KERNAL ROM is out
@@ -145,51 +149,8 @@ start                           ; must be at $080d = 2061
 !if start != 2061 {
         !error "start must be at 2061 to match the SYS line"
 }
-        ; Step 1: read $BA before anything else touches it. It holds the
-        ; device the program was loaded from (used for MAGIC T DEFAULTS).
-        lda LAST_DEVICE
-        sta load_device
-        ldx #ZP_END-ZP_START-1  ; a copy of BASIC's zero page, for quit
--       lda ZP_START,x
-        sta basic_zp,x
-        dex
-        bpl -
-
-        sei                   ; no interrupts while we set things up
-        cld
-
-        jsr copy_high           ; the editor to its place under the KERNAL
-        jsr detect_system       ; PAL / NTSC / old NTSC / Drean
-        jsr detect_reu          ; an REU? (reu.asm)
-!if DEBUG {
-        jsr mailbox_init
-}
-
-        ; Switch out the BASIC and KERNAL ROMs: $a000-$bfff becomes RAM for
-        ; the text buffer, and the editor at $e000 comes into view. With
-        ; the KERNAL ROM out, the CPU takes its NMI and IRQ vectors from the
-        ; RAM at $fffa-$ffff, so ours go there first.
-        lda #<nmi_handler       ; RESTORE (input.asm)
-        sta RAM_NMI_VECTOR
-        lda #>nmi_handler
-        sta RAM_NMI_VECTOR+1
-        lda #<irq_entry         ; a copy of the KERNAL's IRQ entry (irq.asm)
-        sta RAM_IRQ_VECTOR
-        lda #>irq_entry
-        sta RAM_IRQ_VECTOR+1
-        lda #ROMS_EDIT
-        sta CPU_PORT
-
-        jsr init_screen
-        jsr init_sprites
-        jsr init_marker
-        jsr init_keyboard
-        jsr init_mouse
-        jsr init_irq
-        cli
-        jsr load_defaults       ; the settings saved with Save defaults
-        lda save_format         ; (a new document's Save format, for
-        sta default_save_format ; CLEAR ALL to go back to)
+        jmp startup             ; (start-up code: startup.asm)
+start_done                      ; (it comes back here)
         jsr editor_init         ; an empty document, ready to type
 
 ;============================================================================
@@ -210,13 +171,21 @@ main_loop
         jsr mailbox_log_key     ; tell the test harness
         ldx frame_count         ; and how many frames the key takes
         stx key_start_frame
+        ldx #1                  ; (busy with it)
+        stx MB_BUSY
 }
         jsr editor_key
+        lda reu_docs            ; a long document: the window follows the
+        beq +                   ; cursor (reudoc.asm)
+        jsr reu_keep
++
 !if DEBUG {
         lda frame_count
         sec
         sbc key_start_frame
         sta MB_KEY_TIME
+        lda #0
+        sta MB_BUSY
 }
         jmp main_loop
 
@@ -278,53 +247,6 @@ quit
         jmp (BASIC_WARM)        ; READY.
 
 ;----------------------------------------------------------------------------
-; init_screen - VIC settings and colors. (The editor draws the text.)
-;----------------------------------------------------------------------------
-!zone init_screen
-init_screen
-        lda #CTRL1_25ROWS
-        sta VIC_CTRL1
-        lda #CSEL_40            ; 40 columns, no X scroll, no multicolor
-        sta VIC_CTRL2
-        lda #MEMPTR_LOWER       ; default: upper/lower case set
-        sta VIC_MEMPTR
-        lda #BLUE               ; top strip color until the first split
-        sta VIC_BORDER
-        lda #STRIP_BG
-        sta VIC_BG0
-        rts
-
-;----------------------------------------------------------------------------
-; copy_high - copy the editor from where the PRG file put it (right after
-; the lower part of the program) to $e000, the RAM under the KERNAL ROM.
-; A write always reaches the RAM, even while the ROM is switched in (only
-; reads see the ROM), so this works before the ROMs are switched out.
-; It copies whole pages; the few bytes past the end do no harm (the
-; vectors at $fffa are set afterwards).
-;----------------------------------------------------------------------------
-!zone copy_high
-copy_high
-        lda #<high_load         ; from
-        sta zp_ptr
-        lda #>high_load
-        sta zp_ptr+1
-        lda #<HIGH_CODE         ; to
-        sta zp_ptr2
-        lda #>HIGH_CODE
-        sta zp_ptr2+1
-        ldx #>(HIGH_SIZE + 255) ; number of pages
-        ldy #0
--       lda (zp_ptr),y
-        sta (zp_ptr2),y
-        iny
-        bne -
-        inc zp_ptr+1            ; next page
-        inc zp_ptr2+1
-        dex
-        bne -
-        rts
-
-;----------------------------------------------------------------------------
 ; Variables
 ;----------------------------------------------------------------------------
 load_device     !byte 0         ; $BA at start-up
@@ -356,8 +278,32 @@ high_load                               ; where the PRG file has it
 !source "src/find.asm"
 high_end                                ; (an address under the KERNAL ROM)
 }
+
+;----------------------------------------------------------------------------
+; ... and the code for long documents held in an REU, assembled to run at
+; $c000; reudoc_install puts it there only when there is such an REU.
+;----------------------------------------------------------------------------
+REUDOC          = $c000
+reudoc_load                             ; where the PRG file has it
+!pseudopc REUDOC {
+!source "src/reudoc.asm"
+reudoc_end
+}
+REUDOC_SIZE     = reudoc_end - REUDOC
+!if reudoc_end > RD_PAGE {
+        !error "reudoc.asm reaches into RD_PAGE"
+}
+
+;----------------------------------------------------------------------------
+; ... and last the start-up code, which runs once from where the PRG file
+; puts it (in the text buffer: the document takes the room afterwards)
+;----------------------------------------------------------------------------
+!source "src/startup.asm"
+!if startup < $4000 {
+        !error "The start-up code must lie in the text buffer, past the sprite blocks"
+}
 program_end                             ; the end of the PRG file
-HIGH_SIZE       = program_end - high_load
+HIGH_SIZE       = high_end - HIGH_CODE  ; (the editor alone: reudoc follows it)
 
 !if high_end > RAM_NMI_VECTOR {
         !error "The code under the KERNAL ROM has grown into the vectors at $fffa"

@@ -9,65 +9,6 @@ SYS_NTSC        = 1             ; 263 lines x 65 cycles
 SYS_OLD_NTSC    = 2             ; 262 lines x 64 cycles
 SYS_DREAN       = 3             ; PAL-N: 312 lines x 65 cycles
 
-;----------------------------------------------------------------------------
-; detect_system - find out which video system this machine has.
-;
-; First find the highest raster line: wait for $D012 to change, and stop
-; when the new value is lower than the old one (the frame wrapped to line 0).
-; The low byte of the last line tells us:
-;   $37 = line 311 (PAL or Drean), $06 = line 262 (NTSC), $05 = 261 (old NTSC)
-;
-; PAL and Drean both have 312 lines, but Drean lines are 65 cycles long
-; instead of 63, so we time one whole frame with CIA1 timer B:
-;   PAL 312*63 = 19656 cycles, Drean 312*65 = 20280 cycles.
-;
-; Call with interrupts off. Sets system_type.
-;----------------------------------------------------------------------------
-!zone detect_system
-detect_system
--       lda VIC_RASTER
---      cmp VIC_RASTER          ; wait for the line to change
-        beq --
-        bmi -                   ; new line is higher: keep going
-                                ; (the 255->256 step also lands here, since
-                                ; $ff - $00 is negative as a signed byte)
-        ldx #SYS_NTSC
-        cmp #$06
-        beq .found
-        ldx #SYS_OLD_NTSC
-        cmp #$05
-        beq .found
-
-        ; 312 lines: PAL or Drean? Time one frame.
-        jsr wait_line0
-        lda #$ff                ; timer B counts down from $ffff
-        sta CIA1_TBLO
-        sta CIA1_TBHI
-        lda #%00010001          ; force load, start, count CPU cycles
-        sta CIA1_CRB
-        jsr wait_line0
-        lda #%00000000          ; stop the timer so we can read it safely
-        sta CIA1_CRB
-        lda CIA1_TBHI           ; cycles used = $ffff - timer, so the
-        eor #$ff                ; high byte of the count is (timer hi EOR $ff)
-        ldx #SYS_PAL            ; PAL gives $4c, Drean gives $4f
-        cmp #$4e
-        bcc .found
-        ldx #SYS_DREAN
-.found  stx system_type
-        rts
-
-; wait_line0 - wait for the start of raster line 0.
-; (Line 256 also reads 0 in $D012, so check bit 7 of $D011 as well.)
-wait_line0
--       lda VIC_RASTER          ; first get off line 0 / 256
-        beq -
---      lda VIC_RASTER          ; then wait for it to come round again
-        bne --
-        lda VIC_CTRL1
-        bmi -                   ; that was line 256, not line 0
-        rts
-
 system_type     !byte 0
 
 ;----------------------------------------------------------------------------

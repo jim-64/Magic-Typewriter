@@ -121,29 +121,6 @@ bit_mask        !byte $01, $02, $04, $08, $10, $20, $40, $80
 ; per row: the bits that are NOT modifier keys (modifiers make no events)
 not_modifier    !byte $ff, $7f, $ff, $ff, $ff, $ff, $ef, $db
 
-;----------------------------------------------------------------------------
-; init_keyboard - timing values for this system, RESTORE trap.
-; Call with IRQs off.
-;----------------------------------------------------------------------------
-!zone init_keyboard
-init_keyboard
-        ldx system_type
-        lda tab_repeat_step,x
-        sta key_step
-
-        ; RESTORE makes an NMI. The KERNAL's NMI handler would warm-start
-        ; BASIC on RUN/STOP + RESTORE and lose the document, so send it to
-        ; our own handler instead.
-        lda NMI_VECTOR
-        sta old_nmi
-        lda NMI_VECTOR+1
-        sta old_nmi+1
-        lda #<nmi_handler
-        sta NMI_VECTOR
-        lda #>nmi_handler
-        sta NMI_VECTOR+1
-        rts
-
 ; restore_keyboard - put the NMI vector back (for Quit). IRQs off.
 restore_keyboard
         lda old_nmi
@@ -518,19 +495,6 @@ ptr_next_y      !byte MOUSE_Y0 - 1
 ptr_next_block  !byte SPR_BLOCK_PTR
 ptr_next_on     !byte 0         ; 1 = the pointer shows
 icon_colors     !fill 5, LIGHT_BLUE ; sprites 1-5
-
-;----------------------------------------------------------------------------
-; init_mouse - timing values for this system
-;----------------------------------------------------------------------------
-init_mouse
-        ldx system_type
-        lda tab_mouse_idle_lo,x
-        sta mouse_idle_max
-        lda tab_mouse_idle_hi,x
-        sta mouse_idle_max+1
-        lda tab_mouse_accel,x
-        sta mouse_accel
-        rts
 
 ;----------------------------------------------------------------------------
 ; mouse_sample - read the paddle values and add how far the mouse moved
@@ -1113,31 +1077,12 @@ MB_HK_END       = MB_BASE+61
 MB_BOT_END      = MB_BASE+62
 MB_DOC_READY    = MB_BASE+63
 MB_KEY_TIME     = MB_BASE-1      ; (just below the mailbox)
+MB_BUSY         = MB_BASE-2      ; 1 while the main loop works on a key (the
+                                 ; harness waits before it uses the REU)
+MB_DMA          = MB_BASE-12     ; an REU copy for the harness (8 bytes,
+                                 ; below): as reu_move's reu_c64, reu_addr,
+                                 ; reu_bank, reu_len, then its command last
 MB_SIZE         = 64
-
-;----------------------------------------------------------------------------
-; mailbox_init - clear the mailbox and fill in the program's fields.
-;----------------------------------------------------------------------------
-!zone mailbox_init
-mailbox_init
-        lda #0
-        ldx #MB_SIZE-1
--       sta MB_BASE,x
-        dex
-        bpl -
-        lda system_type
-        sta MB_SYSTEM
-        lda load_device
-        sta MB_LOADDEV
-        ldx #3                  ; signature last: now the harness may start
--       lda .signature,x
-        sta MB_SIG,x
-        dex
-        bpl -
-        rts
-
-.signature
-        !byte $4d, $54, $44, $42        ; "MTDB" in ASCII
 
 ;----------------------------------------------------------------------------
 ; mailbox_poll - called from the main loop. Handles the marker test.
@@ -1166,6 +1111,17 @@ mailbox_poll
         lda MB_DOC_READY        ; a test document in the buffer?
         beq +
         jsr test_document
++       lda MB_DMA+7            ; an REU copy for the harness? (One big DMA
+        beq +                   ; from the monitor would hold the exact-
+        ldx #6                  ; timed IRQs up; reu_move copies in pieces.)
+-       lda MB_DMA,x
+        sta reu_c64,x           ; (reu_c64, reu_addr, reu_bank, reu_len
+        dex                     ; follow each other)
+        bpl -
+        lda MB_DMA+7
+        jsr reu_move
+        lda #0
+        sta MB_DMA+7
 +       lda MB_MK_GO            ; the harness moves the marker: first line
         beq +                   ; and total lines, 25 lines on the screen
         lda MB_MK_FIRST

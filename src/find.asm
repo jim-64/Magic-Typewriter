@@ -67,7 +67,10 @@ find_key
         sta off
         lda .from+1
         sta off+1
-        jsr set_ptr
+        lda reu_docs            ; (a long document: where that is in all
+        beq +                   ; of it)
+        jsr rd_find_start
++       jsr set_ptr
         lda #0
         sta .wrapped
 
@@ -75,19 +78,18 @@ find_key
         ; visible byte: a match starts there.
         ldx #ptr
         jsr find_skip
-        bcs .at_end
-        lda ptr                 ; after wrapping round: stop on reaching
+        bcc +
+        jmp .at_end
++       lda ptr                 ; after wrapping round: stop on reaching
         sta .start              ; where the search began
         lda ptr+1
         sta .start+1
         lda .wrapped
         beq +
         jsr ptr_to_off
-        lda off
-        cmp .from
-        lda off+1
-        sbc .from+1
-        bcs .none
+        jsr .past
+        bcc +
+        jmp .none
 +       lda ptr                 ; ptr2 walks along the text, comparing
         sta ptr2
         lda ptr+1
@@ -96,7 +98,7 @@ find_key
         sty .i
 -       ldx #ptr2
         jsr find_next           ; the next visible byte of the text
-        bcs .no_match           ; (the end of the text)
+        bcs .cmp_end            ; (the end of the text)
         jsr find_fold
         sta .t
         ldy .i
@@ -118,17 +120,70 @@ find_key
         ldx #ptr
         jsr find_next
         jmp .try
-.at_end lda .wrapped            ; the end of the text: once round from the
+.cmp_end                        ; the text ends before the match could:
+        lda .start              ; with a long document, more may come
+        sta ptr
+        lda .start+1
+        sta ptr+1
+        jsr .more
+        bcc .try_off
+        lda ptr                 ; (it may have moved all the same)
+        sta .start
+        lda ptr+1
+        sta .start+1
+        jmp .no_match
+.at_end jsr .more               ; (a long document: more may come)
+        bcc .try_off
+        lda .wrapped            ; the end of the text: once round from the
         bne .none               ; top
         inc .wrapped
-        lda #<BUF_START
+        lda reu_docs            ; (a long document: its start)
+        beq +
+        jsr reu_to_start
+        inc rd_slid
++       lda #<BUF_START
         sta ptr
         lda #>BUF_START
         sta ptr+1
         jmp .try
-.none   lda #<msg_not_found
+.try_off
+        jsr set_ptr
+        jmp .try
+.none   jsr .slid               ; (a long document's window moved: the
+        beq +                   ; cursor back)
+        jsr rd_find_back
++       lda #<msg_not_found
         ldx #>msg_not_found
         jmp message_box
+
+; .more - a long document, the window's end reached with ptr: the window
+; moves on (ptr to the same place). Carry set if nothing more came.
+.more   lda reu_docs
+        bne +
+        sec
+        rts
++       jsr ptr_to_off
+        jsr rd_slide
+        php
+        jsr set_ptr
+        plp
+        rts
+
+; .past - carry set if off is at or past where the search began
+.past   lda reu_docs
+        beq +
+        jmp rd_past_from
++       lda off
+        cmp .from
+        lda off+1
+        sbc .from+1
+        rts
+
+; .slid - Z clear if a long document's window moved during the search
+.slid   lda reu_docs
+        beq +
+        lda rd_slid
++       rts
 
 .found  ; Mark it: from .start to ptr2 (just after its last byte), the
         ; cursor at its end.
@@ -151,6 +206,8 @@ find_key
         jsr move_gap_to
         lda #1
         sta sel_on
+        jsr .slid               ; (the window moved: all of it again)
+        bne +
         jsr locate_cursor       ; on the screen: just draw it marked
         bcs +
         jsr redraw_all

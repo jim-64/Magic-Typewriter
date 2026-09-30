@@ -47,7 +47,10 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   **upper case/graphics** for the disk directory and the LOAD:/SAVE: name boxes (Jim); the **Print
   menu**; **tape** (magic as program files, PETSCII/ASCII as data files — Jim agreed); a File type
   fixed by the format and device shows in [ ] (Jim). Real tape and printer still to try (Jim).
-- Next: 11b, long documents held in the REU (Jim, 2026-09-29).
+- **Phase 11b built** (2026-09-30; long documents held in an REU of 192 KB or more), on branch
+  `phase11b`; the automated tests pass; **waiting for Jim's Human Test**. Also in 11b: the start-up
+  code moved to `src/startup.asm`, which runs once from the text buffer (freed ~900 bytes in the
+  lower part), and a 1581 fix for PRG loading (see Formats).
 
 ## Working with Jim
 
@@ -246,8 +249,10 @@ phase 4 tests load through F1 A A now, test_phase6 turns wrap off with F1 D X.
 `python tools/test_phase9.py [c64|ntsc|oldntsc|drean]` (the REU: found and sized at 0/128/512/16384 KB
 and shown in Stats; the same editing session — big jumps, copy, paste twice, cut — gives exactly the
 same text with and without an REU; the clipboard is in the REU; the jump to the top of 20 KB is
-quicker; and `late_irqs` stays 0). **Run the whole suite with `MT_REU=512` too** (every older test
-then goes through the REU copies and clipboard).
+quicker; and `late_irqs` stays 0; with 512 KB and 16 MB long documents are on, with 0 and 128 KB
+off). **Run the whole suite with `MT_REU=128` too** (every older test then goes through the REU
+copies and clipboard). Not 512: from 192 KB on, long documents are on, and the older tests read
+and write the text buffer directly, which is then only a window onto the document.
 `python tools/test_phase10.py [c64|ntsc]` (formats: magic saved and loaded back with its settings, as
 SEQ and as PRG; ASCII saved (after the colors warning) and loaded with mixed line ends; PETSCII;
 the Save format following the loaded one and CLEAR ALL going back; the saved bytes checked with
@@ -256,6 +261,16 @@ c1541; KERNAL LOAD for our PRGs, the byte reader for too-big and foreign ones).
 upper case/graphics in the directory and the name box, and back; tape boxes and RUN/STOP at PRESS
 PLAY / PRESS RECORD, document and cursor untouched; printing through VICE's raw printer 4, both
 ways, and "DEVICE NOT PRESENT").
+`python tools/test_phase11b.py [c64|ntsc]` (long documents, against a Python model: a 124 KB file
+from a 1581 image with a 512 KB REU loads whole; 60 pages down; typing; marking 10 and 25 pages
+across window moves, copying, and a paste bigger than the gap; HOME; Find far on, not found (cursor
+back) and round to the start; CTRL-A refused; Stats over all of it; saved as PETSCII and as magic
+and loaded back; a 45 KB ASCII file with a RETURN/LF pair split between two fills; then a 256 KB
+REU and a 200 KB file: "TOO LONG", the start of it, editing works; `late_irqs` 0). `mtest` has
+`doc()` (the whole document: head, window, tail, read from the REU through the gap), `reu_read()`
+and `key_done()` (waits until a key's work, window moves included, is finished: the main loop
+writes the key's frames just below the mailbox afterwards; `keys()` only waits until keys are
+taken).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -330,7 +345,9 @@ src/menu.asm        boxes, prompts, the menus (table-driven), Stats
 src/fileio.asm      KERNAL disk I/O, directory, disk command, MAGIC T DEFAULTS
 src/find.asm        CTRL-F Find (assembled with the editor, under the KERNAL, since phase 11)
 src/reu.asm         REU detection and sizing, DMA copies, clipboard in the REU
-src/data.asm        sprite data, menu strings, tables
+src/reudoc.asm      long documents in the REU (runs at $C000, only with an REU of 192 KB or more)
+src/startup.asm     everything that runs once at start-up (runs from the text buffer, see Memory Map)
+src/data.asm        menu strings, tables
 test/               sample SEQ, ASCII, and SpeedScript files
 build.bat           assemble + make d64 (Windows)
 build.sh            same steps (Linux)
@@ -346,10 +363,11 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 | $02–$1B | zero page (list in `src/main.asm`); BASIC's too: start-up copies it, Quit puts it back |
 | $02C0–$02FE | debug test mailbox (debug builds only) |
 | $0400–$07FF | screen |
-| $0801– | the lower part of the program: start-up, IRQs, keyboard, boxes, disk, data; then the stored copy of the editor |
+| $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, data; then the stored copies of the editor and of reudoc.asm, then startup.asm |
 | after the lower part | run-time tables (ctype, per-row arrays, prompt save area), **over the stored copy** once it is copied |
 | $3E80–$3FFF | sprite blocks 250–255 (**$3FFF must be $00**: the idle-graphics byte drawn in the opened borders) |
-| $4000–$CFFF | text buffer (36 KB), clipboard at its top |
+| $4000–$CFFF | text buffer (36 KB), clipboard at its top (none with an REU: it is in the REU). `startup.asm` runs from here once (the PRG file carries it there), before the document takes the room |
+| ($C000–$CEFF) | **with an REU of 192 KB or more:** `reudoc.asm` (long documents), copied there at start-up; the text buffer is then $4000–$BFFF (a 32 KB window). `RD_PAGE` $CF00: a page for reading the REU's text |
 | $D000–$DFFF | I/O (the RAM under it is unused) |
 | $E000–$FFF9 | **the editor** (`src/editor.asm`, assembled with `!pseudopc $e000`; `copy_high` puts it there at start-up) |
 | $FFFA–$FFFF | NMI → `nmi_handler`, IRQ → `irq_entry`, used while the KERNAL ROM is out |
@@ -368,13 +386,19 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, phase 11): lower part $0801–$397E, tables to $3D18 (a `-DMOUSE_TRACE=1` build
-  adds a 256-byte mouse trace); editor + find $E000–$FE01, so **~500 bytes free under the KERNAL and
-  ~360 below the sprite blocks** (release: tables to $3AF4, ~900). Phase 8 took about 4 KB, phase
-  9's REU part about 0.6 KB, phase 10 about 0.9 KB, phase 11 about 1.3 KB. 11b's REU code goes in
-  the REU-only area (see REU). Keep new code lean: keep them lean, and tell Jim early if they won't. New code goes in the lower
-  part from now on; code that runs during disk work must
-  go in the lower part anyway.
+- Space (debug build, phase 11b): lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
+  build adds a 256-byte mouse trace); editor + find $E000–$FEE4; reudoc.asm $C000–$CBAC. So **~875
+  bytes free below the sprite blocks, ~280 under the KERNAL, ~850 in the REU-only area** (release:
+  tables to $390B, ~1.4 KB). Phase 8 took about 4 KB, phase 9's REU part about 0.6 KB, phase 10
+  about 0.9 KB, phase 11 about 1.3 KB, 11b ~2.9 KB in reudoc.asm and ~0.3 KB elsewhere (after
+  startup.asm gave back ~0.9 KB). Keep new code lean, and tell Jim early if it won't fit. New code
+  goes in the lower part; code that runs during disk work must go there anyway.
+- **Start-up code runs from the text buffer** (`src/startup.asm`, since 11b): `start` ($080D) jumps
+  to `startup` at the end of the PRG file ($6xxx); it does everything that runs once (copy_high,
+  detect_system, detect_reu, reudoc_install, init_screen/sprites/marker/keyboard/mouse, the debug
+  mailbox, load_defaults) and jumps back to `start_done` (editor_init, main loop). The sprite
+  images live there too (init_sprites copies them to $3E80). **Nothing in startup.asm may be
+  called later** — the document overwrites it. The build stops if it would start below $4000.
 - **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
   warm start. Restarting means loading the program again. (`SYS 2061` after Quit would crash too.)
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
@@ -1282,9 +1306,10 @@ PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arr
   load at the start of BASIC, $0801: on top of Magic Typewriter. Jim asked whether the header up
   front mattered: it doesn't, LOAD copies the bytes as they are.) Our zero page $02–$1B is kept
   aside around LOAD (`zp_keep`) in case a fast loader borrows some. "Fits": `prg_fits` reads the
-  size from the directory (`$:name`, secondary address 0, on its own `DIR_LFN` = 3 while the file
-  stays open: skip the load address, the first line's link, number and text; then the file's line:
-  link, **blocks**, ≤ 254 bytes each) and compares with the room between BUF_START and the
+  size from the directory (`$:name`, secondary address 0, on its own `DIR_LFN` = 3: skip the load
+  address, the first line's link, number and text; then the file's line: link, **blocks**, ≤ 254
+  bytes each; **read before the PRG is opened** — found in 11b: a 1581 ended a file that was open
+  while the directory was read after 2 blocks; the 1541 didn't mind) and compares with the room between BUF_START and the
   clipboard — KERNAL LOAD has no length limit, and past $CFFF lie the I/O chips. `SETMSG` 0 first;
   the end comes from `EAL` ($AE/$AF); if it got nowhere, the document is untouched. Everything else
   (other PRG files, too-big ones) is read on byte by byte from the open file (stops when full:
@@ -1350,18 +1375,70 @@ PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arr
   script) repeats test_phase9's editing 20 times on one system and reads `late_irqs` after every
   step; a hang catcher wrapped `Editor.keys` to dump PC/SP, the stack page and `late_pc` on a
   time-out. Rewrite them if needed.
-- The harness reads the REU clipboard (`mtest.clipboard()`) by programming the REU through the
-  monitor: a fetch from bank 1 into the free top of the gap. **VICE does such a DMA only once the
-  emulation runs on**, so it resumes briefly before reading. Measured (PAL, 20 KB of short lines): jump to the top 35 → 16 frames; the
+- The harness reads REU memory (`mtest.reu_read()`: the clipboard, a long document's head and
+  tail) through the gap, **by asking the editor to copy it**: debug builds have a request at
+  `MB_DMA` ($02B4–$02BB: reu_c64, reu_addr, reu_bank, reu_len, then the command, written last),
+  which `mailbox_poll` (main loop, idle) hands to `reu_move` and then clears. **Never start a big
+  DMA from the monitor:** it stops the CPU for as many cycles as bytes, the exact-timed strip IRQs
+  come far too late, and the editor hangs (found in 11b on NTSC; phase 9's one-piece clipboard
+  read had the same risk). `MB_BUSY` ($02BE) is 1 while the main loop works on a key;
+  `mtest.idle()` waits for 0 before any REU read. Measured (PAL, 20 KB of short lines): jump to the top 35 → 16 frames; the
   rest of the time is drawing.
-- **Not built yet: documents larger than main RAM.** It needs 24-bit positions throughout the
-  editor, a window of the document paged in around the cursor, and load/save/find/stats/marker
-  walking the whole document: several KB of code, more than is left. **Decided (Jim, 2026-09-29):
-  after phases 10 and 11, in the same PRG.** The REU code travels in the PRG; at start-up, with an
-  REU it is put in place (e.g. $C000–$CFFF, making the text window $4000–$BFFF), and **without an
-  REU it is dropped and that RAM is document space**, so a stock C64 loses nothing. Detection
-  already handles REUs up to 16 MB. Practical limits to tell Jim about: disk sizes, and Find/Stats
-  walking every byte (roughly 10–20 s per MB).
+**As built (phase 11b, long documents; `src/reudoc.asm`, read its header first):**
+- **When:** an REU of 3 banks or more (192 KB; in VICE 256 KB and up). `reudoc_install` (start-up)
+  copies reudoc.asm to $C000 and the text buffer ends there (`buf_top`, `text_end` = $C000): the
+  **window**, 32 KB. With a smaller REU or none nothing changes: 36 KB, and $C000–$CFFF is text
+  (Jim, 2026-09-29: same PRG, a stock C64 loses nothing).
+- **Layout:** the window is the editor's ordinary gap buffer; the editor sees only it (all its
+  offsets count from the window's start, document offset `win_base`, 24 bits). In the REU from
+  bank 2 up: the **head** (the text before the window) as chunks, each a 6-byte header (the REU
+  address of the chunk before it, its length, the color at its start) and up to 12 KB of text
+  ending just after a RETURN, so the window starts at a line start, reverse off, in `win_color`
+  ($FF = the default text color; `start_color` in reu.asm, used by color_before and empty_view);
+  and the **tail** (the text after the window), one piece growing down from the REU's end
+  (`tail_len`, 24 bits). Bank 0 is still the block-copy stopover, bank 1 the clipboard.
+- **reu_keep** (main loop, after every key): 1. less than MARGIN (4 KB) before the cursor and a
+  head: its last chunk comes back (room made by sending the window's end to the tail); 2. less
+  than MARGIN after the cursor and a tail: up to 12 KB of it comes back (a head chunk goes out
+  first if the gap can't spare it); 3. a gap under MIN_GAP (8 KB): text goes out from the side
+  with more. Then the screen is drawn again with the cursor on its row. **A piece brought in must
+  leave MIN_GAP free**, else rule 3 sends it straight back out (found: a 12 KB ping-pong, 120
+  frames a key). A move costs ~80 frames (PAL; `count_colors` over the window ~35 of them,
+  rewritten as a page loop — it took 135 before); other keys are as fast as ever.
+- **Marked text stays inside the window:** a move that would cut it off is left out, and the
+  marks' offsets move with the window (`.push`, `.pop`). Marking reaches ~20 KB.
+- **RESERVE** (12 KB) stays free in the REU for moves that make its part bigger (loading, room for
+  typing: `reu_room_grow`); a swap (head <-> tail) only needs `reu_room`. So going back to the
+  start always works, even with the REU full.
+- **Loading** (`load_spill`): when the window fills, what came so far is converted
+  (`convert_start` / `convert_more`: convert_loaded works in pieces now, with a pending line feed
+  for a RETURN/LF pair split between two fills) and 12 KB chunks go to the head until less than
+  one is left; no room → "TOO LONG: ONLY PART LOADED". Then `reu_to_start` (every chunk back, the
+  window's end to the tail, 8 KB room for typing). KERNAL LOAD (fast loaders) only for PRG files
+  that fit the window (`prg_fits` against `text_end`); every load start clears the old REU part
+  (`.reu_reset`).
+- **Saving, printing, the ASCII colors check, Stats** go through `each_range` (fileio.asm): the
+  whole text in order, a piece at a time to a routine (`write_range`, has_codes, count_text); the
+  head's chunks and the tail come a page at a time through RD_PAGE ($CF00).
+- **Find:** through the window; at its end `rd_slide` moves the window on (the place being tried
+  stays); at the document's end `reu_to_start`; not found → the cursor back where it began
+  (`rd_find_back`). About 60 cycles a byte.
+- **Page marker:** `marker_long` makes update_marker's offsets document-wide and halves them
+  together until they fit 16 bits.
+- **HOME HOME:** `reu_to_start` (not while marking). **CTRL-A** and **magic to tape** (one piece
+  of memory) need all of it in the window: `reu_all_in`, else "TOO LONG TO MARK ALL" / "TOO LONG:
+  SAVE IT AS PETSCII". **Paste** bigger than the gap: `reu_room_for` makes room first.
+- **Stats:** free = the gap + the REU between head and tail, less RESERVE; the % is of the window
+  plus the REU's banks from 2 up.
+- **A tape program** (magic) is loaded with KERNAL LOAD, which doesn't stop at $C000 (one saved
+  without an REU may be 36 KB): reudoc.asm is stashed to bank 0 at $F000 first (`reudoc_copy`),
+  fetched back if the file ran over it, and the text cut at $C000 ("TOO LONG").
+- **Found in 11b — the one rule again:** `blk_count` (reu_copy's length) lived in editor.asm under
+  the KERNAL; during a long load the copies read their length from the ROM (969 bytes), and the
+  loaded text came out garbled after the first 13 KB. It is in reu.asm now. **Everything
+  reudoc.asm uses during disk work must be in the lower part or in reudoc.asm.**
+- **Limits (tell Jim):** marking ~20 KB at most; a line longer than 12 KB splits a chunk mid-line;
+  Find and Stats walk every byte (roughly 10–20 s per MB); a window move takes ~1.6 s.
 
 ## Cartridge version (future idea)
 
@@ -1414,6 +1491,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 11. Print menu, then tape load/save (device 1). **Done 2026-09-30** (real tape and printer still to
     try).
 11b. Long documents held in the REU (same PRG; the REU code's RAM is document space without an REU).
+    **Built 2026-09-30**, waiting for Jim's test.
 12. Test pass on every target platform.
 
 ## Open Questions
