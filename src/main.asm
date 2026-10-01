@@ -152,6 +152,9 @@ start                           ; must be at $080d = 2061
         jmp startup             ; (start-up code: startup.asm)
 start_done                      ; (it comes back here)
         jsr editor_init         ; an empty document, ready to type
+!if DEBUG {
+        jsr mailbox_ready       ; (now the test harness may start)
+}
 
 ;============================================================================
 ; Main loop

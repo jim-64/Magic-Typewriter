@@ -352,6 +352,10 @@ get_key
         ldx key_q_tail
         cpx key_q_head
         beq .none
+!if DEBUG {
+        lda #0                  ; (busy with a key, for the test harness)
+        sta MB_IDLE
+}
         lda key_q_code,x
         ldy key_q_mods,x
         pha
@@ -362,7 +366,12 @@ get_key
         pla
         clc
         rts
-.none   sec
+.none
+!if DEBUG {
+        lda #1                  ; (waiting for a key: the test harness may
+        sta MB_IDLE             ; look - main loop and wait_key only)
+}
+        sec
         rts
 
 ;----------------------------------------------------------------------------
@@ -1079,10 +1088,29 @@ MB_DOC_READY    = MB_BASE+63
 MB_KEY_TIME     = MB_BASE-1      ; (just below the mailbox)
 MB_BUSY         = MB_BASE-2      ; 1 while the main loop works on a key (the
                                  ; harness waits before it uses the REU)
+MB_IDLE         = MB_BASE-3      ; 1 while waiting for a key (get_key found
+                                 ; none: the main loop, or a menu or box)
 MB_DMA          = MB_BASE-12     ; an REU copy for the harness (8 bytes,
                                  ; below): as reu_move's reu_c64, reu_addr,
                                  ; reu_bank, reu_len, then its command last
 MB_SIZE         = 64
+
+;----------------------------------------------------------------------------
+; mailbox_ready - start-up is over (after editor_init): the signature, so
+; the harness may start. (Not earlier: on real hardware load_defaults takes
+; a moment, and a document the harness put in meanwhile was emptied again
+; by editor_init - found on the C64 Ultimate.)
+;----------------------------------------------------------------------------
+!zone mailbox_ready
+mailbox_ready
+        ldx #3
+-       lda .signature,x
+        sta MB_SIG,x
+        dex
+        bpl -
+        rts
+.signature
+        !byte $4d, $54, $44, $42        ; "MTDB" in ASCII
 
 ;----------------------------------------------------------------------------
 ; mailbox_poll - called from the main loop. Handles the marker test.
@@ -1238,6 +1266,13 @@ mailbox_keys
         lda .gap                ; then one frame with nothing pressed
         beq +
         dec .gap
+        rts
++       lda key_q_head          ; the program's own queue nearly full (it
+        sec                     ; is busy with something long)? Then wait:
+        sbc key_q_tail          ; a full queue drops events, and no test
+        and #KEY_QUEUE_SIZE-1   ; key may get lost.
+        cmp #KEY_QUEUE_SIZE-2
+        bcc +
         rts
 +       ldx MB_KEY_TAIL         ; anything new in the queue?
         cpx MB_KEY_HEAD

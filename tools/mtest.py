@@ -1,6 +1,9 @@
 """Helpers to drive Magic Typewriter (debug build) through the test mailbox."""
 import time, re, os
 from vicemon import Mon, start_vice, PROJ, WORK
+TARGET = os.environ.get("MT_TARGET", "vice")
+if TARGET == "c64u":                            # the tests on a C64 Ultimate
+    from ultimate import Mon, start_vice        # (see ultimate.py)
 MB = 0x02c0
 HEAD, TAIL, QUEUE, COUNT = MB + 16, MB + 17, MB + 18, MB + 52
 MHEAD, MTAIL, MQUEUE = MB + 34, MB + 35, MB + 36
@@ -78,6 +81,15 @@ class Editor:
                 raise TimeoutError("keys not handled: count %d, wanted %d (started at %d); "
                                    "last keys handled (code, mods): %s"
                                    % (self.count(), want, start, self.peek(MB + 53, 8).hex(" ")))
+        if TARGET == "c64u":
+            # Real time: the C64 goes on while we read, so wait until the
+            # last key's work is done - the program waits for a key again
+            # (MB_IDLE, below the mailbox). Not in VICE: there the CPU
+            # stands still while we read, and some keys start long waits
+            # (a tape's PRESS PLAY) that the tests watch themselves.
+            t1 = time.time()
+            while not self.peek(MB - 3)[0] and time.time() - t1 < 30:
+                time.sleep(0.1)
         time.sleep(settle)
 
     def key_done(self, code, mods=0, timeout=300, settle=0.3):

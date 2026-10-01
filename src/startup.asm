@@ -547,7 +547,8 @@ init_mouse
 
 !if DEBUG {
 ;----------------------------------------------------------------------------
-; mailbox_init - clear the mailbox and fill in the program's fields.
+; mailbox_init - clear the mailbox and fill in the program's fields. (The
+; signature comes last, from mailbox_ready, once the editor is set up.)
 ;----------------------------------------------------------------------------
 !zone mailbox_init
 mailbox_init
@@ -558,19 +559,12 @@ mailbox_init
         bpl -
         sta MB_DMA+7            ; (no REU copy asked for)
         sta MB_BUSY
+        sta MB_IDLE
         lda system_type
         sta MB_SYSTEM
         lda load_device
         sta MB_LOADDEV
-        ldx #3                  ; signature last: now the harness may start
--       lda .signature,x
-        sta MB_SIG,x
-        dex
-        bpl -
         rts
-
-.signature
-        !byte $4d, $54, $44, $42        ; "MTDB" in ASCII
 }
 
 ;----------------------------------------------------------------------------

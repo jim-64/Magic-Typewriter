@@ -73,6 +73,39 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   (first try 2026-10-01): mailbox signature, NTSC, 59.6 frames/s, `late_irqs` 0, housekeeping to
   line 70, bottom strip to line 6 (as in VICE). Its REU was off; don't change Jim's C64U settings
   without asking.
+  **Tests on the C64U:** `MT_TARGET=c64u python tools/test_phase3.py ntsc` (also `MT_C64U=<ip>`):
+  `tools/ultimate.py` stands in for vicemon's `start_vice`/`Mon` (reset, write the PRG into memory,
+  type RUN into the keyboard buffer; memory by REST while the C64 runs). Only tests without disk
+  images or VICE options. **test_phase3, test_phase5 and test_phase6 pass on it** (2026-10-01,
+  NTSC; 30 KB: jump to the end 25 frames, F3 near the end 28, as in VICE).
+  On the Ultimate the C64 runs on while the harness reads, so `mtest.keys` there also waits until
+  the program is waiting for a key again: debug builds set **`MB_IDLE`** ($02BD) in `get_key` (1
+  when it finds no key — only the main loop and `wait_key` call it — 0 when it hands one out).
+  Not in VICE (the CPU stands still while reading, and a tape's PRESS PLAY wait would block).
+  **The mailbox no longer feeds keys into a nearly full key queue** (`mailbox_keys`): during a
+  long step (a long document's window move, ~80 frames) queued test keys filled the editor's
+  16-event queue and the rest were dropped, so `keys()` waited for keys that never came (a rare
+  test_phase11b failure on PAL). A stress run of 960 F5/F3 through 124 KB found no loss since.
+  (A real keyboard still drops past 16 events typed ahead, like the KERNAL's 10.)
+  **Never upload to the Ultimate** (POST with a body: `runners:run_prg`, `writemem` with data
+  attached): firmware 1.1.0 keeps every upload as a file in its `/Temp` RAM area, and once that is
+  full every upload fails with "Cannot open file". A first version of ultimate.py filled it
+  (~330 files); deleting them was refused here, so Jim power-cycles the Ultimate to empty it.
+  Writes go as hex in the request instead (`PUT …machine:writemem?address=…&data=<hex>`, 128
+  bytes a time), which makes no file.
+  **Found on the C64U — a missed strip IRQ crashed the editor.** The Ultimate's network memory
+  access holds the CPU up (as does its menu button, or a freezer cartridge); when the line 25
+  (247) IRQ then came after line 27 (249) had begun, the second IRQ fired a frame later with a
+  stale `saved_sp` and the program died. Now the NOP wait ends in **`irq_missed`** (irq.asm):
+  the chain starts again at line 10 next frame (one frame without strips or keyboard scan), and
+  debug builds count it in `missed_irqs`. `tools/test_freeze.py ntsc` holds the CPU up 40 times
+  with 32 KB REU copies started from VICE's monitor: the old code hung, the new one types on.
+  (On VICE's PAL models those copies never seem to hold the CPU up — no IRQ is ever late — so
+  that test only means something on NTSC/old NTSC.)
+  **Found on the C64U — the harness started too early:** the mailbox signature came from
+  mailbox_init, before load_defaults (slow on real drives) and editor_init, which then emptied a
+  document the test had put in. The signature is now written by `mailbox_ready` after
+  editor_init (start_done in main.asm).
   Jim turned down a multiple-choice question box (2026-10-01): ask in plain text instead.
 
 ## Working with Jim

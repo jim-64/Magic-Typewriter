@@ -387,7 +387,21 @@ irq_top_a
         !for .i, 1, 45 {        ; ... while we run NOPs (90 cycles, more
                 nop             ; than enough to reach line 27)
         }
-        jmp irq_exit            ; (never reached)
+        jmp irq_missed          ; (only if this IRQ came too late)
+
+; irq_missed - the end of a NOP wait above: the second IRQ never came.
+; This one came too late - after line 27 (249) had begun - because the CPU
+; was held up: an Ultimate's menu or its network memory access, a freezer
+; cartridge, a debugger. Line 27's handler must then not run next frame:
+; it would throw away a stack frame that is long gone (saved_sp) and crash.
+; So the chain starts again at line 10 of the next frame; this frame has no
+; strips (one frame of plain borders, no keyboard scan).
+irq_missed
+        +next_irq FRAME_TOP_LINE, irq_frame_top
+!if DEBUG {
+        inc missed_irqs
+}
+        jmp irq_exit
 
 ; The second handler, one copy per video system. Enters on line 27.
 !macro border_top .cmp, .pre, .loop, .split {
@@ -533,7 +547,7 @@ irq_bot_a
         !for .i, 1, 45 {
                 nop
         }
-        jmp irq_exit            ; (never reached)
+        jmp irq_missed          ; (only if this IRQ came too late)
 
 ; The second handler, one copy per video system. Enters on line 249.
 !macro border_bot .cmp, .split, .pre, .loop {
@@ -609,6 +623,7 @@ border_bot_done
 saved_sp        !byte 0         ; stack pointer saved by the first IRQ
 !if DEBUG {
 late_irqs       !byte 0         ; (debug) line 25/247 IRQs that came late
+missed_irqs     !byte 0         ; (debug) ... so late the strip was left out
 late_line       !byte 0         ; (debug) the line the last late one began
 late_pc         !word 0         ; (debug) and where the main program was
 }
