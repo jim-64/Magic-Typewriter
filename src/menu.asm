@@ -998,11 +998,15 @@ show_stats
         lda #<m_reu
         ldx #>m_reu
         jsr box_print
-        lda reu_banks           ; banks of 64 KB
-        sta num24
         lda #0
         sta num24+1
         sta num24+2
+        lda reu_banks           ; banks of 64 KB (16 MB counts as 255
+        cmp #255                ; banks: 256 here)
+        bne +
+        inc num24+1             ; (256 = $100)
+        lda #0
++       sta num24
         ldx #6                  ; (times 64)
 -       asl num24
         rol num24+1

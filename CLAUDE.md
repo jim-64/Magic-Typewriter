@@ -53,7 +53,11 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   and a 1581 fix for PRG loading (see Formats).
 - **Phase 12 started** (2026-10-01), branch `phase12`: the release build checked in VICE on all
   four video systems with 0/128/512 KB REUs (`tools/test_release.py`). Exomizer is not installed.
-  The hardware tests are Jim's (see Target Platforms).
+  The hardware tests are Jim's: **`docs/hardware-tests.md`** is his checklist (a common part for
+  every machine, then one section per target). **`README.md`** is the user manual (keys, menus,
+  files, REU, the VICE notes about Tab = C= and the left SHIFT mark key, SHIFT LOCK, building).
+  Fixed: Stats showed a 16 MB REU as 16320 KB (255 banks); it shows 16384 KB now.
+  Jim turned down a multiple-choice question box (2026-10-01): ask in plain text instead.
 
 ## Working with Jim
 
@@ -355,7 +359,9 @@ src/reu.asm         REU detection and sizing, DMA copies, clipboard in the REU
 src/reudoc.asm      long documents in the REU (runs at $C000, only with an REU of 192 KB or more)
 src/startup.asm     everything that runs once at start-up (runs from the text buffer, see Memory Map)
 src/data.asm        menu strings, tables
-test/               sample SEQ, ASCII, and SpeedScript files
+test/               sample SEQ files (longdoc: 60 KB, for REU tests), put on the .d64 by the build
+docs/               hardware-tests.md: the phase 12 checklist
+README.md           the user manual
 build.bat           assemble + make d64 (Windows)
 build.sh            same steps (Linux)
 ```

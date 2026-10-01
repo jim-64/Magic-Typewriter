@@ -67,7 +67,8 @@ for kb, banks in ((0, 0), (128, 2), (512, 8), (16384, 255)):
     check("... long documents %s (the text buffer to $%04x)" % ("on" if want[0] else "off", want[1]),
           docs == want, docs)
     if banks:
-        check("... Stats: REU %d KB" % (banks * 64), "REU" in row and "%d KB" % (banks * 64) in row, row)
+        kb_shown = 16384 if banks == 255 else banks * 64      # (16 MB = 255 banks)
+        check("... Stats: REU %d KB" % kb_shown, "REU" in row and "%d KB" % kb_shown in row, row)
     else:
         check("... Stats: no REU line", "REU" not in row, row)
 
