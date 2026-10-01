@@ -27,13 +27,18 @@ echo "Making disk image..."
 c1541 -format "magic typewriter,mt" d64 build/magictypewriter.d64 \
       -write build/magictypewriter.prg "magic typewriter" >/dev/null
 
-# Add every file in test/ as a SEQ file (name without extension).
-if [ -d test ]; then
-    for f in test/*; do
-        [ -f "$f" ] || continue
-        name=$(basename "$f"); name=${name%.*}
-        c1541 -attach build/magictypewriter.d64 -write "$f" "$name,s" >/dev/null
-    done
-fi
+# Add the files in test/ (name without extension): first the .prg files as
+# PRG files (the manual, a Magic Typewriter document: made from
+# docs/manual.txt by tools/make_manual.py), then the .seq files as SEQ.
+for f in test/*.prg; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f" .prg)
+    c1541 -attach build/magictypewriter.d64 -write "$f" "$name,p" >/dev/null
+done
+for f in test/*.seq; do
+    [ -f "$f" ] || continue
+    name=$(basename "$f" .seq)
+    c1541 -attach build/magictypewriter.d64 -write "$f" "$name,s" >/dev/null
+done
 
 echo "Done: build/magictypewriter.prg and build/magictypewriter.d64"

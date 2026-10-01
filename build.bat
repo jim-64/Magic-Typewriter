@@ -32,12 +32,16 @@ echo Making disk image...
 "%C1541%" -format "magic typewriter,mt" d64 build\magictypewriter.d64 -write build\magictypewriter.prg "magic typewriter" >nul
 if errorlevel 1 goto failed
 
-rem Add every file in test\ as a SEQ file (name without extension).
-if exist test\* (
-    for %%f in (test\*) do (
-        "%C1541%" -attach build\magictypewriter.d64 -write "%%f" "%%~nf,s" >nul
-        if errorlevel 1 goto failed
-    )
+rem Add the files in test\ (name without extension): first the .prg files as
+rem PRG files (the manual, a Magic Typewriter document: made from
+rem docs\manual.txt by tools\make_manual.py), then the .seq files as SEQ.
+for %%f in (test\*.prg) do (
+    "%C1541%" -attach build\magictypewriter.d64 -write "%%f" "%%~nf,p" >nul
+    if errorlevel 1 goto failed
+)
+for %%f in (test\*.seq) do (
+    "%C1541%" -attach build\magictypewriter.d64 -write "%%f" "%%~nf,s" >nul
+    if errorlevel 1 goto failed
 )
 
 echo Done: build\magictypewriter.prg and build\magictypewriter.d64

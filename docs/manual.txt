@@ -1,0 +1,106 @@
+@banner yellow MAGIC TYPEWRITER
+{lgrey}
+{lgreen}A text editor for the Commodore 64.{lgrey}
+
+This manual is itself a Magic Typewriter document. Read it with {rvs}F5{off} (page down) and {rvs}F3{off} (page up), or the cursor keys. Press {rvs}HOME{off} twice to come back to the top.
+
+{cyan}{rvs} THE SCREEN {off}{lgrey}
+
+The text fills the whole screen, 40 by 25. The blue strips at the top and the bottom hold the {rvs}F3{off} and {rvs}F5{off} badges (page up and down) and the menu icon {rvs}F1{off}.
+
+The grey band in the side borders is the {yellow}page marker{lgrey}: it shows which part of the document is on the screen, like a scroll bar. It fills the whole side while all of the document fits on the screen.
+
+The cursor shows the typing mode: a thick underline in {yellow}insert{lgrey} mode (typing pushes the text on), a flashing block in {yellow}overwrite{lgrey} mode. {rvs}F7{off} switches. The cursor takes the color of the text it is in.
+
+{cyan}{rvs} KEYS {off}{lgrey}
+
+{rvs}F1{off} or {rvs}RUN/STOP{off}  the menu
+{rvs}F3{off} / {rvs}F5{off}  page up / page down
+{rvs}F7{off}  insert / overwrite
+{rvs}SHIFT{off}+{rvs}F7{off}  next background color
+{rvs}C={off}+{rvs}SHIFT{off}  character set, as in BASIC
+{rvs}HOME{off}  start of the line; again: top
+{rvs}SHIFT{off}+{rvs}CLR{off}  CLEAR ALL: a new document
+{rvs}INST/DEL{off}  delete left of the cursor
+{rvs}SHIFT{off}+{rvs}INST{off}  insert a space
+{rvs}CTRL{off}+{rvs}A{off}  mark everything
+{rvs}CTRL{off}+{rvs}X{off} {rvs}C{off} {rvs}V{off}  cut, copy, paste
+{rvs}CTRL{off}+{rvs}F{off}  find
+{rvs}CTRL{off}+{rvs}S{off}  save
+
+{rvs}RESTORE{off} opens the menu too, so {rvs}RUN/STOP{off}+{rvs}RESTORE{off} can't lose your work.
+
+{cyan}{rvs} COLORS AND REVERSE {off}{lgrey}
+
+Colors work as in BASIC: press {rvs}CTRL{off}+{rvs}3{off} and what you type next is {red}red{lgrey}. {rvs}CTRL{off}+{rvs}1{off} to {rvs}8{off} and {rvs}C={off}+{rvs}1{off} to {rvs}8{off} give the 16 colors: {white}white {red}red {cyan}cyan {purple}purple {green}green {blue}blue {yellow}yellow {orange}orange {brown}brown {lred}light red {dgrey}dark grey {grey}grey {lgreen}light green {lblue}light blue {lgrey}light grey, and black (which doesn't show on a black background).
+
+{rvs}CTRL{off}+{rvs}9{off} and {rvs}CTRL{off}+{rvs}0{off} switch {rvs}reverse{off} on and off. A line end switches it off too.
+
+The color codes are kept in the text and saved with it, but take no room on the screen. Pressing a color key in the middle of a line colors only what you type there: the text after the cursor keeps its look. Codes that no longer do anything are tidied away by themselves.
+
+{cyan}{rvs} MARKING TEXT {off}{lgrey}
+
+Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass over is {rvs}marked{off}. The mark key is {rvs}C={off} unless you choose left {rvs}SHIFT{off} in the menu.
+
+- {rvs}C={off} with the cursor keys marks; {rvs}C={off}+{rvs}SHIFT{off} with a cursor key marks up or left.
+- {rvs}C={off}+{rvs}F3{off} / {rvs}F5{off} marks a page at a time.
+- With text marked, typing replaces it, {rvs}INST/DEL{off} deletes it, {rvs}CTRL{off}+{rvs}X{off} and {rvs}C{off} cut or copy it.
+- {lgreen}Tip:{lgrey} a color or reverse key recolors all of the marked text.
+- Any cursor move without the mark key unmarks.
+
+{cyan}{rvs} FIND {off}{lgrey}
+
+{rvs}CTRL{off}+{rvs}F{off} asks for a word (up to 26 characters) and finds it from the cursor on, then once round from the top. Capitals and small letters count as the same, and a color change inside a word doesn't get in the way. The match is marked. {rvs}CTRL{off}+{rvs}F{off} then {rvs}RETURN{off} finds the next one.
+
+{cyan}{rvs} THE MOUSE {off}{lgrey}
+
+A 1351 mouse in port 1 is found by itself the first time you move it. Click to put the cursor there; drag to mark. Move past the text onto a badge (it lights up) and click: {rvs}F3{off} and {rvs}F5{off} page, {rvs}F1{off} opens the menu. The right button opens the menu too. The pointer hides after 10 seconds of rest.
+
+{cyan}{rvs} THE MENU {off}{lgrey}
+
+Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
+
+{yellow}A{lgrey} Load, {yellow}B{lgrey} Save, {yellow}C{lgrey} Print: their own menus.
+{yellow}D{lgrey} Wordwrap: on, or off (rows are then cut at 40 characters).
+{yellow}E{lgrey} Mode: insert or overwrite.
+{yellow}F{lgrey} Mark key: Commodore or left shift.
+{yellow}G{lgrey} Background, {yellow}H{lgrey} Text color: any of the 16 colors. The text color is for text without color codes.
+{yellow}I{lgrey} Stats: characters, words, sentences, room left.
+{yellow}J{lgrey} Save defaults: keeps all settings in MAGIC T DEFAULTS on the disk the program came from, for every start.
+{yellow}Q{lgrey} Quit: back to BASIC (it asks first if there are changes).
+
+The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the disk directory and a disk command. The {yellow}Save{lgrey} menu has the format, the file type and the device too. A setting that other settings decide for you shows in [brackets].
+
+{cyan}{rvs} FILES {off}{lgrey}
+
+{yellow}Magic{lgrey} is the {yellow}project{lgrey} format: the PETSCII text plus a short header with the document's settings (word wrap, background, text color, formats), so it comes back just as you left it. A new document saves as magic. Magic files are always PRG files, which fast loader cartridges such as Epyx FastLoad speed up a lot.
+
+{yellow}PETSCII{lgrey} is the {yellow}finished{lgrey} text, for BBSes, other programs and {rvs}PRINT#{off}: the text exactly as on the C64, with its colors and reverse. Its first byte tells the character set, as BBS files do.
+
+{yellow}ASCII{lgrey} is for files from or for a PC. Colors and reverse can't be kept; it asks first.
+
+{lgreen}Tip:{lgrey} work in magic, and save a PETSCII copy when the text is done.
+
+A magic file is recognised whatever the Load format says. A document saves back in the format it came in. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
+
+{yellow}Tape:{lgrey} choose TAPE as the device. Magic documents become program files, PETSCII and ASCII data files. A box asks you to press PLAY (or RECORD and PLAY); {rvs}RUN/STOP{off} gives up. A blank name loads the next file.
+
+{yellow}Printing:{lgrey} for a Commodore printer colors are left out and reverse is kept; Convert to ASCII sends ASCII text instead.
+
+{cyan}{rvs} REU {off}{lgrey}
+
+With an REU, Magic Typewriter uses it by itself: big moves get faster, and the clipboard lives in the REU.
+
+With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 32 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
+
+- Marked text can be up to about 20 KB.
+- {rvs}CTRL{off}+{rvs}A{off}, and saving a magic document to tape, need all of it in the C64 (up to 32 KB).
+- A document bigger than the REU loads as far as it fits.
+
+{cyan}{rvs} EMULATORS {off}{lgrey}
+
+In VICE, {lred}Tab is the C= key{lgrey}: Tab with the arrow keys marks in every direction. With left SHIFT as the mark key, marking up or left doesn't work in VICE: it sends Shift+Up as SHIFT+CRSR DOWN. Use C= there.
+
+{rvs}SHIFT LOCK{off} holds left SHIFT down: with left SHIFT as the mark key, every cursor move then marks.
+
+@banner yellow HAPPY  TYPEWRITING

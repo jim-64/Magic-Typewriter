@@ -12,12 +12,24 @@ can talk to (1541, 1571, 1581, SD2IEC, Pi1541, Ultimate…), and also with tape 
 
 ## Getting started
 
+Download **`magictypewriter.d64`** from the [Releases](../../releases) page — no need to build
+anything. Put it on whatever your C64 loads from (an SD2IEC card, a Pi1541, an Ultimate's USB
+stick, a real floppy written with a transfer cable, or just attach it in VICE), then:
+
 ```
 LOAD"MAGIC TYPEWRITER",8
 RUN
 ```
 
 You get an empty page. Just type. Press **F1** (or RUN/STOP) for the menu.
+
+The disk also holds:
+
+| File | What it is |
+|---|---|
+| `MANUAL` | This manual as a Magic Typewriter document, in color: F1, A, A, type `manual`, RETURN |
+| `SAMPLE`, `UPPER`, `LONG` | Small sample texts (colors and reverse, upper case/graphics, 60 lines) |
+| `LONGDOC` | A 60 KB document, to try long documents with an REU |
 
 What you see:
 
@@ -113,13 +125,19 @@ magic document, which is always PRG.
 
 **Formats** (Load and Save menus):
 
-- **PETSCII** — text exactly as on the C64, colors and reverse included. The first byte says
-  which character set the text uses ($0E upper/lower, $8E upper case/graphics), as BBS files do.
-- **Magic** — PETSCII with a short header that brings the document's settings back with it:
-  word wrap, background, text color, formats and file type. **Always a PRG file**, so fast loaders
-  (Epyx FastLoad, JiffyDOS…) speed it up. A new document saves as magic.
+- **Magic** — the *project* format: the PETSCII text plus a short header with the document's
+  settings (word wrap, background, text color, formats, file type), so it comes back just as you
+  left it. A new document saves as magic. Magic files are always **PRG** files: cartridge fast
+  loaders such as Epyx FastLoad only speed up LOAD, and there a magic document loads much faster
+  than the same text as a SEQ file (18 s against 8 s in VICE). JiffyDOS speeds up every transfer,
+  SEQ files included, so with JiffyDOS the difference is smaller.
+- **PETSCII** — the *finished* text, for BBSes, other programs and `PRINT#`: exactly as on the
+  C64, colors and reverse included. The first byte says which character set the text uses ($0E
+  upper/lower, $8E upper case/graphics), as BBS files do.
 - **ASCII** — for files from or for a PC: capitals and small letters swapped, line ends written as
   CR+LF (CR, LF or CR+LF are all read). Colors and reverse can't be kept; it warns you first.
+
+A good habit: work in magic, and save a PETSCII copy when the text is done.
 
 Loading recognises a magic file whatever the Format setting says, and afterwards saves the
 document back in the format it came in.
@@ -166,13 +184,15 @@ depending on the version). The REU is under Cartridge/IO settings.
 
 ## Building from source
 
-You need [ACME](https://sourceforge.net/projects/acme-crossass/) 0.97 and `c1541` (part of VICE).
+Only needed if you want to change the program. You need
+[ACME](https://sourceforge.net/projects/acme-crossass/) 0.97 and `c1541` (part of VICE).
 
 - **Windows:** `build.bat` (debug build) or `build.bat release`. The tool paths are set at the top.
 - **Linux:** `./build.sh` or `./build.sh release`, with `acme` and `c1541` on the PATH.
 
-Both write `build/magictypewriter.prg` and a `build/magictypewriter.d64` with the program and the
-sample files from `test/`. The debug build includes a small test mailbox that the automated tests
+Both write `build/magictypewriter.prg` and a `build/magictypewriter.d64` with the program, the
+manual and the sample files from `test/`. The manual's text is `docs/manual.txt`;
+`python tools/make_manual.py` turns it into `test/manual.prg` (a Magic Typewriter document). The debug build includes a small test mailbox that the automated tests
 in `tools/` use (Python 3 and VICE 3.9).
 
 The source is in `src/`, one master file (`main.asm`) and one file per part; `CLAUDE.md` describes

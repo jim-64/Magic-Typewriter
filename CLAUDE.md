@@ -57,6 +57,22 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   every machine, then one section per target). **`README.md`** is the user manual (keys, menus,
   files, REU, the VICE notes about Tab = C= and the left SHIFT mark key, SHIFT LOCK, building).
   Fixed: Stats showed a 16 MB REU as 16320 KB (255 banks); it shows 16384 KB now.
+  **The manual on the disk** (Jim: a Magic Typewriter file with colors and reverse): source
+  `docs/manual.txt` (one line per paragraph, tags `{red}`, `{rvs}`, `{off}`, `@banner`…),
+  `python tools/make_manual.py` writes `test/manual.prg` (magic, PRG, $4000; header = the built-in
+  defaults); the build scripts now put `test/*.prg` on the .d64 as PRG files (first, so MANUAL
+  follows the program) and `test/*.seq` as SEQ. `tools/test_manual.py` loads it and checks text,
+  settings and banner, and writes a screenshot (`build/test/manual.png`).
+  **Jim's view of the formats:** magic is the *project* file, PETSCII the *deliverable*. JiffyDOS
+  speeds up SEQ reading too, so the PRG advantage is mainly for LOAD-only fast loaders (Epyx).
+  **Jim will publish GitHub releases** with the .d64 (release build), so users need no ACME.
+  **C64 Ultimate:** 192.168.1.64, firmware 1.1.0, core 1.49, **NTSC**. `.mcp.json` has
+  `C64U_HOST` (the bridge keeps VICE as its starting backend; `c64_select_backend` switches;
+  needs a Claude Code restart). Its REST API works directly too: `POST /v1/runners:run_prg`
+  (body = the PRG), `GET /v1/machine:readmem?address=XXXX&length=N`. The debug build runs there
+  (first try 2026-10-01): mailbox signature, NTSC, 59.6 frames/s, `late_irqs` 0, housekeeping to
+  line 70, bottom strip to line 6 (as in VICE). Its REU was off; don't change Jim's C64U settings
+  without asking.
   Jim turned down a multiple-choice question box (2026-10-01): ask in plain text instead.
 
 ## Working with Jim
