@@ -5,6 +5,7 @@
       "args": ["-y", "c64bridge@1.0.2"],
       "env": {
         "C64_MODE": "vice",
+        "C64U_HOST": "192.168.1.64",
         "VICE_BINARY": "C:\\bin\\GTK3VICE-3.9-win64\\GTK3VICE-3.9-win64\\bin\\x64sc.exe",
         "VICE_VISIBLE": "true",
         "VICE_WARP": "false"
