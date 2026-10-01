@@ -47,10 +47,13 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   **upper case/graphics** for the disk directory and the LOAD:/SAVE: name boxes (Jim); the **Print
   menu**; **tape** (magic as program files, PETSCII/ASCII as data files — Jim agreed); a File type
   fixed by the format and device shows in [ ] (Jim). Real tape and printer still to try (Jim).
-- **Phase 11b built** (2026-09-30; long documents held in an REU of 192 KB or more), on branch
-  `phase11b`; the automated tests pass; **waiting for Jim's Human Test**. Also in 11b: the start-up
-  code moved to `src/startup.asm`, which runs once from the text buffer (freed ~900 bytes in the
-  lower part), and a 1581 fix for PRG loading (see Formats).
+- **Phase 11b done** (2026-10-01; long documents held in an REU of 192 KB or more; Jim tested it
+  and is happy), merged into `main`. Also in 11b: the start-up code moved to `src/startup.asm`,
+  which runs once from the text buffer (freed ~900 bytes in the lower part; **Jim: "good idea"**),
+  and a 1581 fix for PRG loading (see Formats).
+- **Phase 12 started** (2026-10-01), branch `phase12`: the release build checked in VICE on all
+  four video systems with 0/128/512 KB REUs (`tools/test_release.py`). Exomizer is not installed.
+  The hardware tests are Jim's (see Target Platforms).
 
 ## Working with Jim
 
@@ -271,6 +274,10 @@ REU and a 200 KB file: "TOO LONG", the start of it, editing works; `late_irqs` 0
 and `key_done()` (waits until a key's work, window moves included, is finished: the main loop
 writes the key's frames just below the mailbox afterwards; `keys()` only waits until keys are
 taken).
+`python tools/test_release.py` (phase 12: assembles a release build into `build/release/` and
+starts it on PAL, NTSC, old NTSC and Drean with no REU, 128 KB and 512 KB: the IRQs run, the system
+and REU are found, the text buffer has the right size, sprites on, ROMs out, no mailbox — all
+that can be seen without typing).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -1491,7 +1498,7 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 11. Print menu, then tape load/save (device 1). **Done 2026-09-30** (real tape and printer still to
     try).
 11b. Long documents held in the REU (same PRG; the REU code's RAM is document space without an REU).
-    **Built 2026-09-30**, waiting for Jim's test.
+    **Done 2026-10-01.**
 12. Test pass on every target platform.
 
 ## Open Questions
