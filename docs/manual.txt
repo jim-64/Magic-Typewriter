@@ -1,6 +1,7 @@
 @banner yellow MAGIC TYPEWRITER
 {lgrey}
 {lgreen}A text editor for the Commodore 64.{lgrey}
+Version 0.1, an early version for review.
 
 This manual is itself a Magic Typewriter document. Read it with {rvs}F5{off} (page down) and {rvs}F3{off} (page up), or the cursor keys. Press {rvs}HOME{off} twice to come back to the top.
 

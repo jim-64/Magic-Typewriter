@@ -66,6 +66,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   **Jim's view of the formats:** magic is the *project* file, PETSCII the *deliverable*. JiffyDOS
   speeds up SEQ reading too, so the PRG advantage is mainly for LOAD-only fast loaders (Epyx).
   **Jim will publish GitHub releases** with the .d64 (release build), so users need no ACME.
+  **Version 0.1** (2026-10-01): an early release for friends to review before a public one. The
+  version shows in the main menu's title (`t_main` in menu.asm, "MAGIC TYPEWRITER V0.1") and in
+  the manual (`docs/manual.txt`, then `python tools/make_manual.py`): change both for a release.
   **C64 Ultimate:** 192.168.1.64, firmware 1.1.0, core 1.49, **NTSC**. `.mcp.json` has
   `C64U_HOST` (the bridge keeps VICE as its starting backend; `c64_select_backend` switches;
   needs a Claude Code restart). Its REST API works directly too: `POST /v1/runners:run_prg`

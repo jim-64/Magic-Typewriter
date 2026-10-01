@@ -1304,7 +1304,8 @@ letter_keys
 
 ; Titles and names (screen codes; letters as small letters show as
 ; capitals in either character set)
-t_main          !scr "magic typewriter", 0
+t_main          !scr "magic typewriter v0.1", 0 ; (the version: also in
+                                ; docs/manual.txt)
 t_load          !scr "load", 0
 t_save          !scr "save", 0
 t_print         !scr "print", 0
