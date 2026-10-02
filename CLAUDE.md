@@ -120,8 +120,11 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     always made the same step. Not confirmed on the real 1351 yet: **`-DMOUSE_SHOW=1`** builds show
     the paddle values, the frame's move and the readings thrown away (hex, bottom right);
     `build/mousetest.d64` has one for Jim.
-  - **Badges** redrawn at 7 rows (cut off on the 1702), and a badge under the pointer lights up
-    **white** (red hardly showed on blue).
+  - **Badges and menu icon redrawn** (cut off on the 1702). Jim chose from VICE mockups
+    (scratch builds, one PRG per design on a .d64 for his TV): **solid shapes with the letters
+    cut out** — the F3/F5 badges an arrow ("SB3C"), ≡F1 a box with a pixel off each corner
+    ("M1"); 9 rows on lines 41–49 and 252–260; the badges' widest rows touch the text area
+    (X = 2 and 342). A badge under the pointer lights up **white** (red hardly showed on blue).
   - **SpeedScript** gone from the Format values.
   - **SHIFT + F3 / F5:** top / end of the document.
   - **The main menu lists the CTRL keys** at its foot (rows 19–22; the panel is now rows 4–23).
@@ -569,47 +572,56 @@ Six hardware sprites, no multiplexer, all hi-res. Border icons (1–5) are light
 | 4 | Bottom-left "F5" badge | Page down |
 | 5 | Bottom-right "F5" badge (same image as 4) | Page down |
 
-Sprite 2/3 data (24×7, "F3" between two up arrows; **phase 12**: the 13-row badges of Jim's mockup
-were cut off on his NTSC 1702, so they are now 7 rows like the menu icon, in its lines):
+**Phase 12 (Jim's choice from VICE mockups):** the 13-row badges of the mockup were cut off on his
+NTSC 1702. Now all three images are **solid shapes with the letters cut out**, 9 rows (the cut-out
+letters need a solid row above and below). Sprite 2/3 data (24×9, a solid up arrow with "F3" cut
+out, "SB3C"; the head's top is 2 pixels narrower than the base, 2 pixels beside the letters):
 ```
-..X....XXXX..XXX.....X..   $21,$E7,$04
-.XXX...XX...XX.XX...XXX.   $71,$8D,$8E
-XXXXX..XX......XX..XXXXX   $F9,$81,$9F
-.XXX...XXX....XX....XXX.   $71,$C3,$0E
-.XXX...XX......XX...XXX.   $71,$81,$8E
-.XXX...XX...XX.XX...XXX.   $71,$8D,$8E
-.XXX...XX....XXX....XXX.   $71,$87,$0E
+......XXXXXXXXXXXX......   $03,$FF,$C0
+.....XX....XX...XXX.....   $06,$18,$E0
+....XXX..XXX..X..XXX....   $0E,$72,$70
+...XXXX..XXXXXX..XXXX...   $1E,$7E,$78
+..XXXXX...XXXX..XXXXXX..   $3E,$3C,$FC
+.....XX..XXXXXX..XX.....   $06,$7E,$60
+.....XX..XXX..X..XX.....   $06,$72,$60
+.....XX..XXXX...XXX.....   $06,$78,$E0
+.....XXXXXXXXXXXXXX.....   $07,$FF,$E0
 ```
-Sprite 4/5 data (24×7, "F5" between two down arrows):
+Sprite 4/5 data (24×9, the same arrow upside down with "F5" cut out):
 ```
-.XXX...XXXX.XXXXX...XXX.   $71,$EF,$8E
-.XXX...XX...XX......XXX.   $71,$8C,$0E
-.XXX...XX...XXXX....XXX.   $71,$8F,$0E
-.XXX...XXX.....XX...XXX.   $71,$C1,$8E
-XXXXX..XX......XX..XXXXX   $F9,$81,$9F
-.XXX...XX...XX.XX...XXX.   $71,$8D,$8E
-..X....XX....XXX.....X..   $21,$87,$04
+.....XXXXXXXXXXXXXX.....   $07,$FF,$E0
+.....XX....X.....XX.....   $06,$10,$60
+.....XX..XXX..XXXXX.....   $06,$73,$E0
+.....XX..XXX....XXX.....   $06,$70,$E0
+..XXXXX...XXXXX..XXXXX..   $3E,$3E,$7C
+...XXXX..XXXXXX..XXXX...   $1E,$7E,$78
+....XXX..XXX..X..XXX....   $0E,$72,$70
+.....XX..XXXX...XXX.....   $06,$78,$E0
+......XXXXXXXXXXXX......   $03,$FF,$C0
 ```
-Sprite 1 data (23×7, "≡F1"):
+Sprite 1 data (23×9, "≡F1" cut out of a box with a pixel off each corner, "M1"):
 ```
-XXXXXXXX..XXXX..XX......   $FF,$3C,$C0
-..........XX...XXX......   $00,$31,$C0
-..........XX....XX......   $00,$30,$C0
-XXXXXXXX..XXX...XX......   $FF,$38,$C0
-..........XX....XX......   $00,$30,$C0
-..........XX....XX......   $00,$30,$C0
-XXXXXXXX..XX...XXXX.....   $FF,$31,$E0
+.XXXXXXXXXXXXXXXXXXXXX..   $7F,$FF,$FC
+XX........XX....XX..XXX.   $C0,$30,$CE
+XXXXXXXXXXXX..XXX...XXX.   $FF,$F3,$8E
+XXXXXXXXXXXX..XXXX..XXX.   $FF,$F3,$CE
+XX........XX...XXX..XXX.   $C0,$31,$CE
+XXXXXXXXXXXX..XXXX..XXX.   $FF,$F3,$CE
+XXXXXXXXXXXX..XXXX..XXX.   $FF,$F3,$CE
+XX........XX..XXX....XX.   $C0,$33,$86
+.XXXXXXXXXXXXXXXXXXXXX..   $7F,$FF,$FC
 ```
-Store only the rows above (7×3 bytes); expand into 64-byte sprite blocks at init and zero the rest
-(the images are in `src/startup.asm` since phase 11b).
+Store only the rows above (9×3 bytes); expand into 64-byte sprite blocks at init and zero the rest
+(the images are in `src/startup.asm` since phase 11b). (Before phase 12: "F3"/"F5" between two
+arrows and an open "≡F1", 7 rows; earlier still the mockup's 13-row badges.)
 
 **Decided (2026-09-27):** the badges sit in the side borders, as in Jim's mockup. (Branch `phase1`
 keeps the earlier layout, with the badges above/below the text area.)
 
 Vertical placement (same on PAL and NTSC), as raster lines:
-- Top badges: raster 42–48, level with the menu icon (phase 12; were 37–49).
-- Menu icon: raster 42–48 (same as the mockup).
-- Bottom badges: raster 252–258 (phase 12; were 252–264).
+- Top badges and menu icon: raster 41–49 (phase 12; the badges were 37–49 in the mockup, the
+  icon 42–48).
+- Bottom badges: raster 252–260 (phase 12; were 252–264).
 
 Why one line away from the text area: showing a sprite in the right border of line 50 means opening
 that border, and that also opens the **left** border of line 51, the first text line. There the VIC
@@ -620,17 +632,19 @@ mockup exactly would need two more sprites (6 and 7) as dark grey patches over t
 Found in phase 1 (VICE): a sprite's first row shows on raster line **Y+1**, and the VIC always fetches
 all **21 rows** of a sprite, stealing CPU cycles at the end of each of those lines. The top badges and
 the menu icon share the same 21 fetched lines (29–49, Y = 28), with their pictures low in their blocks
-(badges and icon rows 13–19), so every line of the top strip loses the same cycles and the line
-50/51 color split has no sprite fetches. The bottom badges use rows 0–6 with Y = 251. Also, the VIC
+(badges and icon rows 12–20), so every line of the top strip loses the same cycles and the line
+50/51 color split has no sprite fetches. The bottom badges use rows 0–8 with Y = 251. Also, the VIC
 compares sprite Y with only the low 8 bits of the raster line, so on PAL the top sprites would appear
 again at line 256+Y; sprites 1–3 are switched off after the bottom strip and back on at line 10.
 - **NTSC (Jim's 1702, phase 12):** the old 13-row badges were cut off at both ends; the menu icon
-  (42–48) showed whole. Hence the 7-row badges on 42–48 and 252–258. Check them on the 1702 again.
+  (42–48) showed whole. The new icons are 9 rows, on 41–49 and 252–260: one line more at each
+  end than the icon that showed. Check them on the 1702 again.
 
 **Horizontal placement (as in the mockup):**
-- Left badges (sprites 2 and 4): X = 0, in the left border, touching the text area (X = 24).
-- Right badges (sprites 3 and 5): X = 344, in the right border, touching the text area. X > 255, so
-  set their bits in the sprite X MSB register $D010.
+- Left badges (sprites 2 and 4): X = 2, in the left border; the widest row (columns 2–21) ends at
+  X = 23, touching the text area (X = 24) (Jim, phase 12).
+- Right badges (sprites 3 and 5): X = 342, in the right border; the widest row starts at X = 344,
+  touching the text area. X > 255, so set their bits in the sprite X MSB register $D010.
 - Menu icon (sprite 1): X = 32, 8 pixels in from the text area's left edge.
 - The side borders are opened on lines 28–49 and 251–264 with the 38/40-column trick ($D016 written
   in one exact cycle per line), from the two stable IRQs. An open side border shows $D021 (blue in
@@ -857,7 +871,9 @@ movement keys** — C= + digit still selects a color.
   since phase 8 black on some backgrounds, `pointer_colors`);
   a click then works that icon: F3 badges page up, F5 badges page down (with the mark key held: marking
   by page), the menu icon opens the menu. Hit zones in the strips (box left
-  edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60.
+  edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60. (Phase 12:
+  the redrawn badges' inner edges are where the old ones' were, X = 23 and 344, and the ≡F1 box
+  covers X = 32–54, so the zones still fit.)
 - The box's top line stays within **52–242** (not 51 or 250: its fetches must stay within lines 52–249,
   clear of the line 50 split, the line 249 stable check and the strips). From line 229 it uses a second
   picture low in its block (block 254, rows 13–20; `spr_pointer_low`), so the fetches run above the box.

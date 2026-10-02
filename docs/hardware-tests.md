@@ -10,9 +10,10 @@ For each failure: what you did, what you saw (a photo of the screen helps), and 
 ## A. On every machine (about 15 minutes)
 
 - [ ] **Start:** `LOAD"MAGIC TYPEWRITER",8` (or from the machine's own file menu), `RUN`. Blue
-      strips top and bottom, F3/F5 badges in the four corners, ≡F1 near the top left, and the
-      sides all grey (the page marker fills them while the document is empty). Type a few
-      screens of text: the sides turn dark grey with a grey band that moves as you page.
+      strips top and bottom, F3/F5 badges (solid arrows) in the four corners, the ≡F1 box near
+      the top left, and the sides all grey (the page marker fills them while the document is
+      empty). Type a few screens of text: the sides turn dark grey with a grey band that moves
+      as you page.
 - [ ] **Typing:** both SHIFT keys give capitals; SHIFT LOCK too. INST/DEL, SHIFT+INST/DEL, RETURN.
 - [ ] **Cursor:** blinks about 3 times a second; F7 switches underline ↔ block.
 - [ ] **Colors:** CTRL-3 then type: red. C= 5 then type: grey. CTRL-9/CTRL-0: reverse on/off.
@@ -31,7 +32,9 @@ For each failure: what you did, what you saw (a photo of the screen helps), and 
 
 ## B. Real C64 (PAL and/or NTSC)
 
-- [ ] **NTSC TV:** are the tips of the top F3 badges visible, or cut off at the top of the picture?
+- [ ] **NTSC TV (the 1702):** are the F3/F5 badges and the ≡F1 box whole? They are 9 rows now
+      (lines 41–49 and 252–260): look for the flat tip of each arrow and the top and bottom
+      edges of the ≡F1 box.
 - [ ] **Drives:** whatever you have: 1541, 1571, 1581, SD2IEC, Pi1541. Load and save on each;
       a write-protected disk gives `26, WRITE PROTECT ON`; no disk/no drive gives an error box,
       not a hang.

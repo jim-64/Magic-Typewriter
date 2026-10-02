@@ -467,40 +467,50 @@ spr_pointer_low
         !byte %11000011,0,0
         !byte %11111111,0,0
 
-; Menu icon "=F1" (23x7)
+; Menu icon "=F1": the three bars and F1 cut out of a solid box with a
+; pixel off each corner (Jim, phase 12: "M1", to go with the badges);
+; 23x9, rows 12-20 (lines 41-49, level with the F3 badges)
 spr_menu
-        !byte 13, 7*3
-        !byte $ff,$3c,$c0       ; XXXXXXXX..XXXX..XX......
-        !byte $00,$31,$c0       ; ..........XX...XXX......
-        !byte $00,$30,$c0       ; ..........XX....XX......
-        !byte $ff,$38,$c0       ; XXXXXXXX..XXX...XX......
-        !byte $00,$30,$c0       ; ..........XX....XX......
-        !byte $00,$30,$c0       ; ..........XX....XX......
-        !byte $ff,$31,$e0       ; XXXXXXXX..XX...XXXX.....
+        !byte 12, 9*3
+        !byte $7f,$ff,$fc       ; .XXXXXXXXXXXXXXXXXXXXX..
+        !byte $c0,$30,$ce       ; XX........XX....XX..XXX.
+        !byte $ff,$f3,$8e       ; XXXXXXXXXXXX..XXX...XXX.
+        !byte $ff,$f3,$ce       ; XXXXXXXXXXXX..XXXX..XXX.
+        !byte $c0,$31,$ce       ; XX........XX...XXX..XXX.
+        !byte $ff,$f3,$ce       ; XXXXXXXXXXXX..XXXX..XXX.
+        !byte $ff,$f3,$ce       ; XXXXXXXXXXXX..XXXX..XXX.
+        !byte $c0,$33,$86       ; XX........XX..XXX....XX.
+        !byte $7f,$ff,$fc       ; .XXXXXXXXXXXXXXXXXXXXX..
 
-; "F3" badge: page up (24x7, rows 13-19 like the menu icon: lines 42-48,
-; which an NTSC monitor still shows - the 13-row badges were cut off on
-; Jim's 1702)
+; "F3" badge: page up. A solid up arrow with F3 cut out of it (Jim's
+; choice, phase 12: "SB3C"); 24x9, rows 12-20 (lines 41-49). The letters
+; need a solid row above and below them, so the badge is 9 rows; the
+; 13-row badges of the mockup were cut off on Jim's NTSC 1702.
 spr_f3
-        !byte 13, 7*3
-        !byte $21,$e7,$04       ; ..X....XXXX..XXX.....X..
-        !byte $71,$8d,$8e       ; .XXX...XX...XX.XX...XXX.
-        !byte $f9,$81,$9f       ; XXXXX..XX......XX..XXXXX
-        !byte $71,$c3,$0e       ; .XXX...XXX....XX....XXX.
-        !byte $71,$81,$8e       ; .XXX...XX......XX...XXX.
-        !byte $71,$8d,$8e       ; .XXX...XX...XX.XX...XXX.
-        !byte $71,$87,$0e       ; .XXX...XX....XXX....XXX.
+        !byte 12, 9*3
+        !byte $03,$ff,$c0       ; ......XXXXXXXXXXXX......
+        !byte $06,$18,$e0       ; .....XX....XX...XXX.....
+        !byte $0e,$72,$70       ; ....XXX..XXX..X..XXX....
+        !byte $1e,$7e,$78       ; ...XXXX..XXXXXX..XXXX...
+        !byte $3e,$3c,$fc       ; ..XXXXX...XXXX..XXXXXX..
+        !byte $06,$7e,$60       ; .....XX..XXXXXX..XX.....
+        !byte $06,$72,$60       ; .....XX..XXX..X..XX.....
+        !byte $06,$78,$e0       ; .....XX..XXXX...XXX.....
+        !byte $07,$ff,$e0       ; .....XXXXXXXXXXXXXX.....
 
-; "F5" badge: page down (24x7, rows 0-6: lines 252-258)
+; "F5" badge: page down. The same arrow upside down, with F5 cut out
+; (24x9, rows 0-8: lines 252-260)
 spr_f5
-        !byte 0, 7*3
-        !byte $71,$ef,$8e       ; .XXX...XXXX.XXXXX...XXX.
-        !byte $71,$8c,$0e       ; .XXX...XX...XX......XXX.
-        !byte $71,$8f,$0e       ; .XXX...XX...XXXX....XXX.
-        !byte $71,$c1,$8e       ; .XXX...XXX.....XX...XXX.
-        !byte $f9,$81,$9f       ; XXXXX..XX......XX..XXXXX
-        !byte $71,$8d,$8e       ; .XXX...XX...XX.XX...XXX.
-        !byte $21,$87,$04       ; ..X....XX....XXX.....X..
+        !byte 0, 9*3
+        !byte $07,$ff,$e0       ; .....XXXXXXXXXXXXXX.....
+        !byte $06,$10,$60       ; .....XX....X.....XX.....
+        !byte $06,$73,$e0       ; .....XX..XXX..XXXXX.....
+        !byte $06,$70,$e0       ; .....XX..XXX....XXX.....
+        !byte $3e,$3e,$7c       ; ..XXXXX...XXXXX..XXXXX..
+        !byte $1e,$7e,$78       ; ...XXXX..XXXXXX..XXXX...
+        !byte $0e,$72,$70       ; ....XXX..XXX..X..XXX....
+        !byte $06,$78,$e0       ; .....XX..XXXX...XXX.....
+        !byte $03,$ff,$c0       ; ......XXXXXXXXXXXX......
 
 spr_positions
         !byte <PTR_TEST_X,   PTR_TEST_Y         ; 0 pointer

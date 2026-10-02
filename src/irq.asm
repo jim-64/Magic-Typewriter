@@ -797,14 +797,15 @@ SPR_BLOCK_F5    = 253           ; F5 badge (sprites 4 and 5)
 SPR_BLOCK_PTR_LOW = 254         ; mouse pointer, low in its block
 
 SPR_TOP_Y       = 29 - 1        ; F3 badges and menu icon: blocks on lines
-                                ; 29-49; F3 picture (rows 13-19) on 42-48,
-                                ; menu picture (rows 13-19) on 42-48
-SPR_BOT_Y       = 252 - 1       ; F5 badges: picture (rows 0-6) on 252-258
+                                ; 29-49; F3 picture (rows 12-20) on 41-49,
+                                ; menu picture (rows 12-20) on 41-49
+SPR_BOT_Y       = 252 - 1       ; F5 badges: picture (rows 0-8) on 252-260
 SPR_ON_ICONS    = %00111110     ; sprites 1-5 (the pointer, 0, only when
                                 ; it shows: see irq_frame_top)
 SPR_ON_BOTTOM   = %00110001     ; pointer and F5 badges only (see border_top_done)
-SPR_LEFT_X      = 0             ; left border, touching the text area (X=24)
-SPR_RIGHT_X     = 344           ; right border, from the text area's edge;
-                                ; needs X bit 8
+SPR_LEFT_X      = 2             ; left border: the badge's widest row ends
+                                ; at X=23, touching the text area (X=24)
+SPR_RIGHT_X     = 342           ; right border: the widest row starts at
+                                ; X=344, touching the text area; needs X bit 8
 SPR_MENU_X      = 32            ; 8 pixels in from the text area's left edge
 
