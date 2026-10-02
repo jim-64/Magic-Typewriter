@@ -69,7 +69,7 @@ for model, want_sys in (("c64", 0), ("ntsc", 1), ("oldntsc", 2), ("drean", 3)):
             check(name + ": system %d, %d REU banks, long documents %s, text to $%04x"
                   % (sysb, banks, "on" if docs else "off", te),
                   sysb == want_sys and banks == {0: 0, 128: 2, 512: 8}[reu]
-                  and docs == long_docs and te == top == (0xc000 if long_docs else 0xd000))
+                  and docs == long_docs and te == top == (0xbc00 if long_docs else 0xcc00))
             # (between the top strip and line 10 sprites 1-3 are off: $30)
             check(name + ": badges on ($d015 = $%02x), ROMs out ($01 = $%02x), no mailbox" % (spr, cpu),
                   spr & 0x30 == 0x30 and cpu & 7 == 5 and mb != b"MTDB")

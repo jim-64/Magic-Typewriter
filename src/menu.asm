@@ -431,8 +431,8 @@ MI_RUN          = 3             ; runs a routine, then shows the menu again
 MI_DO           = 4             ; closes the menus, then runs a routine
 MI_EXIT         = 5             ; back one level
 
-MENU_TOP        = 4             ; the panel: rows 4-19 ...
-MENU_ROWS       = 16
+MENU_TOP        = 4             ; the panel: rows 4-24 ...
+MENU_ROWS       = 21
 MENU_LEFT       = 5             ; ... and columns 5-34
 MENU_WIDTH      = 30
 MENU_TITLE_ROW  = MENU_TOP + 1
@@ -617,7 +617,14 @@ menu_draw
         lda (ptr),y
         bne +
         stx menu_count          ; (the 0 after the last)
-        rts
+        lda menu_ptr            ; the main menu: the CTRL keys below it
+        cmp #<menu_main
+        bne .done
+        lda menu_ptr+1
+        cmp #>menu_main
+        bne .done
+        jmp .ctrl_keys
+.done   rts
 +       sta .letter
         iny
         lda (ptr),y
@@ -677,6 +684,35 @@ menu_draw
         inx
         jmp .item
 
+; .ctrl_keys - the main menu's foot: a line, then the CTRL keys (Jim)
+.ctrl_keys
+        ldx #MENU_CTRL_ROW-1
+        lda #$6b
+        ldy #$73
+        jsr box_edge
+        ldx #0
+-       stx .i
+        txa
+        clc
+        adc #MENU_CTRL_ROW
+        tax
+        jsr box_row_ptrs
+        lda .i
+        asl
+        tax
+        lda ctrl_lines,x
+        pha
+        lda ctrl_lines+1,x
+        tax
+        pla
+        ldy #2
+        jsr box_print
+        ldx .i
+        inx
+        cpx #4
+        bcc -
+        rts
+
 .title  !word 0
 .letter !byte 0
 .kind   !byte 0
@@ -684,6 +720,13 @@ menu_draw
 .what   !word 0
 .i      !byte 0
 .col    !byte 0
+
+MENU_CTRL_ROW   = MENU_TOP + 16 ; the CTRL keys: rows 20-23
+ctrl_lines      !word t_ctrl1, t_ctrl2, t_ctrl3, t_ctrl4
+t_ctrl1         !scr "ctrl+ a mark all   f find", 0
+t_ctrl2         !scr "      x cut        v paste", 0
+t_ctrl3         !scr "      c copy       s save", 0
+t_ctrl4         !scr "      z undo", 0
 
 ;----------------------------------------------------------------------------
 ; panel_open - an empty panel (MENU_TOP ... ) with a title (A/X, screen
@@ -902,10 +945,6 @@ menu_quit
         rts
 +       jmp quit
 
-; not_yet - a menu item for a later phase
-not_yet lda #<msg_not_yet
-        ldx #>msg_not_yet
-        jmp message_box
 
 ;----------------------------------------------------------------------------
 ; show_stats - the Stats item: characters, words, sentences and the room
@@ -1118,7 +1157,7 @@ ST_FREE         = 9
 st_counts       !fill 12, 0
 
 ; free_percent - num24 = the room left as a percentage of the whole buffer
-; (rounded down): free * 100 / (BUF_END - BUF_START), with the math
+; (rounded down): free * 100 / (buf_top - BUF_START), with the math
 ; helpers in system.asm.
 !zone free_percent
 free_percent
@@ -1132,9 +1171,12 @@ free_percent
         lda #100
         sta math_mul
         jsr mul_16x8
-        lda #<(BUF_END - BUF_START) ; ... / the buffer's size
+        sec                     ; ... / the buffer's size
+        lda buf_top
+        sbc #<BUF_START
         sta math_div
-        lda #>(BUF_END - BUF_START)
+        lda buf_top+1
+        sbc #>BUF_START
         sta math_div+1
         jsr div_24x16
         lda math_num            ; the answer (0-100)
@@ -1270,9 +1312,9 @@ set_mode        !word edit_mode : !byte 2 : !word v_0_1, names_mode
 set_markkey     !word mark_key : !byte 2 : !word v_1_0, names_markkey
 set_background  !word text_bg : !byte 16 : !word v_colors, names_colors
 set_textcolor   !word text_color : !byte 16 : !word v_colors, names_colors
-set_load_format !word load_format : !byte 4 : !word v_colors, names_formats
+set_load_format !word load_format : !byte 3 : !word v_colors, names_formats
 set_load_dev    !word load_dev : !byte 8 : !word v_devices, names_devices
-set_save_format !word save_format : !byte 4 : !word v_colors, names_formats
+set_save_format !word save_format : !byte 3 : !word v_colors, names_formats
 set_save_type   !word save_type : !byte 2 : !word v_0_1, names_types
 set_save_dev    !word save_dev : !byte 8 : !word v_devices, names_devices
 set_print_ascii !word print_ascii : !byte 2 : !word v_0_1, names_no_yes
@@ -1291,7 +1333,7 @@ names_colors    !word n_black, n_white, n_red, n_cyan, n_purple, n_green
                 !word n_blue, n_yellow, n_orange, n_brown, n_lightred
                 !word n_darkgrey, n_grey, n_lightgreen, n_lightblue
                 !word n_lightgrey
-names_formats   !word n_magic, n_petscii, n_ascii, n_speedscript
+names_formats   !word n_magic, n_petscii, n_ascii
 names_devices   !word n_8, n_tape, n_9, n_10, n_11, n_12, n_13, n_14
 names_types     !word n_seq, n_prg
 names_no_yes    !word n_no, n_yes
@@ -1352,7 +1394,6 @@ n_lightblue     !scr "light blue", 0
 n_lightgrey     !scr "light grey", 0
 n_magic         !scr "magic", 0
 n_petscii       !scr "petscii", 0
-n_speedscript   !scr "speedscript", 0
 n_tape          !scr "tape", 0
 n_seq           !scr "seq", 0
 n_prg           !scr "prg", 0

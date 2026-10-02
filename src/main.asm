@@ -171,11 +171,11 @@ main_loop
         jsr get_key             ; any key event?
         bcs main_loop
 !if DEBUG {
+        ldx #1                  ; busy with a key (first: the harness must
+        stx MB_BUSY             ; never see it counted but not busy)
         jsr mailbox_log_key     ; tell the test harness
         ldx frame_count         ; and how many frames the key takes
         stx key_start_frame
-        ldx #1                  ; (busy with it)
-        stx MB_BUSY
 }
         jsr editor_key
         lda reu_docs            ; a long document: the window follows the
@@ -267,6 +267,7 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 !source "src/input.asm"
 !source "src/menu.asm"
 !source "src/fileio.asm"
+!source "src/undo.asm"
 !source "src/data.asm"
 
 ;----------------------------------------------------------------------------
@@ -298,21 +299,6 @@ REUDOC_SIZE     = reudoc_end - REUDOC
 }
 
 ;----------------------------------------------------------------------------
-; ... and last the start-up code, which runs once from where the PRG file
-; puts it (in the text buffer: the document takes the room afterwards)
-;----------------------------------------------------------------------------
-!source "src/startup.asm"
-!if startup < $4000 {
-        !error "The start-up code must lie in the text buffer, past the sprite blocks"
-}
-program_end                             ; the end of the PRG file
-HIGH_SIZE       = high_end - HIGH_CODE  ; (the editor alone: reudoc follows it)
-
-!if high_end > RAM_NMI_VECTOR {
-        !error "The code under the KERNAL ROM has grown into the vectors at $fffa"
-}
-
-;----------------------------------------------------------------------------
 ; Tables that need no starting values. They lie over the stored copy of
 ; the editor, which is free once copy_high has run, so the PRG file does
 ; not carry them. They are set up at start-up.
@@ -327,11 +313,29 @@ row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
 row_len         = row_rvs + MROWS       ;   how many cursor places it has
 dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
 prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
+border_code     = prompt_save + 240     ; the border code for this video
+                                        ; system (startup.asm puts it here)
+
+;----------------------------------------------------------------------------
+; ... and last the start-up code, which runs once from where the PRG file
+; puts it (in the text buffer: the document takes the room afterwards)
+;----------------------------------------------------------------------------
+!source "src/startup.asm"
+!if startup < $4000 {
+        !error "The start-up code must lie in the text buffer, past the sprite blocks"
+}
+program_end                             ; the end of the PRG file
+HIGH_SIZE       = high_end - HIGH_CODE  ; (the editor alone: reudoc follows it)
+
+!if high_end > RAM_NMI_VECTOR {
+        !error "The code under the KERNAL ROM has grown into the vectors at $fffa"
+}
+
 !ifdef MOUSE_TRACE {
-mouse_trace     = prompt_save + 240     ; 256: mouse trace (input.asm)
+mouse_trace     = border_code + BORDER_SIZE ; 256: mouse trace (input.asm)
 tables_end      = mouse_trace + 256
 } else {
-tables_end      = prompt_save + 240
+tables_end      = border_code + BORDER_SIZE
 }
 
 ; The lower part and the tables must end before the sprite blocks at $3e80.

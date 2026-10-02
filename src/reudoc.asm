@@ -835,6 +835,57 @@ reu_room_for
 .want   !word 0
 
 ;----------------------------------------------------------------------------
+; reu_to_end - the window to the end of the document (SHIFT + F5): the tail
+; comes in a piece at a time, the window's start going to the head to make
+; room for it. The cursor ends at the end. (reu_keep, after the key, then
+; makes room for typing.)
+;----------------------------------------------------------------------------
+!zone reu_to_end
+reu_to_end
+-       jsr tail_empty
+        beq .done
+        jsr text_len            ; the gap to the window's end
+        lda work
+        sta off
+        lda work+1
+        sta off+1
+        jsr move_gap_to
+        jsr rd_sizes
+        lda #<CHUNK_SIZE        ; up to CHUNK_SIZE of the tail
+        sta rd_len
+        lda #>CHUNK_SIZE
+        sta rd_len+1
+        lda tail_len+2
+        bne +
+        lda tail_len
+        cmp #<CHUNK_SIZE
+        lda tail_len+1
+        sbc #>CHUNK_SIZE
+        bcs +
+        lda tail_len
+        sta rd_len
+        lda tail_len+1
+        sta rd_len+1
++       lda rd_gap              ; room for it?
+        cmp rd_len
+        lda rd_gap+1
+        sbc rd_len+1
+        bcs .pop
+        lda #0                  ; no: the window's start to the head first
+        jsr push_len            ; (a swap: the REU part stays the same size)
+        bcs .done
+        jsr reu_room
+        bcc .done
+        jsr push_chunk
+        jmp -
+.pop    jsr tail_pop
+        jmp -
+.done   jsr count_colors        ; (the window's text is another now)
+        lda #0
+        sta top_known
+        rts
+
+;----------------------------------------------------------------------------
 ; reu_to_start - the window to the start of the document: every head chunk
 ; comes back, the window's end going to the tail to make room (after a
 ; load; also HOME at the top). The cursor ends at the start.
@@ -1122,7 +1173,7 @@ long_percent
         lda #100
         sta math_mul
         jsr mul_16x8
-        lda #<((REUDOC-BUF_START-RESERVE-HDR)/256)
+        lda #<((REUDOC-UNDO_SIZE-BUF_START-RESERVE-HDR)/256)
         sta math_div
         sec
         lda reu_banks
@@ -1238,9 +1289,9 @@ reu_all_in
         adc tail_len+2
         bne .too_long
         lda .len                ; room: the window, less a little for typing
-        cmp #<(REUDOC-BUF_START-256)
+        cmp #<(REUDOC-UNDO_SIZE-BUF_START-256)
         lda .len+1
-        sbc #>(REUDOC-BUF_START-256)
+        sbc #>(REUDOC-UNDO_SIZE-BUF_START-256)
         bcc +
 .too_long
         lda .msg
@@ -1453,6 +1504,60 @@ rd_slide
         clc
         rts
 .keep   !word 0
+
+;----------------------------------------------------------------------------
+; reu_goto - CTRL-Z in a long document (undo.asm): the window to the
+; document offset u_q, with the u_b bytes after it in the window too.
+; From the start if it lies before the window, then on through it.
+;----------------------------------------------------------------------------
+!zone reu_goto
+reu_goto
+        lda u_q                 ; before the window? From the start then
+        cmp win_base
+        lda u_q+1
+        sbc win_base+1
+        lda u_q+2
+        sbc win_base+2
+        bcs +
+        jsr reu_to_start
++
+-       jsr text_len            ; the window's end, in the document ...
+        clc
+        lda work
+        adc win_base
+        sta .e
+        lda work+1
+        adc win_base+1
+        sta .e+1
+        lda #0
+        adc win_base+2
+        sta .e+2
+        clc                     ; ... at or past P + B? Then it is there.
+        lda u_q
+        adc u_b
+        sta .t
+        lda u_q+1
+        adc u_b+1
+        sta .t+1
+        lda u_q+2
+        adc #0
+        sta .t+2
+        lda .e
+        cmp .t
+        lda .e+1
+        sbc .t+1
+        lda .e+2
+        sbc .t+2
+        bcs .done
+        lda work                ; else on through the document
+        sta off
+        lda work+1
+        sta off+1
+        jsr rd_slide
+        bcc -
+.done   rts
+.e      !byte 0, 0, 0
+.t      !byte 0, 0, 0
 
 rd_from         !byte 0, 0, 0   ; Find: where it began, in the document
 rd_slid         !byte 0         ; Find: 1 once the window has moved

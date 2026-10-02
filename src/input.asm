@@ -61,6 +61,7 @@ KEY_A           = 10
 KEY_N           = 39
 KEY_W           = 9
 KEY_F           = 21
+KEY_Z           = 12
 
 ; Events that are not a single key
 KEY_CHARSET     = $40           ; C= and SHIFT pressed and let go alone
@@ -431,7 +432,7 @@ key_to_petscii
 ; Where the pointer goes (Jim's choice): over the text area only. The
 ; border strips above and below it are timed to the exact cycle, and the
 ; pointer sprite's fetches there would upset that. Moved on past the text,
-; the pointer hides and the border icon under it turns red instead; a
+; the pointer hides and the border icon under it turns white instead; a
 ; click then works that icon.
 ;
 ; The VIC fetches all 21 rows of a sprite from its top line, even blank
@@ -461,6 +462,8 @@ MOUSE_Y_LAST    = 242           ; above) and the last
 MOUSE_Y_MAX     = 255           ; in the bottom strip
 MOUSE_Y_LOWPIC  = 229           ; from here on, the picture low in its block
 MOUSE_X0        = 24 + 19*8     ; where it starts: the middle of the screen
+MOUSE_MAX_STEP  = 28            ; a reading moving this far or more: a bad
+                                ; one (pot_delta)
 MOUSE_Y0        = 51 + 12*8 + 1
 
 ; Which border icon a click was on (click_icon)
@@ -606,6 +609,26 @@ mouse_frame
         inx
         inx
         stx mouse_trace_i
+}
+!ifdef MOUSE_SHOW {
+        ; -DMOUSE_SHOW=1 builds, for trying a mouse on real hardware: in the
+        ; bottom right corner, in hex, the paddle values X and Y, this
+        ; frame's move X and Y, and how many readings were thrown away.
+        lda SID_POTX
+        ldx #0
+        jsr .hex
+        lda SID_POTY
+        ldx #3
+        jsr .hex
+        lda mouse_dx
+        ldx #6
+        jsr .hex
+        lda mouse_dy
+        ldx #9
+        jsr .hex
+        lda mouse_rejects
+        ldx #12
+        jsr .hex
 }
         lda mouse_dx            ; moved: so there is a mouse
         ora mouse_dy
@@ -761,17 +784,16 @@ mouse_frame
 .set_icon
         sty mouse_sprite
         ldx #4                  ; the icons light blue, the one under the
-        lda #LIGHT_BLUE         ; pointer in the pointer's color (while the
--       sta icon_colors,x       ; mouse is in use)
+        lda #LIGHT_BLUE         ; pointer white (while the mouse is in use)
+-       sta icon_colors,x
         dex
         bpl -
         ldx mouse_sprite
         beq +
         jsr .is_idle
         bcs +
-        ldy text_bg             ; (red, or black on some backgrounds -
-        lda pointer_colors,y    ; see data.asm)
-        sta icon_colors-1,x
+        lda #WHITE              ; (white: red hardly showed on the blue
+        sta icon_colors-1,x     ; strip - Jim, on a real 1702)
 +
         ; 5. The pointer sprite, for the next frame.
         lda #0
@@ -965,6 +987,29 @@ mouse_frame
 mouse_trace_i !byte 0           ; the next slot (counts on in 4s, wraps)
 }
 
+!ifdef MOUSE_SHOW {
+; .hex (mouse_frame's zone) - A in hex at column 26 + X of the bottom row
+.hex    pha
+        lsr
+        lsr
+        lsr
+        lsr
+        tay
+        lda .digits,y
+        sta SCREEN+24*40+26,x
+        pla
+        and #15
+        tay
+        lda .digits,y
+        sta SCREEN+24*40+27,x
+        lda #WHITE
+        sta COLOR_RAM+24*40+26,x
+        sta COLOR_RAM+24*40+27,x
+        rts
+.digits !scr "0123456789", $01, $02, $03, $04, $05, $06
+mouse_rejects   !byte 0         ; readings thrown away (pot_delta)
+}
+
 ;----------------------------------------------------------------------------
 ; pot_delta - A = a paddle value now, Y = the one last used. Returns A = how
 ; far the mouse moved (signed; the value counts in steps of 2, bit 0 is
@@ -982,6 +1027,8 @@ pot_delta
         bcs .neg
         lsr                     ; forwards
         beq .none
+        cmp #MOUSE_MAX_STEP
+        bcs .reject
         ldy .new
         rts
 .neg    ora #%11000000          ; backwards
@@ -989,9 +1036,24 @@ pot_delta
         beq .none
         sec
         ror
+        cmp #$100-MOUSE_MAX_STEP+1
+        bcc .reject
         ldy .new
         rts
 .none   lda #0                  ; (Y is still the old value)
+        rts
+        ; A jump no 1351 can make between two readings (a third of a frame
+        ; apart): a bad reading. No move - but the new value is kept, so a
+        ; bad reading and the good one after it add up to nothing. (Before,
+        ; two readings half the range apart always added up to the same
+        ; step - one way to make a pointer creep. Jim's real 1351 slid down
+        ; the screen and never went idle.)
+.reject
+!ifdef MOUSE_SHOW {
+        inc mouse_rejects
+}
+        lda #0
+        ldy .new
         rts
 .old    !byte 0
 .new    !byte 0
@@ -1197,6 +1259,10 @@ test_document
 ;----------------------------------------------------------------------------
 !zone mailbox_mouse
 mailbox_mouse
+!ifdef SPLIT_TEST {
+        sec                     ; (timing test builds: no harness mouse -
+        rts                     ; they have no room for it since phase 12)
+} else {
         ldx MB_MOUSE_TAIL       ; an event waiting?
         cpx MB_MOUSE_HEAD
         bne .event
@@ -1236,6 +1302,7 @@ mailbox_mouse
 .used   !byte 0
 .btn    !byte 0
 
+}       ; (end of !ifdef SPLIT_TEST)
 ;----------------------------------------------------------------------------
 ; mailbox_log_key - record a key event the main loop took (A = code,
 ; Y = modifiers) in the mailbox log. Keeps A and Y.

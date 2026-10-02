@@ -142,7 +142,7 @@ try:
     t = e.text()[0]
     check("a 40 KB PRG: not with KERNAL LOAD", v(e, "load_fast") == 0)
     check("... 'TOO LONG: ONLY PART LOADED'", "TOO LONG" in rows(e)[12], rows(e)[12])
-    check("... the part that fits, from the start", t == BIG[:len(t)] and len(t) > 36000, len(t))
+    check("... the part that fits, from the start", t == BIG[:len(t)] and len(t) > 35000, len(t))   # (35 KB: 1 KB is CTRL-Z's)
     key(e, "SPACE")
 
     # A PRG from elsewhere (load address $0801): read byte by byte, never

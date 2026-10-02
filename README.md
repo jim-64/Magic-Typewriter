@@ -47,6 +47,7 @@ What you see:
 |---|---|
 | F1, RUN/STOP | The menu |
 | F3 / F5 | Page up / page down |
+| SHIFT + F3 / SHIFT + F5 | Top / end of the document |
 | F7 | Insert / overwrite |
 | SHIFT + F7 | Next background color |
 | C= + SHIFT | Upper case/graphics ↔ upper/lower case, as in BASIC |
@@ -60,6 +61,7 @@ What you see:
 | CTRL-9 / CTRL-0 | Reverse on / off |
 | CTRL-A | Mark everything |
 | CTRL-X / CTRL-C / CTRL-V | Cut / copy / paste |
+| CTRL-Z | Undo the last change |
 | CTRL-F | Find |
 | CTRL-S | Save (asks for a name the first time) |
 
@@ -78,10 +80,17 @@ Hold the **mark key** while moving the cursor: the text you pass over is marked 
 The mark key is **C=** (the default) or **left SHIFT** (main menu, F).
 
 - C= + cursor keys mark; C= + SHIFT + cursor marks up or left.
-- Mark key + F3/F5 marks a page at a time.
+- Mark key + F3/F5 marks a page at a time; with SHIFT too, all the way to the top or the end.
 - With text marked: typing replaces it, INST/DEL deletes it, CTRL-X/C cut or copy it, and **a
   color or reverse key recolors all of it**.
 - Any cursor move without the mark key unmarks.
+
+### Undo
+
+**CTRL-Z** undoes the last change: a cut, typing over or deleting marked text, a recolor, a paste,
+or the last run of typing or deleting. It undoes one change (pressing it again says "NOTHING TO
+UNDO"). A change that removed more than about 1,000 characters can't be undone ("TOO BIG TO
+UNDO"), and neither can CLEAR ALL. Undo keeps its notes in 1 KB at the top of the text buffer.
 
 ### Find
 
@@ -94,14 +103,15 @@ the way. The match is marked; **CTRL-F, RETURN** finds the next one.
 A **1351 mouse in port 1** is found by itself the first time you move it; a joystick is ignored.
 
 - Click to put the cursor there; drag to mark (hold the mark key to extend marked text).
-- Move past the text onto a badge (it lights up) and click: F3/F5 page, ≡F1 opens the menu.
+- Move past the text onto a badge (it lights up white) and click: F3/F5 page, ≡F1 opens the menu.
 - The right button opens the menu.
 - The pointer hides after 10 seconds of rest; moving the mouse brings it back.
 
 ## The menu
 
 Letters choose; **X** goes back one level; RUN/STOP or ← closes the menu. You can also click a
-line. Settings show their value and step to the next each time you choose them.
+line. Settings show their value and step to the next each time you choose them. The main menu
+also lists the CTRL keys at its foot.
 
 | Main menu | |
 |---|---|
@@ -158,18 +168,18 @@ With an REU (1700/1764/1750, or the Ultimate's, VICE's, the MEGA65's) Magic Type
 itself:
 
 - **Any size:** faster big moves, and the clipboard lives in the REU.
-- **192 KB or more: long documents.** Only a 32 KB stretch around the cursor is in the C64's
+- **192 KB or more: long documents.** Only a 31 KB stretch around the cursor is in the C64's
   memory; the rest stays in the REU, so a document can be as long as the REU allows. Loading,
   saving, printing, Find, Stats and the page marker all work on the whole document. When the
   cursor gets near the end of that stretch the next part comes in — a short pause (about
   1½ seconds) now and then while you page through.
   - Marked text can be up to about 20 KB.
   - CTRL-A (mark everything) and saving a magic document **to tape** need the whole document in
-    memory (up to 32 KB); longer ones get a message (save to tape as PETSCII instead).
+    memory (up to 31 KB); longer ones get a message (save to tape as PETSCII instead).
   - A document bigger than the REU can hold loads as far as it fits: "TOO LONG: ONLY PART
     LOADED".
 
-Without an REU the full 36 KB of the C64's memory holds the text.
+Without an REU, 35 KB of the C64's memory holds the text (1 KB is kept for undo).
 
 ## Emulators
 

@@ -93,13 +93,13 @@ class Editor:
         time.sleep(settle)
 
     def key_done(self, code, mods=0, timeout=300, settle=0.3):
-        """one key, then wait until the editor has finished with it (the
-        main loop writes the frames it took just below the mailbox, after
-        the key's work and the REU window's moves)"""
-        self.poke(MB - 1, [0xff])
+        """one key, then wait until the editor has finished with it: the
+        main loop sets MB_BUSY before it counts a key and clears it after
+        the key's work and the REU window's moves. (Before: the key time
+        byte, set to $ff first - but a key can take 255 frames.)"""
         self.keys([(code, mods)], settle=0)
         t0 = time.time()
-        while self.peek(MB - 1)[0] == 0xff:
+        while self.peek(MB - 2)[0]:
             time.sleep(0.2)
             if time.time() - t0 > timeout:
                 raise TimeoutError("key not finished")
@@ -190,7 +190,8 @@ class Editor:
         if self.peek(self.lab["reu_banks"])[0]:
             return self.reu_clipboard()
         te = int.from_bytes(self.peek(0x1a, 2), "little")
-        return self.peek(te, 0xd000 - te) if te < 0xd000 else b""
+        top = int.from_bytes(self.peek(self.lab["buf_top"], 2), "little")   # (the undo
+        return self.peek(te, top - te) if te < top else b""                  # log is above)
 
     def reu_read(self, addr, size):
         """Read size bytes of REU memory from addr (24 bits: bank * 65536 +

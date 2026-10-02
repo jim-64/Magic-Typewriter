@@ -40,7 +40,8 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   top/bottom row. **Long documents held in the REU: after phase 11** (Jim, 2026-09-29; see REU and
   Build Order 11b).
 - **Phase 10 done** (2026-09-30; magic, ASCII, PRG files), merged into `main`. Jim: Epyx FastLoad
-  loads a PRG document in 8 s against 18 s for the same as SEQ. **SpeedScript skipped for now.**
+  loads a PRG document in 8 s against 18 s for the same as SEQ. **SpeedScript skipped** (and its menu
+  values removed in phase 12, Jim).
 - **Phase 11 done** (2026-09-30; Jim OK'd moving on), merged into `main`:
   room made (the debug mouse trace is now `-DMOUSE_TRACE=1` only; `find.asm` moved under the
   KERNAL); **magic files always PRG** (Jim); a **spinner** in the LOADING/SAVING/PRINTING box (Jim);
@@ -110,6 +111,36 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   document the test had put in. The signature is now written by `mailbox_ready` after
   editor_init (start_done in main.asm).
   Jim turned down a multiple-choice question box (2026-10-01): ask in plain text instead.
+  **Jim's first real-hardware test (2026-10-02; real C64, NTSC 1702, real 1351, SD2IEC, a Star
+  Gemini printer):** printing to the Commodore printer works; marking with the mouse and the left
+  SHIFT mark key work. Changed after it:
+  - **Mouse:** the pointer slid down the screen and never hid (10 s). The driver now throws away a
+    reading that jumps 28 steps or more (`MOUSE_MAX_STEP`, `pot_delta`) but keeps its value, so a
+    bad reading and the next good one add up to nothing; before, two readings half the range apart
+    always made the same step. Not confirmed on the real 1351 yet: **`-DMOUSE_SHOW=1`** builds show
+    the paddle values, the frame's move and the readings thrown away (hex, bottom right);
+    `build/mousetest.d64` has one for Jim.
+  - **Badges** redrawn at 7 rows (cut off on the 1702), and a badge under the pointer lights up
+    **white** (red hardly showed on blue).
+  - **SpeedScript** gone from the Format values.
+  - **SHIFT + F3 / F5:** top / end of the document.
+  - **The main menu lists the CTRL keys** at its foot (rows 19–22; the panel is now rows 4–23).
+  - **SD2IEC opens a PRG as SEQ** (no "64, FILE TYPE MISMATCH"), so the manual showed its load
+    address and header as text (`@mtw1m@oaa...`). `convert_start` now skips a leading $00 $40 when
+    our header or a case code follows. And **VICE's file system drive answers "62, FILE NOT FOUND"**
+    to a SEQ open of a PRG (it looks for SEQ only), so load_file tries the PRG way after 62 too
+    (before: only after 64, so magic files couldn't load from VICE 2.4's host folder drive).
+    Note VICE 3.9's file system drive shows host files with their extension (`MANUAL.PRG`).
+  - **CTRL-Z: one undo** (Jim: "giving up 1k for undo seems worth it"; mostly for cuts and
+    typing over marked text). See "Undo (CTRL-Z)" under Text Model. No redo, and CLEAR ALL
+    can't be undone (Jim, to keep it small).
+  - **Room for it (Jim chose option A): only this video system's border code is kept.** The
+    four copies of the exact-timed strip code (`border_top_*` / `border_bot_*`, ~870 bytes) are
+    assembled to run at `border_code` (in the run-time tables, after `prompt_save`) and stored in
+    `startup.asm`; `copy_border` puts this system's there at start-up. Saved ~650 bytes. Checked:
+    the SPLIT_TEST build gives both compare results on all four systems, and BORDER_TEST pictures
+    show every strip line's side border open on all four. (SPLIT_TEST builds leave out
+    `mailbox_mouse`, which they don't need, to fit.)
 
 ## Working with Jim
 
@@ -327,13 +358,21 @@ back) and round to the start; CTRL-A refused; Stats over all of it; saved as PET
 and loaded back; a 45 KB ASCII file with a RETURN/LF pair split between two fills; then a 256 KB
 REU and a 200 KB file: "TOO LONG", the start of it, editing works; `late_irqs` 0). `mtest` has
 `doc()` (the whole document: head, window, tail, read from the REU through the gap), `reu_read()`
-and `key_done()` (waits until a key's work, window moves included, is finished: the main loop
-writes the key's frames just below the mailbox afterwards; `keys()` only waits until keys are
-taken).
+and `key_done()` (waits until a key's work, window moves included, is finished: `MB_BUSY`,
+set by the main loop before it counts the key and cleared after; `keys()` only waits until keys
+are taken. A first version waited for the key-time byte to change from $FF — a key can take 255
+frames, so it hung once in a while).
 `python tools/test_release.py` (phase 12: assembles a release build into `build/release/` and
 starts it on PAL, NTSC, old NTSC and Drean with no REU, 128 KB and 512 KB: the IRQs run, the system
 and REU are found, the text buffer has the right size, sprites on, ROMs out, no mailbox — all
 that can be seen without typing).
+`python tools/test_undo.py [c64|ntsc]` (CTRL-Z after typing, a cut, typing over and deleting
+marked text, a recolor, a run of DELs, two runs of typing, a color key, overwrite mode, a paste —
+each gives back exactly the text before; "NOTHING TO UNDO" twice and after CLEAR ALL; "TOO BIG TO
+UNDO" after a 2 KB cut). `python tools/test_freeze.py ntsc` (see Mouse/IRQ notes: the CPU held up).
+`python tools/test_phase12.py [c64|ntsc]` (the Format values without SpeedScript, the CTRL keys
+under the main menu, SHIFT + F3/F5 with and without marking, a PRG of ours read as a SEQ file as an
+SD2IEC gives it, and loading from VICE's file system drive, which answers 62).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -428,11 +467,12 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 | $02–$1B | zero page (list in `src/main.asm`); BASIC's too: start-up copies it, Quit puts it back |
 | $02C0–$02FE | debug test mailbox (debug builds only) |
 | $0400–$07FF | screen |
-| $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, data; then the stored copies of the editor and of reudoc.asm, then startup.asm |
-| after the lower part | run-time tables (ctype, per-row arrays, prompt save area), **over the stored copy** once it is copied |
+| $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, undo, data; then the stored copies of the editor and of reudoc.asm, then startup.asm (with the four copies of the border code) |
+| after the lower part | run-time tables (ctype, per-row arrays, prompt save area, `border_code`: this system's strip code), **over the stored copy** once it is copied |
 | $3E80–$3FFF | sprite blocks 250–255 (**$3FFF must be $00**: the idle-graphics byte drawn in the opened borders) |
-| $4000–$CFFF | text buffer (36 KB), clipboard at its top (none with an REU: it is in the REU). `startup.asm` runs from here once (the PRG file carries it there), before the document takes the room |
-| ($C000–$CEFF) | **with an REU of 192 KB or more:** `reudoc.asm` (long documents), copied there at start-up; the text buffer is then $4000–$BFFF (a 32 KB window). `RD_PAGE` $CF00: a page for reading the REU's text |
+| $4000–$CBFF | text buffer (35 KB), clipboard at its top (none with an REU: it is in the REU). `startup.asm` runs from here once (the PRG file carries it there), before the document takes the room |
+| $CC00–$CFFF | **the undo log** (1 KB, phase 12: `undo_base`, taken from the top of the buffer at start-up; `buf_top` = $CC00) |
+| ($C000–$CEFF) | **with an REU of 192 KB or more:** `reudoc.asm` (long documents), copied there at start-up; the text buffer is then $4000–$BBFF (a 31 KB window) and the undo log $BC00–$BFFF. `RD_PAGE` $CF00: a page for reading the REU's text |
 | $D000–$DFFF | I/O (the RAM under it is unused) |
 | $E000–$FFF9 | **the editor** (`src/editor.asm`, assembled with `!pseudopc $e000`; `copy_high` puts it there at start-up) |
 | $FFFA–$FFFF | NMI → `nmi_handler`, IRQ → `irq_entry`, used while the KERNAL ROM is out |
@@ -451,10 +491,13 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (debug build, phase 11b): lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
-  build adds a 256-byte mouse trace); editor + find $E000–$FEE4; reudoc.asm $C000–$CBAC. So **~875
-  bytes free below the sprite blocks, ~280 under the KERNAL, ~850 in the REU-only area** (release:
-  tables to $390B, ~1.4 KB). Phase 8 took about 4 KB, phase 9's REU part about 0.6 KB, phase 10
+- Space (phase 12, after undo): debug tables end $3E5F, so **only ~33 bytes free below the sprite
+  blocks in debug builds** (release: $3C21, ~600); the editor + find end $FF9D (~90 bytes free under
+  the KERNAL); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. **The next
+  feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
+  must stay 0), BASIC's input buffer $0200–$0258 for variables, or (ask Jim) moving BUF_START up.
+  Earlier: debug build, phase 11b: lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
+  build adds a 256-byte mouse trace); editor + find $E000–$FEE4; reudoc.asm $C000–$CBAC. Phase 8 took about 4 KB, phase 9's REU part about 0.6 KB, phase 10
   about 0.9 KB, phase 11 about 1.3 KB, 11b ~2.9 KB in reudoc.asm and ~0.3 KB elsewhere (after
   startup.asm gave back ~0.9 KB). Keep new code lean, and tell Jim early if it won't fit. New code
   goes in the lower part; code that runs during disk work must go there anyway.
@@ -496,7 +539,7 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 | Text background (default; menu option and SHIFT-F7 change it) | Black (0) |
 | Default text color (menu option; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
 | Border icon sprites | Light blue (14) |
-| Mouse pointer sprite | Red (2); black on red, purple, orange and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm). A border icon under the pointer lights up in the pointer's color. |
+| Mouse pointer sprite | Red (2); black on red, purple, orange and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm). A border icon under the pointer lights up **white** (phase 12: red hardly showed on the blue strip on Jim's 1702). |
 
 ### Color splits
 
@@ -526,37 +569,26 @@ Six hardware sprites, no multiplexer, all hi-res. Border icons (1–5) are light
 | 4 | Bottom-left "F5" badge | Page down |
 | 5 | Bottom-right "F5" badge (same image as 4) | Page down |
 
-Sprite 2/3 data (24×13, "F3", points up):
+Sprite 2/3 data (24×7, "F3" between two up arrows; **phase 12**: the 13-row badges of Jim's mockup
+were cut off on his NTSC 1702, so they are now 7 rows like the menu icon, in its lines):
 ```
-...........XX...........   $00,$18,$00
-.........XXXXXX.........   $00,$7E,$00
-.......XXX....XXX.......   $01,$C3,$80
-.....XXX........XXX.....   $07,$00,$E0
-...XXX............XXX...   $1C,$00,$38
-.XXX...XXXX..XXX....XXX.   $71,$E7,$0E
-XX.....XX...XX.XX.....XX   $C1,$8D,$83
-XX.....XX......XX.....XX   $C1,$81,$83
-XX.....XXX....XX......XX   $C1,$C3,$03
-XX.....XX......XX.....XX   $C1,$81,$83
-XX.....XX...XX.XX.....XX   $C1,$8D,$83
-XX.....XX....XXX......XX   $C1,$87,$03
-XX....................XX   $C0,$00,$03
-```
-Sprite 4/5 data (24×13, "F5", points down):
-```
-XX....................XX   $C0,$00,$03
-XX.....XXXX.XXXXX.....XX   $C1,$EF,$83
-XX.....XX...XX........XX   $C1,$8C,$03
-XX.....XX...XXXX......XX   $C1,$8F,$03
-XX.....XXX.....XX.....XX   $C1,$C1,$83
-XX.....XX......XX.....XX   $C1,$81,$83
-XX.....XX...XX.XX.....XX   $C1,$8D,$83
+..X....XXXX..XXX.....X..   $21,$E7,$04
+.XXX...XX...XX.XX...XXX.   $71,$8D,$8E
+XXXXX..XX......XX..XXXXX   $F9,$81,$9F
+.XXX...XXX....XX....XXX.   $71,$C3,$0E
+.XXX...XX......XX...XXX.   $71,$81,$8E
+.XXX...XX...XX.XX...XXX.   $71,$8D,$8E
 .XXX...XX....XXX....XXX.   $71,$87,$0E
-...XXX............XXX...   $1C,$00,$38
-.....XXX........XXX.....   $07,$00,$E0
-.......XXX....XXX.......   $01,$C3,$80
-.........XXXXXX.........   $00,$7E,$00
-...........XX...........   $00,$18,$00
+```
+Sprite 4/5 data (24×7, "F5" between two down arrows):
+```
+.XXX...XXXX.XXXXX...XXX.   $71,$EF,$8E
+.XXX...XX...XX......XXX.   $71,$8C,$0E
+.XXX...XX...XXXX....XXX.   $71,$8F,$0E
+.XXX...XXX.....XX...XXX.   $71,$C1,$8E
+XXXXX..XX......XX..XXXXX   $F9,$81,$9F
+.XXX...XX...XX.XX...XXX.   $71,$8D,$8E
+..X....XX....XXX.....X..   $21,$87,$04
 ```
 Sprite 1 data (23×7, "≡F1"):
 ```
@@ -568,15 +600,16 @@ XXXXXXXX..XXX...XX......   $FF,$38,$C0
 ..........XX....XX......   $00,$30,$C0
 XXXXXXXX..XX...XXXX.....   $FF,$31,$E0
 ```
-Store only the rows above (13×3 or 7×3 bytes); expand into 64-byte sprite blocks at init and zero the rest.
+Store only the rows above (7×3 bytes); expand into 64-byte sprite blocks at init and zero the rest
+(the images are in `src/startup.asm` since phase 11b).
 
 **Decided (2026-09-27):** the badges sit in the side borders, as in Jim's mockup. (Branch `phase1`
 keeps the earlier layout, with the badges above/below the text area.)
 
 Vertical placement (same on PAL and NTSC), as raster lines:
-- Top badges: raster 37–49 (the mockup has 38–50, touching the text area; see below).
+- Top badges: raster 42–48, level with the menu icon (phase 12; were 37–49).
 - Menu icon: raster 42–48 (same as the mockup).
-- Bottom badges: raster 252–264 (the mockup has 251–263).
+- Bottom badges: raster 252–258 (phase 12; were 252–264).
 
 Why one line away from the text area: showing a sprite in the right border of line 50 means opening
 that border, and that also opens the **left** border of line 51, the first text line. There the VIC
@@ -587,12 +620,12 @@ mockup exactly would need two more sprites (6 and 7) as dark grey patches over t
 Found in phase 1 (VICE): a sprite's first row shows on raster line **Y+1**, and the VIC always fetches
 all **21 rows** of a sprite, stealing CPU cycles at the end of each of those lines. The top badges and
 the menu icon share the same 21 fetched lines (29–49, Y = 28), with their pictures low in their blocks
-(badges rows 8–20, icon rows 13–19), so every line of the top strip loses the same cycles and the line
-50/51 color split has no sprite fetches. The bottom badges use rows 0–12 with Y = 251. Also, the VIC
+(badges and icon rows 13–19), so every line of the top strip loses the same cycles and the line
+50/51 color split has no sprite fetches. The bottom badges use rows 0–6 with Y = 251. Also, the VIC
 compares sprite Y with only the low 8 bits of the raster line, so on PAL the top sprites would appear
 again at line 256+Y; sprites 1–3 are switched off after the bottom strip and back on at line 10.
-- **NTSC caution:** some NTSC TVs start showing around raster 41, so the top badges' 3-row tip may be
-  cut off there. Check on a real NTSC TV.
+- **NTSC (Jim's 1702, phase 12):** the old 13-row badges were cut off at both ends; the menu icon
+  (42–48) showed whole. Hence the 7-row badges on 42–48 and 252–258. Check them on the 1702 again.
 
 **Horizontal placement (as in the mockup):**
 - Left badges (sprites 2 and 4): X = 0, in the left border, touching the text area (X = 24).
@@ -750,7 +783,10 @@ Both settings:
   Plain F3/F5 keep the cursor on its screen row; marking that way looked as if it went the wrong
   way (the cursor seemed to stay put and the text on the other side lit up). The F3/F5 badges
   do the same (`.page_up` / `.page_down` in editor_key).
-  (No F2/F4/F6 functions.)
+  **SHIFT + F3 / SHIFT + F5 (F4 / F6): the top / the end of the document** (Jim, phase 12); the SHIFT
+  that reverses cursor keys (right SHIFT with the left SHIFT mark key, either SHIFT with C=); with
+  the mark key too, marking all the way (`doc_top` / `doc_bottom`; `reu_to_end` for long
+  documents, not while marking). (No F2 functions.)
 - Either SHIFT types capitals normally; marking only happens with movement keys.
 - Mark key + mouse click extends the selection.
 - **Character set toggle (C= + SHIFT):** fires when C= and a SHIFT are both down **and released without any
@@ -763,6 +799,7 @@ Both settings:
 | RUN/STOP | Open menu. In a menu or prompt: cancel/close |
 | F1 | Open menu (same as clicking hamburger) |
 | F3 / F5 | Page up / page down (also clicking the F3 / F5 badges) |
+| SHIFT-F3 / SHIFT-F5 (F4 / F6) | Top / end of the document (phase 12) |
 | F7 | Toggle insert / overwrite mode (cursor changes shape) |
 | SHIFT-F7 (F8) | Next text background color (same as the menu item) |
 | C= + SHIFT | Toggle upper/graphics ↔ upper/lower character set, like BASIC |
@@ -771,6 +808,7 @@ Both settings:
 | INST/DEL | Delete the character left of the cursor; cursor and all following text move back one space. At line start, joins with the previous line |
 | SHIFT + INST/DEL | Insert a space at the cursor; cursor stays put |
 | CTRL-X / C / V | Cut / copy / paste |
+| CTRL-Z | Undo the last change (phase 12) |
 | CTRL-A | Select all |
 | CTRL-S | Save with the current Save menu settings; asks for a file name if none yet |
 | CTRL-F | Find (see Find) |
@@ -815,7 +853,7 @@ movement keys** — C= + digit still selects a color.
 **As built (phase 7, "The 1351 mouse" in `src/input.asm`; read its header comment first):**
 - **Where the pointer goes (Jim, 2026-09-28): over the text area only.** A sprite's fetches steal CPU
   cycles on all 21 of its lines, and the strips are exact-timed, so the pointer never enters them.
-  Moved on past the text, it **hides and the border icon under it turns red** (the pointer's color:
+  Moved on past the text, it **hides and the border icon under it turns white** (phase 12; was the pointer's color:
   since phase 8 black on some backgrounds, `pointer_colors`);
   a click then works that icon: F3 badges page up, F5 badges page down (with the mark key held: marking
   by page), the menu icon opens the menu. Hit zones in the strips (box left
@@ -936,6 +974,34 @@ Editing rules:
   off, rows are cut at 40 characters, even in the middle of a word, like the BASIC screen. No sideways
   scrolling** (Jim, 2026-09-28; a first version scrolled long lines sideways, and he didn't want it).
 - Clipboard in free buffer space (top-down), or in the REU when present.
+
+**Undo (CTRL-Z), as built (phase 12, `src/undo.asm`; read its header first):**
+- **What is noted:** every change to the text goes through `insert_byte`, `insert_after` (a byte
+  in), `take_byte`, `delete_left`, `overwrite_next` (a byte out) and `cleanup` (codes tidied away).
+  Each calls a hook first (`undo_ins`, `undo_del_here`, `undo_del_at`, `undo_run` /
+  `undo_run_end`). The log is a list of entries "at document offset P, these A bytes were replaced
+  by B bytes" (the A bytes, then a 7-byte header: P 3, A 2, B 2 — header last, so it is read
+  from its end). A byte in or out inside or next to the last entry's text makes that entry
+  longer, so a run of typing is one entry (no data), a cut is one entry with what went.
+- **Actions** (`undo_start`, called from editor_key): a run of typing (`UK_TYPE`) or of INST/DEL
+  (`UK_DEL`) goes on in one action; cut, paste, color/RVS keys, SHIFT+INST (`UK_OTHER`) and
+  anything done to marked text start a new one. Every key first clears `undo_kind`
+  (`undo_key_in`), so any other key ends a run — but codes `cleanup` removes when the cursor
+  moves still go into the log (they belong to the text the action left; undoing puts them
+  back, which is harmless).
+- **CTRL-Z** (`undo_key`): the entries put back, last first — for each, the cursor to P
+  (`move_gap_to`; a long document's window there first: `reu_goto`), the B bytes dropped, the A
+  bytes inserted with `insert_byte` (recording off: `undo_on`). Then the log is empty: one undo,
+  no redo. Nothing marked afterwards; the screen drawn with the cursor on its row.
+- **Limits:** the log is 1 KB (`UNDO_SIZE`, taken from the top of the text buffer at start-up:
+  `undo_base`/`undo_end`; `buf_top` lower by that much). An action that takes out more → "TOO BIG
+  TO UNDO" (`undo_ok` = 0); inserting costs nothing, so a big paste can be undone. CLEAR ALL and
+  loading empty the log ("NOTHING TO UNDO").
+- Offsets are document offsets (window offset + `win_base` with a long document), so an undo
+  works after the window has moved (test_phase11b: a page cut in the middle, SHIFT+F5 to the end,
+  CTRL-Z).
+- The hooks use `zp_ptr`/`zp_ptr2` (the IRQs only read zp_ptr), not `ptr`/`ptr2`, which the
+  callers (paste's loop, cleanup) use.
 
 **As built (phase 5, "Marked text" section of `src/editor.asm`):**
 - **The character the cursor is on when marking starts is always marked** (Jim, 2026-09-28): going
@@ -1062,7 +1128,7 @@ Editing rules:
 | Key | Item | Values |
 |---|---|---|
 | A | Load | Asks for a file name. On tape, a blank name loads the next file found |
-| B | Format | magic, **petscii**, ascii, speedscript |
+| B | Format | magic, **petscii**, ascii |
 | C | Device | **8**, tape, 9, 10, 11, 12, 13, 14 |
 | D | Disk directory | |
 | E | Disk command | |
@@ -1073,7 +1139,7 @@ Editing rules:
 | Key | Item | Values |
 |---|---|---|
 | A | Save | Asks for a file name (pre-fill the last one used) |
-| B | Format | magic, petscii, ascii, speedscript (see default below) |
+| B | Format | magic, petscii, ascii (see default below) |
 | C | File type | **seq**, prg |
 | D | Device | **8**, tape, 9, 10, 11, 12, 13, 14 |
 | E | Disk directory | |
@@ -1132,7 +1198,7 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 
 ### As built (phase 8, "Menus" section of `src/menu.asm`)
 
-- **One fixed panel for every menu:** rows 4–19, columns 5–34 (the main menu's size), so going from
+- **One fixed panel for every menu:** rows 4–23 (phase 12; was 4–19), columns 5–34, so going from
   one menu to another only redraws the panel. Title, a line, then one row per item: letter, name and,
   for a setting, `: VALUE`. The document is drawn afresh when the menus close (`top_known` = 0,
   `show_cursor_at cur_row`), since a setting may have changed how it looks.

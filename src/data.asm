@@ -94,8 +94,10 @@ pointer_colors
 ; codes 1-26, which the prompt shows as capitals in either character set.
 msg_quit_unsaved
         !scr "quit without saving y/n", 0
-msg_not_yet
-        !scr "not ready yet", 0
+msg_undo_none
+        !scr "nothing to undo", 0
+msg_undo_big
+        !scr "too big to undo", 0
 msg_no_tape
         !scr "not for tape", 0
 msg_find

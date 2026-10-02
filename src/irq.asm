@@ -432,11 +432,9 @@ irq_missed
 .open   +open_sides .loop
 }
 
-!zone border_top
-border_top_pal     +border_top TOP_PAL_CMP, TOP_PAL_PRE, TOP_PAL_LOOP, TOP_PAL_SPLIT
-border_top_ntsc    +border_top TOP_NTSC_CMP, TOP_NTSC_PRE, TOP_NTSC_LOOP, TOP_NTSC_SPLIT
-border_top_oldntsc +border_top TOP_OLDNTSC_CMP, TOP_OLDNTSC_PRE, TOP_OLDNTSC_LOOP, TOP_OLDNTSC_SPLIT
-border_top_drean   +border_top TOP_DREAN_CMP, TOP_DREAN_PRE, TOP_DREAN_LOOP, TOP_DREAN_SPLIT
+; (The four copies, border_top_pal ... border_top_drean, are made with
+; border_bot's in startup.asm: only this system's copy is kept, at
+; border_code.)
 
 border_top_done
         lda #$ff                ; acknowledge the IRQ
@@ -579,11 +577,7 @@ irq_bot_a
 .open   +open_sides .loop
 }
 
-!zone border_bot
-border_bot_pal     +border_bot BOT_PAL_CMP, BOT_PAL_SPLIT, BOT_PAL_PRE, BOT_PAL_LOOP
-border_bot_ntsc    +border_bot BOT_NTSC_CMP, BOT_NTSC_SPLIT, BOT_NTSC_PRE, BOT_NTSC_LOOP
-border_bot_oldntsc +border_bot BOT_OLDNTSC_CMP, BOT_OLDNTSC_SPLIT, BOT_OLDNTSC_PRE, BOT_OLDNTSC_LOOP
-border_bot_drean   +border_bot BOT_DREAN_CMP, BOT_DREAN_SPLIT, BOT_DREAN_PRE, BOT_DREAN_LOOP
+; (The four copies: in startup.asm, see border_top above.)
 
 ; End of the frame, below the bottom border check. Only short jobs here:
 ; on NTSC the side-border loop above ends around line 1 of the next frame,
@@ -803,9 +797,9 @@ SPR_BLOCK_F5    = 253           ; F5 badge (sprites 4 and 5)
 SPR_BLOCK_PTR_LOW = 254         ; mouse pointer, low in its block
 
 SPR_TOP_Y       = 29 - 1        ; F3 badges and menu icon: blocks on lines
-                                ; 29-49; F3 picture (rows 8-20) on 37-49,
+                                ; 29-49; F3 picture (rows 13-19) on 42-48,
                                 ; menu picture (rows 13-19) on 42-48
-SPR_BOT_Y       = 252 - 1       ; F5 badges: picture (rows 0-12) on 252-264
+SPR_BOT_Y       = 252 - 1       ; F5 badges: picture (rows 0-6) on 252-258
 SPR_ON_ICONS    = %00111110     ; sprites 1-5 (the pointer, 0, only when
                                 ; it shows: see irq_frame_top)
 SPR_ON_BOTTOM   = %00110001     ; pointer and F5 badges only (see border_top_done)

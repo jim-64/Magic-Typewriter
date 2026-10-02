@@ -638,6 +638,9 @@ cleanup
         inc .keep_rvs
 
 .compact ; Copy the run onto itself, leaving out the codes that go.
+        lda .start              ; (the run as it is: kept for CTRL-Z)
+        ldx .start+1
+        jsr undo_run
         lda .start
         sta ptr                 ; ptr reads ...
         sta ptr2                ; ... ptr2 writes
@@ -703,6 +706,9 @@ cleanup
         sta gap_start
         lda ptr2+1
         sta gap_start+1
+        lda .start              ; (codes went: an entry for CTRL-Z)
+        ldx .start+1
+        jsr undo_run_end
         sec
         rts
 
@@ -2078,6 +2084,9 @@ insert_byte
         sec                     ; no room
         rts
 +       txa
+        pha
+        jsr undo_ins            ; (noted for CTRL-Z: undo.asm)
+        pla
         ldy #0
         sta (gap_start),y
         jsr count_color
@@ -2102,7 +2111,12 @@ insert_after
         bne +
         sec
         rts
-+       lda gap_end
++       txa
+        pha
+        jsr undo_ins            ; (noted for CTRL-Z)
+        pla
+        tax
+        lda gap_end
         bne +
         dec gap_end+1
 +       dec gap_end
@@ -2209,6 +2223,9 @@ overwrite_next
         inc ptr+1
         bne -
 .found  jsr ptr_to_off          ; the edit reaches past this byte
+        ldy #0                  ; (the character goes: noted for CTRL-Z)
+        lda (ptr),y
+        jsr undo_del_at
         clc
         lda off
         adc #1
@@ -2252,7 +2269,10 @@ delete_left
         bcs .restore            ; (nothing visible before the cursor)
         jsr is_visible
         bcs -
-        lda gap_end             ; the byte went after the gap: drop it
+        ldy #0                  ; the byte went after the gap: drop it
+        lda (gap_end),y         ; (noted for CTRL-Z first)
+        jsr undo_del_here
+        lda gap_end
         clc
         adc #1
         sta gap_end
@@ -2602,7 +2622,12 @@ home_key
         jsr move_gap_to
         jsr skip_codes
         jmp moved
-.at_start                       ; already at a line start: top of document
+
+; doc_top - SHIFT + F3 (and HOME at a line start: .at_start): the top of
+; the document
+doc_top
+        jsr leave_cursor
+.at_start
         lda reu_docs            ; (a long document: its start may be in the
         beq +                   ; REU - unless text is marked)
         lda sel_on
@@ -2631,7 +2656,7 @@ home_key
 ; bytes lie together right after the gap, and then works through them
 ; there.
 ;
-; The clipboard sits at the top of the buffer, from text_end to BUF_END:
+; The clipboard sits at the top of the buffer, from text_end to buf_top:
 ; the text uses the room below it. clip_color and clip_rvs hold the color
 ; and reverse state at the start of what was copied, so it pastes with the
 ; same look.
@@ -2777,6 +2802,9 @@ sel_to_gap
 take_byte
         ldy #0
         lda (gap_end),y
+        pha
+        jsr undo_del_here       ; (noted for CTRL-Z)
+        pla
         inc gap_end
         bne +
         inc gap_end+1
@@ -3143,10 +3171,10 @@ copy_selection
         lda reu_banks           ; with an REU the clipboard is there, in a
         bne .room               ; bank of its own: always room
         sec                     ; the clipboard's size now
-        lda #<BUF_END
+        lda buf_top
         sbc text_end
         sta .old
-        lda #>BUF_END
+        lda buf_top+1
         sbc text_end+1
         sta .old+1
         lda .len                ; the same size: nothing to move
@@ -3327,10 +3355,10 @@ paste
         sta .len+1
         jmp ++
 +       sec                     ; ... or at the top of the buffer
-        lda #<BUF_END
+        lda buf_top
         sbc text_end
         sta .len
-        lda #>BUF_END
+        lda buf_top+1
         sbc text_end+1
         sta .len+1
 ++      lda .len
@@ -3396,9 +3424,9 @@ paste
         sta ptr
         lda text_end+1
         sta ptr+1
-        lda #<BUF_END
+        lda buf_top
         sta .end
-        lda #>BUF_END
+        lda buf_top+1
         sta .end+1
         jmp .bytes
 .from_reu                       ; ... or from the REU, fetched first to the
@@ -3462,6 +3490,26 @@ paste
 .r0     !byte 0
 .c      !byte 0
 .r      !byte 0
+
+; doc_bottom - SHIFT + F5: the end of the document, on the bottom row
+!zone doc_bottom
+doc_bottom
+        jsr leave_cursor
+        lda reu_docs            ; (a long document: its end may be in the
+        beq +                   ; REU - unless text is marked)
+        lda sel_on
+        bne +
+        jsr reu_to_end
++       jsr text_len
+        lda work
+        sta off
+        lda work+1
+        sta off+1
+        jsr move_gap_to
+        jsr skip_codes
+        ldx #ROWS-1
+        jsr show_cursor_at
+        jmp set_want_col
 
 ; select_all - CTRL-A: mark the whole text (the cursor goes to its end).
 !zone select_all
@@ -3628,6 +3676,8 @@ clear_all
         ldx #>msg_clear_all
         jsr prompt_yes_no
         bcc +
+        lda #1                  ; (nothing to undo then: CLEAR ALL can't
+        jsr undo_reset          ; be undone)
         jsr empty_buffer
         lda #0
         sta file_name_len
@@ -3654,7 +3704,8 @@ editor_key
         jsr .do_key
         jmp cursor_show
 
-.do_key lda .code
+.do_key jsr undo_key_in        ; (CTRL-Z: what this key does, undo.asm)
+        lda .code
         cmp #KEY_STOP           ; RUN/STOP and RESTORE: the menu
         beq +
         cmp #KEY_RESTORE
@@ -3672,13 +3723,22 @@ editor_key
         jmp save_key
 +       cmp #KEY_X              ; CTRL-X: cut
         bne +
-        jmp cut_selection
+        lda sel_on              ; (an action for CTRL-Z, if anything is
+        beq ++                  ; marked)
+        lda #UK_OTHER
+        jsr undo_start
+++      jmp cut_selection
 +       cmp #KEY_C              ; CTRL-C: copy
         bne +
         jmp copy_key
 +       cmp #KEY_V              ; CTRL-V: paste
         bne +
+        lda #UK_OTHER
+        jsr undo_start
         jmp paste
++       cmp #KEY_Z              ; CTRL-Z: undo (again: redo)
+        bne +
+        jmp undo_key
 +       cmp #KEY_F              ; CTRL-F: find
         bne +
         jmp find_key
@@ -3783,9 +3843,15 @@ editor_key
 
 ; .page_up, .page_down - F3 / F5: a page up or down. With the mark key the
 ; cursor goes to the top (F3) or bottom (F5) row, so the page it marked
-; fills the screen behind it.
+; fills the screen behind it. With SHIFT (the one that reverses cursor
+; keys: .reverse) the top or the end of the document instead (Jim).
 .page_up
-        jsr .marking
+        jsr .reverse
+        bcc +
+        lda #<doc_top
+        ldx #>doc_top
+        bne .move
++       jsr .marking
         lda #<page_up
         ldx #>page_up
         bcc +
@@ -3793,7 +3859,12 @@ editor_key
         ldx #>mark_page_up
 +       jmp .move
 .page_down
-        jsr .marking
+        jsr .reverse
+        bcc +
+        lda #<doc_bottom
+        ldx #>doc_bottom
+        bne .move
++       jsr .marking
         lda #<page_down
         ldx #>page_down
         bcc +
@@ -3884,25 +3955,41 @@ editor_key
         rts
 
 ; What typing does when text is marked: it replaces it.
-.type   ldx sel_on              ; A = the character
+.type   pha                     ; A = the character (typing: an action
+        lda #UK_TYPE            ; for CTRL-Z, or more of the last one)
+        jsr undo_start
+        pla
+        ldx sel_on
         beq +
         pha
         jsr delete_selection
         pla
 +       jmp type_char
-.del    lda sel_on              ; INST/DEL: delete the marked text, or the
+.del    lda #UK_DEL             ; (deleting: an action for CTRL-Z)
+        jsr undo_start
+        lda sel_on              ; INST/DEL: delete the marked text, or the
         beq +                   ; character left of the cursor
         jmp delete_selection
 +       jmp delete_left
-.inst   lda sel_on              ; SHIFT + INST/DEL: delete the marked text
+.inst   lda #UK_OTHER
+        jsr undo_start
+        lda sel_on              ; SHIFT + INST/DEL: delete the marked text
         beq +                   ; first, then a space
         jsr delete_selection
 +       jmp insert_space
-.color  ldx sel_on              ; a color key: color the marked text, or
+.color  pha                     ; (an action for CTRL-Z)
+        lda #UK_OTHER
+        jsr undo_start
+        pla
+        ldx sel_on              ; a color key: color the marked text, or
         beq +                   ; what is typed next
         jmp recolor_selection
 +       jmp color_key
-.rvs    ldx sel_on              ; CTRL-9/0: reverse for the marked text,
+.rvs    pha                     ; (an action for CTRL-Z)
+        lda #UK_OTHER
+        jsr undo_start
+        pla
+        ldx sel_on              ; CTRL-9/0: reverse for the marked text,
         beq +                   ; or for what is typed next
         jmp reverse_selection
 +       jmp rvs_key

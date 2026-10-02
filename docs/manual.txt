@@ -17,6 +17,7 @@ The cursor shows the typing mode: a thick underline in {yellow}insert{lgrey} mod
 
 {rvs}F1{off} or {rvs}RUN/STOP{off}  the menu
 {rvs}F3{off} / {rvs}F5{off}  page up / page down
+{rvs}SHIFT{off}+{rvs}F3{off} / {rvs}F5{off}  top / end of the text
 {rvs}F7{off}  insert / overwrite
 {rvs}SHIFT{off}+{rvs}F7{off}  next background color
 {rvs}C={off}+{rvs}SHIFT{off}  character set, as in BASIC
@@ -26,6 +27,7 @@ The cursor shows the typing mode: a thick underline in {yellow}insert{lgrey} mod
 {rvs}SHIFT{off}+{rvs}INST{off}  insert a space
 {rvs}CTRL{off}+{rvs}A{off}  mark everything
 {rvs}CTRL{off}+{rvs}X{off} {rvs}C{off} {rvs}V{off}  cut, copy, paste
+{rvs}CTRL{off}+{rvs}Z{off}  undo the last change
 {rvs}CTRL{off}+{rvs}F{off}  find
 {rvs}CTRL{off}+{rvs}S{off}  save
 
@@ -44,10 +46,14 @@ The color codes are kept in the text and saved with it, but take no room on the 
 Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass over is {rvs}marked{off}. The mark key is {rvs}C={off} unless you choose left {rvs}SHIFT{off} in the menu.
 
 - {rvs}C={off} with the cursor keys marks; {rvs}C={off}+{rvs}SHIFT{off} with a cursor key marks up or left.
-- {rvs}C={off}+{rvs}F3{off} / {rvs}F5{off} marks a page at a time.
+- {rvs}C={off}+{rvs}F3{off} / {rvs}F5{off} marks a page at a time; with {rvs}SHIFT{off} too, to the top or the end.
 - With text marked, typing replaces it, {rvs}INST/DEL{off} deletes it, {rvs}CTRL{off}+{rvs}X{off} and {rvs}C{off} cut or copy it.
 - {lgreen}Tip:{lgrey} a color or reverse key recolors all of the marked text.
 - Any cursor move without the mark key unmarks.
+
+{cyan}{rvs} UNDO {off}{lgrey}
+
+{rvs}CTRL{off}+{rvs}Z{off} undoes the last change: a cut, typing over or deleting marked text, a recolor, a paste, or the last run of typing or deleting. It undoes one change. A change that removed more than about 1000 characters can't be undone, and neither can CLEAR ALL.
 
 {cyan}{rvs} FIND {off}{lgrey}
 
@@ -55,11 +61,11 @@ Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass ov
 
 {cyan}{rvs} THE MOUSE {off}{lgrey}
 
-A 1351 mouse in port 1 is found by itself the first time you move it. Click to put the cursor there; drag to mark. Move past the text onto a badge (it lights up) and click: {rvs}F3{off} and {rvs}F5{off} page, {rvs}F1{off} opens the menu. The right button opens the menu too. The pointer hides after 10 seconds of rest.
+A 1351 mouse in port 1 is found by itself the first time you move it. Click to put the cursor there; drag to mark. Move past the text onto a badge (it lights up white) and click: {rvs}F3{off} and {rvs}F5{off} page, {rvs}F1{off} opens the menu. The right button opens the menu too. The pointer hides after 10 seconds of rest.
 
 {cyan}{rvs} THE MENU {off}{lgrey}
 
-Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
+Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. The main menu lists the {rvs}CTRL{off} keys at its foot. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
 
 {yellow}A{lgrey} Load, {yellow}B{lgrey} Save, {yellow}C{lgrey} Print: their own menus.
 {yellow}D{lgrey} Wordwrap: on, or off (rows are then cut at 40 characters).
@@ -92,10 +98,10 @@ A magic file is recognised whatever the Load format says. A document saves back 
 
 With an REU, Magic Typewriter uses it by itself: big moves get faster, and the clipboard lives in the REU.
 
-With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 32 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
+With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 31 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
 
 - Marked text can be up to about 20 KB.
-- {rvs}CTRL{off}+{rvs}A{off}, and saving a magic document to tape, need all of it in the C64 (up to 32 KB).
+- {rvs}CTRL{off}+{rvs}A{off}, and saving a magic document to tape, need all of it in the C64 (up to 31 KB).
 - A document bigger than the REU loads as far as it fits.
 
 {cyan}{rvs} EMULATORS {off}{lgrey}

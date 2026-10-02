@@ -149,8 +149,8 @@ vice = start_vice(PRG, disk=disk, model=model,
 try:
     e = Editor(Mon())
     e.wait_ready()
-    check("REU of 512 KB: long documents on, the text buffer to $c000",
-          v(e, "reu_docs") == 1 and v(e, "buf_top", 2) == 0xc000 and v(e, "text_end", 2) == 0xc000,
+    check("REU of 512 KB: long documents on, the text buffer to $bc00 (then CTRL-Z's 1 KB)",
+          v(e, "reu_docs") == 1 and v(e, "buf_top", 2) == 0xbc00 and v(e, "text_end", 2) == 0xbc00,
           (v(e, "reu_docs"), hex(v(e, "buf_top", 2)), hex(v(e, "text_end", 2))))
 
     # Load: 90 KB, the rest of it in the REU
@@ -225,6 +225,34 @@ try:
           visible(doc2) == visible(doc[:p] + clip + doc[p:]) and len(doc2) - len(doc) - len(clip) <= 2,
           (len(doc2), len(doc), len(clip), rows(e)[12]))
     model_doc = doc2
+    keys_done(e, [(KEY["HOME"], 0), (KEY["HOME"], 0)])
+
+    # SHIFT + F5: the end (all of the tail comes in); SHIFT + F3: the start
+    e.key_done(KEY["F5"], LS)
+    doc, cur = e.doc()
+    check("SHIFT+F5: the end of the long document", doc == model_doc and cur == len(model_doc)
+          and v(e, "tail_len", 3) == 0, (cur, len(model_doc), v(e, "tail_len", 3)))
+    check("... the last line on the screen", any("MORE TEXT AT THE END" in r or "LINE 01999" in r
+                                                   for r in rows(e)[18:25]), rows(e)[20:25])
+    e.key_done(KEY["F3"], LS)
+    doc, cur = e.doc()
+    check("SHIFT+F3: the start again", doc == model_doc and cur == 0 and v(e, "win_base", 3) == 0,
+          (cur, v(e, "win_base", 3)))
+
+    # CTRL-Z far from the change: a page cut in the middle, the window moved
+    # on to the end, then undone - the window comes back to it
+    keys_done(e, [(KEY["F5"], 0)] * 40)
+    doc0, c0 = e.doc()
+    keys_done(e, [(KEY["F5"], CBM)])
+    e.key_done(KEY["X"], CTRL)
+    doc1, c1 = e.doc()
+    check("a page cut in the middle (%d bytes)" % (len(doc0) - len(doc1)), 300 < len(doc0) - len(doc1) < 1000,
+          len(doc0) - len(doc1))
+    e.key_done(KEY["F5"], LS)
+    check("... the window away at the end", v(e, "tail_len", 3) == 0, v(e, "tail_len", 3))
+    e.key_done(KEY["Z"], CTRL)
+    doc2, c2 = e.doc()
+    check("... CTRL-Z: the page back, the cursor at it", doc2 == doc0 and abs(c2 - c0) < 1000, (len(doc2), c0, c2))
     keys_done(e, [(KEY["HOME"], 0), (KEY["HOME"], 0)])
 
     # Find, near the end: the window slides on to it

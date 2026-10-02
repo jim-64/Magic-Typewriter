@@ -43,7 +43,6 @@ DIR_LFN         = 3             ; a directory read while a file is open
 FORMAT_MAGIC    = 0             ; file formats (the Format settings)
 FORMAT_PETSCII  = 1
 FORMAT_ASCII    = 2
-FORMAT_SPEEDSCRIPT = 3
 load_dev        !byte 8         ; device (1 = tape)
 load_format     !byte FORMAT_PETSCII
 save_dev        !byte 8
@@ -382,10 +381,7 @@ name_to_input
 ; always read as one. SEQ and PRG files both load.
 !zone load_file
 load_file
-        jsr check_load          ; (tape and SpeedScript: not yet)
-        bcc +
-        rts
-+       lda modified            ; changes not saved: ask first
+        lda modified            ; changes not saved: ask first
         beq +
         lda #<msg_load_unsaved
         ldx #>msg_load_unsaved
@@ -427,13 +423,15 @@ load_file
 +       jsr read_status         ; e.g. 62, FILE NOT FOUND
         bcs +
         jmp .opened             ; (a SEQ file)
-+       lda status_buf          ; ... but "64, FILE TYPE MISMATCH": it is
-        cmp #$36                ; a PRG file, so open it as one
++       lda status_buf          ; ... but "64, FILE TYPE MISMATCH" (a 1541:
+        cmp #$36                ; it is a PRG file) or "62, FILE NOT FOUND"
+        bne .to_fail            ; (VICE's file system drive looks for a SEQ
+        lda status_buf+1        ; file only): open it as a PRG. (If there
+        cmp #$34                ; is none, that says 62 again.)
+        beq +
+        cmp #$32
         bne .to_fail
-        lda status_buf+1
-        cmp #$34
-        bne .to_fail
-        lda #FILE_LFN
++       lda #FILE_LFN
         jsr CLOSE
         jsr prg_fits            ; its size, from the directory - now, while
         lda #0                  ; no file is open (a 1581 ended an open
@@ -717,6 +715,8 @@ load_file
 ; start (after io_end: this uses the editor)
 .show   lda #0                  ; nothing marked
         sta sel_on
+        lda #1                  ; (and nothing to undo)
+        jsr undo_reset
         jsr convert_loaded
         jsr gap_to_start
         lda reu_docs            ; (a long document: from its start)
@@ -802,8 +802,33 @@ convert_start
         lda load_format         ; how to read it (unless it has the header)
         sta .fmt
 
-.header ; (A PRG file's load address is off already: load_file read it,
-        ; or KERNAL LOAD took it.) The Magic Typewriter header: $00 "MTW", its version, the number
+        ; A PRG file's load address is off already (load_file read it, or
+        ; KERNAL LOAD took it) - unless the drive gave the PRG as a SEQ
+        ; file: an SD2IEC opens a file whatever type is asked for, so no
+        ; "64, FILE TYPE MISMATCH" told us (Jim's manual started with
+        ; "@mtw1..."). So $00 $40 (our load address, $4000) followed by
+        ; our header ($00) or a case code is a PRG of ours: skip those 2.
+        lda #3
+        jsr .has
+        bcc .header
+        ldy #0
+        lda (ptr),y
+        bne .header
+        iny
+        lda (ptr),y
+        cmp #>BUF_START
+        bne .header
+        iny
+        lda (ptr),y
+        beq +                   ; ($00: the header)
+        cmp #$0e
+        beq +
+        cmp #$8e
+        bne .header
++       inc ptr                 ; (ptr is BUF_START here: no page to cross)
+        inc ptr
+
+.header ; The Magic Typewriter header: $00 "MTW", its version, the number
         ; of settings, the settings, a RETURN (as MAGIC T DEFAULTS).
         lda #6
         jsr .has
@@ -1059,31 +1084,9 @@ prg_fits
 ; Saving
 ;============================================================================
 
-; check_load, check_save - carry set (after saying so) if the Load or Save
-; settings ask for something not built: SpeedScript (skipped for now).
-!zone check_load
-check_load
-        lda load_format
-        cmp #FORMAT_SPEEDSCRIPT
-        beq .no
-        clc
-        rts
-check_save
-        lda save_format
-        cmp #FORMAT_SPEEDSCRIPT
-        beq .no
-        clc
-        rts
-.no     jsr not_yet
-        sec
-        rts
-
 ; save_as - the Save menu's Save: ask for a name (the last one used is
 ; filled in) and save under it
-save_as jsr check_save
-        bcc +
-        rts
-+       jsr leave_cursor        ; (as CTRL-S: no codes without effect)
+save_as jsr leave_cursor        ; (as CTRL-S: no codes without effect)
         jsr name_to_input
         lda #<msg_save
         ldx #>msg_save
@@ -1123,10 +1126,7 @@ save_key
 ;                      and line feed, colors, reverse and other codes left
 ;                      out (it asks first if there are colors to lose)
 save_file
-        jsr check_save          ; (tape, SpeedScript: not yet)
-        bcc +
-        rts
-+       jsr name_ok             ; no * ? or , in the name
+        jsr name_ok             ; no * ? or , in the name
         bcc +
         lda #<msg_bad_name
         ldx #>msg_bad_name

@@ -26,8 +26,22 @@ startup
 
         jsr copy_high           ; the editor to its place under the KERNAL
         jsr detect_system       ; PAL / NTSC / old NTSC / Drean
+        jsr copy_border         ; ... and its border code to its place
         jsr detect_reu          ; an REU? (reu.asm)
         jsr reudoc_install      ; big enough for long documents?
+        sec                     ; 1 KB at the top of the text buffer for
+        lda buf_top             ; CTRL-Z's log (undo.asm)
+        sta undo_end
+        sbc #<UNDO_SIZE
+        sta buf_top
+        sta undo_base
+        lda buf_top+1
+        sta undo_end+1
+        sbc #>UNDO_SIZE
+        sta buf_top+1
+        sta undo_base+1
+        lda #1
+        jsr undo_reset
 !if DEBUG {
         jsr mailbox_init
 }
@@ -464,39 +478,29 @@ spr_menu
         !byte $00,$30,$c0       ; ..........XX....XX......
         !byte $ff,$31,$e0       ; XXXXXXXX..XX...XXXX.....
 
-; "F3" badge, points up (24x13)
+; "F3" badge: page up (24x7, rows 13-19 like the menu icon: lines 42-48,
+; which an NTSC monitor still shows - the 13-row badges were cut off on
+; Jim's 1702)
 spr_f3
-        !byte 21-13, 13*3
-        !byte $00,$18,$00       ; ...........XX...........
-        !byte $00,$7e,$00       ; .........XXXXXX.........
-        !byte $01,$c3,$80       ; .......XXX....XXX.......
-        !byte $07,$00,$e0       ; .....XXX........XXX.....
-        !byte $1c,$00,$38       ; ...XXX............XXX...
-        !byte $71,$e7,$0e       ; .XXX...XXXX..XXX....XXX.
-        !byte $c1,$8d,$83       ; XX.....XX...XX.XX.....XX
-        !byte $c1,$81,$83       ; XX.....XX......XX.....XX
-        !byte $c1,$c3,$03       ; XX.....XXX....XX......XX
-        !byte $c1,$81,$83       ; XX.....XX......XX.....XX
-        !byte $c1,$8d,$83       ; XX.....XX...XX.XX.....XX
-        !byte $c1,$87,$03       ; XX.....XX....XXX......XX
-        !byte $c0,$00,$03       ; XX....................XX
-
-; "F5" badge, points down (24x13)
-spr_f5
-        !byte 0, 13*3
-        !byte $c0,$00,$03       ; XX....................XX
-        !byte $c1,$ef,$83       ; XX.....XXXX.XXXXX.....XX
-        !byte $c1,$8c,$03       ; XX.....XX...XX........XX
-        !byte $c1,$8f,$03       ; XX.....XX...XXXX......XX
-        !byte $c1,$c1,$83       ; XX.....XXX.....XX.....XX
-        !byte $c1,$81,$83       ; XX.....XX......XX.....XX
-        !byte $c1,$8d,$83       ; XX.....XX...XX.XX.....XX
+        !byte 13, 7*3
+        !byte $21,$e7,$04       ; ..X....XXXX..XXX.....X..
+        !byte $71,$8d,$8e       ; .XXX...XX...XX.XX...XXX.
+        !byte $f9,$81,$9f       ; XXXXX..XX......XX..XXXXX
+        !byte $71,$c3,$0e       ; .XXX...XXX....XX....XXX.
+        !byte $71,$81,$8e       ; .XXX...XX......XX...XXX.
+        !byte $71,$8d,$8e       ; .XXX...XX...XX.XX...XXX.
         !byte $71,$87,$0e       ; .XXX...XX....XXX....XXX.
-        !byte $1c,$00,$38       ; ...XXX............XXX...
-        !byte $07,$00,$e0       ; .....XXX........XXX.....
-        !byte $01,$c3,$80       ; .......XXX....XXX.......
-        !byte $00,$7e,$00       ; .........XXXXXX.........
-        !byte $00,$18,$00       ; ...........XX...........
+
+; "F5" badge: page down (24x7, rows 0-6: lines 252-258)
+spr_f5
+        !byte 0, 7*3
+        !byte $71,$ef,$8e       ; .XXX...XXXX.XXXXX...XXX.
+        !byte $71,$8c,$0e       ; .XXX...XX...XX......XXX.
+        !byte $71,$8f,$0e       ; .XXX...XX...XXXX....XXX.
+        !byte $71,$c1,$8e       ; .XXX...XXX.....XX...XXX.
+        !byte $f9,$81,$9f       ; XXXXX..XX......XX..XXXXX
+        !byte $71,$8d,$8e       ; .XXX...XX...XX.XX...XXX.
+        !byte $21,$87,$04       ; ..X....XX....XXX.....X..
 
 spr_positions
         !byte <PTR_TEST_X,   PTR_TEST_Y         ; 0 pointer
@@ -614,3 +618,86 @@ load_defaults
         jmp defaults_apply
 .done   rts
 .ok     !byte 0
+
+;----------------------------------------------------------------------------
+; The exact-timed border code (irq.asm: the second IRQs of the two strips),
+; one copy per video system, each with its own wait counts. All four are
+; assembled to run at border_code (in the tables, after the lower part);
+; copy_border puts this system's copy there, and the other three go with
+; the rest of the start-up code. (They used to stay in the lower part all
+; four, ~870 bytes; Jim chose this to make room for CTRL-Z, phase 12.) The
+; code runs the same wherever it is: its loops are kept within a page at
+; border_code (same_page), and its other branches go to the next
+; instruction.
+;----------------------------------------------------------------------------
+border_pal
+!pseudopc border_code {
+border_top_pal     +border_top TOP_PAL_CMP, TOP_PAL_PRE, TOP_PAL_LOOP, TOP_PAL_SPLIT
+border_bot_pal     +border_bot BOT_PAL_CMP, BOT_PAL_SPLIT, BOT_PAL_PRE, BOT_PAL_LOOP
+}
+border_ntsc
+!pseudopc border_code {
+border_top_ntsc    +border_top TOP_NTSC_CMP, TOP_NTSC_PRE, TOP_NTSC_LOOP, TOP_NTSC_SPLIT
+border_bot_ntsc    +border_bot BOT_NTSC_CMP, BOT_NTSC_SPLIT, BOT_NTSC_PRE, BOT_NTSC_LOOP
+}
+border_oldntsc
+!pseudopc border_code {
+border_top_oldntsc +border_top TOP_OLDNTSC_CMP, TOP_OLDNTSC_PRE, TOP_OLDNTSC_LOOP, TOP_OLDNTSC_SPLIT
+border_bot_oldntsc +border_bot BOT_OLDNTSC_CMP, BOT_OLDNTSC_SPLIT, BOT_OLDNTSC_PRE, BOT_OLDNTSC_LOOP
+}
+border_drean
+!pseudopc border_code {
+border_top_drean   +border_top TOP_DREAN_CMP, TOP_DREAN_PRE, TOP_DREAN_LOOP, TOP_DREAN_SPLIT
+border_bot_drean   +border_bot BOT_DREAN_CMP, BOT_DREAN_SPLIT, BOT_DREAN_PRE, BOT_DREAN_LOOP
+}
+border_end
+
+; the room border_code needs: the longest copy
+!set BORDER_SIZE = border_ntsc - border_pal
+!if border_oldntsc - border_ntsc > BORDER_SIZE {
+        !set BORDER_SIZE = border_oldntsc - border_ntsc
+}
+!if border_drean - border_oldntsc > BORDER_SIZE {
+        !set BORDER_SIZE = border_drean - border_oldntsc
+}
+!if border_end - border_drean > BORDER_SIZE {
+        !set BORDER_SIZE = border_end - border_drean
+}
+
+; copy_border - this system's copy to border_code (BORDER_SIZE bytes: a
+; shorter copy brings the start of the next one along, which is never run)
+!zone copy_border
+copy_border
+        ldx system_type
+        lda .from_lo,x
+        sta zp_ptr
+        lda .from_hi,x
+        sta zp_ptr+1
+        lda #<border_code
+        sta zp_ptr2
+        lda #>border_code
+        sta zp_ptr2+1
+        lda #<BORDER_SIZE
+        sta .n
+        lda #>BORDER_SIZE
+        sta .n+1
+        ldy #0
+-       lda (zp_ptr),y
+        sta (zp_ptr2),y
+        inc zp_ptr
+        bne +
+        inc zp_ptr+1
++       inc zp_ptr2
+        bne +
+        inc zp_ptr2+1
++       lda .n
+        bne +
+        dec .n+1
++       dec .n
+        lda .n
+        ora .n+1
+        bne -
+        rts
+.from_lo !byte <border_pal, <border_ntsc, <border_oldntsc, <border_drean
+.from_hi !byte >border_pal, >border_ntsc, >border_oldntsc, >border_drean
+.n      !word 0
