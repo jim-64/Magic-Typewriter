@@ -44,11 +44,12 @@ For each failure: what you did, what you saw (a photo of the screen helps), and 
       feel right; up is up; click puts the cursor on the character; drag marks; over a badge the
       badge lights up and a click pages; ≡F1 click and the right button open the menu; it hides
       after 10 s. A joystick in port 1 must do nothing.
-- [ ] **If the pointer still creeps or never hides:** run `MOUSETEST` from `build\mousetest.d64`
-      (the same program, showing the mouse's numbers in the bottom right corner, in hex: paddle X,
-      paddle Y, this frame's move X, move Y, and how many readings were thrown away). Leave the
-      mouse still for a minute, then move it slowly; a photo or short video of the numbers tells
-      me what the 1351 really sends.
+- [ ] **If the pointer still creeps:** run `MOUSETEST` from `build\mousetest.d64` (the same
+      program, showing the mouse's numbers in the bottom right corner, in hex: paddle X, paddle Y,
+      this frame's move X, move Y, and how many readings were thrown away). Note the last number
+      (readings thrown away) before and after each of these: the mouse still for a minute; slow
+      moves for a minute; a few fast swipes. That tells bad readings from swipes too fast to
+      follow.
 - [ ] **REU** (1764/1750 or a clone): Stats (menu I) shows its size. Load `longdoc`, page to the
       end with F5 (short pauses now and then), HOME HOME, CTRL-F `paragraph 300`, type something
       in the middle, save under a new name, load it back.

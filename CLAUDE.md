@@ -114,12 +114,20 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   **Jim's first real-hardware test (2026-10-02; real C64, NTSC 1702, real 1351, SD2IEC, a Star
   Gemini printer):** printing to the Commodore printer works; marking with the mouse and the left
   SHIFT mark key work. Changed after it:
-  - **Mouse:** the pointer slid down the screen and never hid (10 s). The driver now throws away a
-    reading that jumps 28 steps or more (`MOUSE_MAX_STEP`, `pot_delta`) but keeps its value, so a
-    bad reading and the next good one add up to nothing; before, two readings half the range apart
-    always made the same step. Not confirmed on the real 1351 yet: **`-DMOUSE_SHOW=1`** builds show
-    the paddle values, the frame's move and the readings thrown away (hex, bottom right);
-    `build/mousetest.d64` has one for Jim.
+  - **Mouse:** the pointer slid down the screen and never hid (10 s). First fix: a reading that
+    jumps 28 steps or more (`MOUSE_MAX_STEP`) moves nothing but its value is kept. Jim's second
+    test (2026-10-03): it hides after 10 s now, but **still drifts**. **The real cause (found
+    then): `pot_delta` subtracted, then halved (the 1351 manual's method), and halving rounds
+    down both ways** — +3 counts made 1 step, −3 made −2 — so every reading that went off by an
+    odd amount and came back cost a step the negative way (down the screen, Y being turned
+    round), three times a frame. Now bit 0 comes off both values before subtracting, so the
+    steps add up exactly to where the mouse is. `tools/test_mouse_delta.py` shows it: the old
+    method drifted ~5000 steps in 42000 made-up readings of slow to-and-fro, the new one 0.
+    **`-DMOUSE_SHOW=1`** builds show the paddle values, the frame's move and the readings
+    thrown away (hex, bottom right); `build/mousetest.d64` has one for Jim. His photo after the
+    first fix: `96 94 00 00 e2` — 226 (or more: it wraps) readings thrown away, cause unknown:
+    bad readings, or swipes faster than 28 steps between two readings (the gap from the
+    housekeeping reading to the bottom strip's is ~215 lines, 2/3 of a frame).
   - **Badges and menu icon redrawn** (cut off on the 1702). Jim chose from VICE mockups
     (scratch builds, one PRG per design on a .d64 for his TV): **solid shapes with the letters
     cut out** — the F3/F5 badges an arrow ("SB3C"), ≡F1 a box with a pixel off each corner
@@ -373,6 +381,10 @@ that can be seen without typing).
 marked text, a recolor, a run of DELs, two runs of typing, a color key, overwrite mode, a paste —
 each gives back exactly the text before; "NOTHING TO UNDO" twice and after CLEAR ALL; "TOO BIG TO
 UNDO" after a 2 KB cut). `python tools/test_freeze.py ntsc` (see Mouse/IRQ notes: the CPU held up).
+`python tools/test_mouse_delta.py` (no VICE: the assembled `pot_delta` run in a small 6502
+emulator against a Python model for all 65536 inputs, then made-up 1351 readings — the noise bit,
+readings off by a step, bad readings — with the old and new methods side by side: the new one
+must not drift at all, nor lean either way with bad readings).
 `python tools/test_phase12.py [c64|ntsc]` (the Format values without SpeedScript, the CTRL keys
 under the main menu, SHIFT + F3/F5 with and without marking, a PRG of ours read as a SEQ file as an
 SD2IEC gives it, and loading from VICE's file system drive, which answers 62).
@@ -494,8 +506,8 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (phase 12, after undo): debug tables end $3E5F, so **only ~33 bytes free below the sprite
-  blocks in debug builds** (release: $3C21, ~600); the editor + find end $FF9D (~90 bytes free under
+- Space (phase 12, after undo and the mouse fix): debug tables end $3E5B, so **only ~37 bytes free
+  below the sprite blocks in debug builds** (release: $3C21, ~600); the editor + find end $FF9D (~90 bytes free under
   the KERNAL); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. **The next
   feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
   must stay 0), BASIC's input buffer $0200–$0258 for variables, or (ask Jim) moving BUF_START up.
@@ -881,7 +893,8 @@ movement keys** — C= + digit still selects a color.
 - **Reading: three times a frame** (`mouse_sample`: at line 10, in the housekeeping just before
   `scan_keyboard`, and at the end of the bottom strip IRQ — after it has set the line 10 IRQ, since on
   NTSC it ends near line 7). Each reading adds its move to `mouse_acc_x/y` (the 1351 manual's method,
-  `pot_delta`). Why three: one reading can only tell 63 steps apart either way, and VICE's 1351 moved
+  `pot_delta`; phase 12: bit 0 off both values *before* subtracting, see the phase 12 status).
+  Why three: one reading can only tell 63 steps apart either way, and VICE's 1351 moved
   ~60 steps a frame (a real 1351 is fine with one; more does no harm). None falls within 512 cycles of
   the keyboard scan's $DC00 changes. `mouse_frame` (housekeeping) takes the frame's total, Y inverted,
   doubles it when fast (threshold from the timing table: 4 PAL, 3 NTSC; not when it is 64 or more),

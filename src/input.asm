@@ -586,9 +586,11 @@ mouse_frame
         sta mouse_first
         sta mouse_dx
         sta mouse_dy
-        lda SID_POTX
+        lda SID_POTX            ; (kept without bits 0 and 7: see pot_delta)
+        and #%01111110
         sta pot_x
         lda SID_POTY
+        and #%01111110
         sta pot_y
 +
 !ifdef MOUSE_TRACE {
@@ -1011,52 +1013,55 @@ mouse_rejects   !byte 0         ; readings thrown away (pot_delta)
 }
 
 ;----------------------------------------------------------------------------
-; pot_delta - A = a paddle value now, Y = the one last used. Returns A = how
-; far the mouse moved (signed; the value counts in steps of 2, bit 0 is
-; noise), and Y = the value to keep: the new one - or the old one if it did
-; not really move, so noise never adds up. (The method from the 1351 manual.)
+; pot_delta - A = a paddle value now, Y = the value kept from before (see
+; below). Returns A = how far the mouse moved, in steps (signed), and Y =
+; the value to keep for next time.
+;
+; The paddle value counts in bits 1-6 (one step = 2) and wraps round; bit 0
+; is noise. So bit 0 comes off BOTH values first, and only then are they
+; subtracted: the steps of all the readings then add up to exactly where
+; the mouse is, whatever the noise did in between. (The 1351 manual's
+; method, and ours until phase 12, subtracted first and then halved, and
+; that rounds down both ways: +3 counts made 1 step but -3 made -2. Every
+; time a reading went off by an odd amount and came back, the pointer lost
+; a step the negative way - down the screen, as Jim's real 1351 showed.)
+;
+; A move of MOUSE_MAX_STEP or more between two readings (a third of a frame
+; apart, or less) moves nothing, but the new value is kept: a reading half
+; the range away can't tell forwards from backwards. It is a bad reading,
+; or a swipe faster than the readings can follow; either way the pointer
+; stays put rather than jump the wrong way.
 ;----------------------------------------------------------------------------
 !zone pot_delta
 pot_delta
-        sty .old
+        and #%01111110          ; the new value without its noise bit
         sta .new
+        sty .old
         sec
         sbc .old
-        and #%01111111
-        cmp #%01000000
-        bcs .neg
-        lsr                     ; forwards
-        beq .none
-        cmp #MOUSE_MAX_STEP
-        bcs .reject
-        ldy .new
+        and #%01111110
+        cmp #%01000000          ; half the range or more: backwards
+        bcc +
+        ora #%10000000
++       cmp #$80                ; halve it, keeping the sign: the steps,
+        ror                     ; -32 to 31
+        sta .step
+        clc                     ; within -(MOUSE_MAX_STEP-1) to
+        adc #MOUSE_MAX_STEP-1   ; MOUSE_MAX_STEP-1?
+        cmp #2*MOUSE_MAX_STEP-1
+        ldy .new                ; (the new value is kept either way; LDY
+        bcs .far                ; leaves the carry alone)
+        lda .step               ; yes: a move
         rts
-.neg    ora #%11000000          ; backwards
-        cmp #$ff
-        beq .none
-        sec
-        ror
-        cmp #$100-MOUSE_MAX_STEP+1
-        bcc .reject
-        ldy .new
-        rts
-.none   lda #0                  ; (Y is still the old value)
-        rts
-        ; A jump no 1351 can make between two readings (a third of a frame
-        ; apart): a bad reading. No move - but the new value is kept, so a
-        ; bad reading and the good one after it add up to nothing. (Before,
-        ; two readings half the range apart always added up to the same
-        ; step - one way to make a pointer creep. Jim's real 1351 slid down
-        ; the screen and never went idle.)
-.reject
+.far
 !ifdef MOUSE_SHOW {
         inc mouse_rejects
 }
-        lda #0
-        ldy .new
+        lda #0                  ; no: no move
         rts
 .old    !byte 0
 .new    !byte 0
+.step   !byte 0
 
 !if DEBUG {
 ;============================================================================
