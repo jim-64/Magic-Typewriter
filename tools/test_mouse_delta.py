@@ -1,10 +1,12 @@
-"""The 1351 reading (pot_delta in src/input.asm), without VICE: the
-assembled routine runs in a small 6502 emulator (just the instructions it
-uses), checked against a Python model for every input; then long runs of
-made-up 1351 readings - the noise bit, readings off by a step, bad readings -
-show whether the pointer drifts. The method before phase 12 (subtract, then
-halve) is run alongside for comparison: it drifts the negative way (down the
-screen), as Jim's real 1351 did.
+"""The 1351 reading (mouse_sample and pot_delta in src/input.asm), without
+VICE: the assembled code runs in a small 6502 emulator (just the
+instructions it uses), checked against a Python model; then long runs of
+made-up 1351 readings, like those of Jim's real mouse - a count of wobble
+either way, and now and then, while it moves, one reading way off - go
+through the real code, looking for what he saw: drift, a pointer that
+twitches while the mouse rests, and jumps. Two older methods are run
+alongside (as models) for comparison: the one before phase 12 (it drifted
+down) and the first phase 12 fix (bit 0 off first: it twitched).
 Run from the project folder:  python tools/test_mouse_delta.py
 Needs a build (build.bat) for build/magictypewriter.prg and build/main.lbl."""
 import os, re, random
@@ -27,9 +29,11 @@ for line in open(os.path.join(PROJ, "build", "main.lbl")):
     if m:
         lab[m.group(1)] = int(m.group(2), 16)
 src = open(os.path.join(PROJ, "src", "input.asm")).read()
+STILL = int(re.search(r"^MOUSE_STILL\s*=\s*(\d+)", src, re.M).group(1))
 MAX = int(re.search(r"^MOUSE_MAX_STEP\s*=\s*(\d+)", src, re.M).group(1))
+POTX, POTY = 0xd419, 0xd41a
 
-# A 6502 with just what pot_delta needs
+# A 6502 with just what the mouse reading needs (no decimal mode)
 class CPU:
     def __init__(self, mem):
         self.m = mem
@@ -37,36 +41,52 @@ class CPU:
         self.n = v >> 7
         self.z = int(v == 0)
         return v
-    def run(self, pc, a, y, limit=200):
-        self.a, self.y, self.c, self.n, self.z = a, y, 0, 0, 0
-        m = self.m
+    def adc(self, v):
+        r = self.a + v + self.c
+        self.c = int(r > 0xff)
+        self.a = self.nz(r & 0xff)
+    def cmp(self, reg, v):
+        self.c = int(reg >= v)
+        self.nz((reg - v) & 0xff)
+    def run(self, pc, a=0, x=0, y=0, limit=2000):
+        self.a, self.x, self.y, self.c, self.n, self.z = a, x, y, 0, 0, 0
+        m, stack = self.m, []
         for _ in range(limit):
             op = m[pc]
             b1 = m[(pc + 1) & 0xffff]
             ab = b1 | m[(pc + 2) & 0xffff] << 8
-            if op == 0x60:                                  # RTS
-                return self.a, self.y
+            abx = (ab + self.x) & 0xffff
+            if op == 0x60:                                                   # RTS
+                if not stack:
+                    return self.a, self.x, self.y
+                pc = stack.pop()
+            elif op == 0x20: stack.append(pc + 3); pc = ab                   # JSR
             elif op == 0x29: self.a = self.nz(self.a & b1); pc += 2          # AND #
             elif op == 0x09: self.a = self.nz(self.a | b1); pc += 2          # ORA #
+            elif op == 0x49: self.a = self.nz(self.a ^ b1); pc += 2          # EOR #
             elif op == 0xa9: self.a = self.nz(b1); pc += 2                   # LDA #
+            elif op == 0xa2: self.x = self.nz(b1); pc += 2                   # LDX #
             elif op == 0xad: self.a = self.nz(m[ab]); pc += 3                # LDA abs
+            elif op == 0xbd: self.a = self.nz(m[abx]); pc += 3               # LDA abs,X
             elif op == 0xac: self.y = self.nz(m[ab]); pc += 3                # LDY abs
             elif op == 0x8d: m[ab] = self.a; pc += 3                         # STA abs
+            elif op == 0x9d: m[abx] = self.a; pc += 3                        # STA abs,X
             elif op == 0x8c: m[ab] = self.y; pc += 3                         # STY abs
             elif op == 0xee: m[ab] = self.nz((m[ab] + 1) & 0xff); pc += 3    # INC abs
             elif op == 0xa8: self.y = self.nz(self.a); pc += 1               # TAY
+            elif op == 0x98: self.a = self.nz(self.y); pc += 1               # TYA
+            elif op == 0xca: self.x = self.nz((self.x - 1) & 0xff); pc += 1  # DEX
+            elif op == 0x48: stack.append(self.a); pc += 1                   # PHA
+            elif op == 0x68: self.a = self.nz(stack.pop()); pc += 1          # PLA
             elif op == 0x38: self.c = 1; pc += 1                             # SEC
             elif op == 0x18: self.c = 0; pc += 1                             # CLC
-            elif op in (0x69, 0xed):                                         # ADC #, SBC abs
-                v = b1 if op == 0x69 else (m[ab] ^ 0xff)
-                r = self.a + v + self.c
-                self.c = int(r > 0xff)
-                self.a = self.nz(r & 0xff)
-                pc += 2 if op == 0x69 else 3
-            elif op == 0xc9:                                                 # CMP #
-                r = (self.a - b1) & 0x1ff
-                self.c = int(self.a >= b1)
-                self.nz(r & 0xff); pc += 2
+            elif op == 0x69: self.adc(b1); pc += 2                           # ADC #
+            elif op == 0x7d: self.adc(m[abx]); pc += 3                       # ADC abs,X
+            elif op == 0xe9: self.adc(b1 ^ 0xff); pc += 2                    # SBC #
+            elif op == 0xed: self.adc(m[ab] ^ 0xff); pc += 3                 # SBC abs
+            elif op == 0xfd: self.adc(m[abx] ^ 0xff); pc += 3                # SBC abs,X
+            elif op == 0xc9: self.cmp(self.a, b1); pc += 2                   # CMP #
+            elif op == 0xcd: self.cmp(self.a, m[ab]); pc += 3                # CMP abs
             elif op == 0x6a:                                                 # ROR A
                 c = self.a & 1
                 self.a = self.nz((self.a >> 1) | (self.c << 7))
@@ -82,130 +102,178 @@ class CPU:
         raise RuntimeError("no RTS")
 
 cpu = CPU(mem)
-def asm_delta(a, y):
-    return cpu.run(lab["pot_delta"], a, y)
 
 def s8(v):
     return v - 256 if v > 127 else v
 
-# The model of the new method
-def new_delta(a, y):
-    new = a & 0x7e
-    d = (new - y) & 0x7e
-    if d >= 0x40:
-        d |= 0x80
-    step = s8(d) >> 1
-    if -(MAX - 1) <= step <= MAX - 1:
-        return step & 0xff, new
-    return 0, new
+# --- The real code: mouse_sample, both axes ------------------------------
+class Real:
+    """mouse_sample as assembled. start() is what mouse_frame does on the
+    first frame; sample() is one reading of both paddles."""
+    def start(self, rx, ry):
+        for i, r in enumerate((rx, ry)):
+            for name in ("pot_k", "pot_p1", "pot_p2"):
+                mem[lab[name] + i] = r & 0x7f
+    def sample(self, rx, ry):
+        mem[POTX], mem[POTY] = rx, ry
+        mem[lab["mouse_acc_x"]] = mem[lab["mouse_acc_y"]] = 0
+        cpu.run(lab["mouse_sample"])
+        return s8(mem[lab["mouse_acc_x"]]), s8(mem[lab["mouse_acc_y"]])
 
-# The method before phase 12 (subtract, halve, rounding down both ways)
-def old_delta(a, y):
-    d = (a - y) & 0x7f
-    if d < 0x40:
-        s = d >> 1
-        if s == 0:
-            return 0, y
-        if s >= MAX:
-            return 0, a
-        return s, a
-    v = d | 0xc0
-    if v == 0xff:
-        return 0, y
-    s = s8(v) >> 1
-    if s < -(MAX - 1):
-        return 0, a
-    return s & 0xff, a
+# --- Models: the new method and the two older ones, one axis -------------
+class New:
+    def __init__(self, r):
+        self.k = self.p1 = self.p2 = r & 0x7f
+    def step(self, r):
+        r &= 0x7f
+        dist = lambda v: ((v - self.k) & 0x7f) ^ 0x40
+        mid = sorted((dist(r), dist(self.p1), dist(self.p2)))[1]
+        self.p2, self.p1 = self.p1, r
+        if 64 - STILL <= mid <= 64 + STILL:
+            return 0
+        if mid < 64:
+            mid += 1
+        twice = (mid & 0xfe) - 64
+        self.k = (self.k + twice) & 0x7f
+        return twice >> 1
 
-# 1. The assembled routine against the model, every input
-bad = [(a, y) for a in range(256) for y in range(256) if asm_delta(a, y) != new_delta(a, y)]
-check("pot_delta as assembled = the model, all 65536 inputs (MOUSE_MAX_STEP %d)" % MAX,
-      not bad, [(a, y, asm_delta(a, y), new_delta(a, y)) for a, y in bad[:5]])
+class Old:
+    """before phase 12: subtract, then halve (rounds down both ways)"""
+    def __init__(self, r):
+        self.y = r
+    def step(self, a):
+        d = (a - self.y) & 0x7f
+        if d < 0x40:
+            s = d >> 1
+            if s == 0:
+                return 0
+            self.y = a
+            return 0 if s >= MAX else s
+        v = d | 0xc0
+        if v == 0xff:
+            return 0
+        self.y = a
+        s = s8(v) >> 1
+        return 0 if s < -(MAX - 1) else s
+
+class Bit0:
+    """the first phase 12 fix: bit 0 off both, then subtract"""
+    def __init__(self, r):
+        self.y = r & 0x7e
+    def step(self, a):
+        new = a & 0x7e
+        d = (new - self.y) & 0x7e
+        if d >= 0x40:
+            d |= 0x80
+        self.y = new
+        s = s8(d) >> 1
+        return s if -(MAX - 1) <= s <= MAX - 1 else 0
+
+# 1. The real code against the model: random readings, both axes
+rnd = random.Random(64)
+real, mx, my = Real(), None, None
+bad = []
+for i in range(20000):
+    if i % 500 == 0:                                   # now and then, a fresh start
+        rx, ry = rnd.randint(0, 255), rnd.randint(0, 255)
+        real.start(rx, ry)
+        mx, my = New(rx), New(ry)
+    rx = (rx + rnd.randint(-12, 12)) & 0xff if rnd.random() < 0.9 else rnd.randint(0, 255)
+    ry = (ry + rnd.randint(-12, 12)) & 0xff if rnd.random() < 0.9 else rnd.randint(0, 255)
+    got = real.sample(rx, ry)
+    want = (mx.step(rx), my.step(ry))
+    if got != want:
+        bad.append((i, rx, ry, got, want))
+check("mouse_sample as assembled = the model (20000 readings, both axes)", not bad, bad[:3])
 
 # 2. Made-up 1351 readings. The mouse's real place is k steps; the SID reads
-# (2k + noise) in bits 0-6, plus $40 (as VICE has it).
-def reading(k, noise):
-    return ((((2 * k + noise) & 0x7f) + 0x40) & 0xff)
+# 2k + c + noise (c = 0 or 1: where its counts sit; noise -1..+1 or 0..1),
+# in bits 0-6, plus $40 as VICE has it.
+def reading(k, c, noise):
+    return (((2 * k + c + noise) & 0x7f) + 0x40) & 0xff
 
-def run(method, moves, rnd, jitter=0.0, glitch=0.0):
-    """moves: the real place after each reading. Returns (where the readings
-    say it went, where it really went)."""
-    k = moves[0]
-    kept = reading(k, 0) & 0x7e if method is new_delta else reading(k, 0)
-    total = 0
-    last_bad = False
-    for i, k in enumerate(moves[1:]):
-        r = reading(k, rnd.randint(0, 1))
-        clean = i >= len(moves) - 5                       # (the last few: good)
-        if not clean and rnd.random() < jitter:           # off by a step
-            r = reading(k + rnd.choice((-1, 1)), rnd.randint(0, 1))
-        if not clean and not last_bad and rnd.random() < glitch:   # a bad one
-            r = rnd.randint(0, 255)
-            last_bad = True
-        else:
-            last_bad = False
-        step, kept = method(r, kept)
-        total += s8(step)
-    return total, moves[-1] - moves[0]
-
-def back_and_forth(rnd, n, speed):
-    """the hand moving the mouse to and fro, ending where it started"""
-    k, path = 0, [0]
+def to_and_fro(rnd, n, speed):
+    """the hand moving the mouse to and fro and resting; ends at the start.
+    Returns (places, resting) per reading."""
+    k, path, rest = 0, [0], [True]
     for i in range(n):
-        target = rnd.randint(-200, 200) if i < n - 1 else 0
+        target = rnd.randint(-150, 150) if i < n - 1 else 0
         while k != target:
-            k += max(-speed, min(speed, target - k)) if speed else (1 if target > k else -1)
+            k += max(-speed, min(speed, target - k))
             path.append(k)
-        for _ in range(rnd.randint(0, 20)):               # a rest
+            rest.append(False)
+        for _ in range(rnd.randint(6, 30)):
             path.append(k)
-    return path
+            rest.append(True)
+    return path, rest
 
-rnd = random.Random(1351)
-cases = [
-    ("still, noise bit only", [0] * 20000, 0, 0),
-    ("to and fro, slowly, noise bit", back_and_forth(rnd, 300, 1), 0, 0),
-    ("to and fro, fast, noise bit", back_and_forth(rnd, 300, 9), 0, 0),
-    ("still, 5% of readings off by a step", [0] * 20000, 0.05, 0),
-    ("to and fro, 5% off by a step", back_and_forth(rnd, 300, 3), 0.05, 0),
-    ("to and fro, 2% bad readings", back_and_forth(rnd, 300, 3), 0, 0.02),
-    ("to and fro, both", back_and_forth(rnd, 300, 3), 0.05, 0.02),
-]
+def run(kind, path, rest, rnd, c=0, wobble=(-1, 0, 1), spikes=0.0):
+    """Feed the readings to one method (axis X only for the models; the real
+    code gets the same on both axes). Returns: final error, the largest
+    error while resting (after 3 readings of rest), twitches (moves while
+    resting after the first: one move may settle the pointer, when the
+    wobble nudges it over MOUSE_STILL), the largest change of the error in
+    one reading."""
+    first = reading(path[0], c, 0)
+    if kind == "real":
+        real.start(first, first)
+        step = lambda r: real.sample(r, r)[0]
+    else:
+        m = {"new": New, "old": Old, "bit0": Bit0}[kind](first)
+        step = m.step
+    pos, worst_rest, twitches, jump = 0, 0, 0, 0
+    err_before, resting_for, last_spike, rest_moves = 0, 0, False, 0
+    for i in range(1, len(path)):
+        r = reading(path[i], c, rnd.choice(wobble))
+        if spikes and not last_spike and not rest[i] and rnd.random() < spikes:
+            r = rnd.randint(0, 255)                    # one reading way off
+            last_spike = True
+        else:
+            last_spike = False
+        s = step(r)
+        pos += s
+        err = pos - (path[i] - path[0])
+        resting_for = resting_for + 1 if rest[i] else 0
+        if resting_for == 0:
+            rest_moves = 0
+        if resting_for > 3:
+            worst_rest = max(worst_rest, abs(err))
+            if s:
+                rest_moves += 1
+                twitches += rest_moves > 1 or abs(s) > 2
+        jump = max(jump, abs(err - err_before))
+        err_before = err
+    return pos - (path[-1] - path[0]), worst_rest, twitches, jump
+
 print()
-print("%-38s %10s %10s" % ("readings", "old drift", "new drift"))
-for name, path, jit, gl in cases:
-    o, real = run(old_delta, path, random.Random(7), jit, gl)
-    n, real = run(new_delta, path, random.Random(7), jit, gl)
-    print("%-38s %10d %10d   (%d readings)" % (name, o - real, n - real, len(path)))
-    if gl == 0:
-        check("  new method: no drift at all", n == real, n - real)
-
-# 3. Bad readings: one just inside the limit counts as a move, and if the
-# good reading after it is then just outside, nothing takes it back. That
-# can leave the pointer off by up to MOUSE_MAX_STEP either way - but it
-# must lean neither way: over many runs the average error is near 0 (the
-# old method ended up below the true place in every run).
-import statistics
-errs_new, errs_old = [], []
-for seed in range(100):
-    path = back_and_forth(random.Random(seed), 100, 3)
-    o, real = run(old_delta, path, random.Random(seed + 1000), 0.05, 0.02)
-    n, real = run(new_delta, path, random.Random(seed + 1000), 0.05, 0.02)
-    errs_new.append(n - real)
-    errs_old.append(o - real)
-def lean(e):
-    return statistics.mean(e) / (statistics.stdev(e) / len(e) ** 0.5)
-print("100 runs with bad readings: old method below in %d, average %.0f; new method below in %d,"
-      " above in %d, average %.1f" % (sum(x < 0 for x in errs_old), statistics.mean(errs_old),
-      sum(x < 0 for x in errs_new), sum(x > 0 for x in errs_new), statistics.mean(errs_new)))
-check("  new method: bad readings lean neither way (|t| < 3)", abs(lean(errs_new)) < 3,
-      lean(errs_new))
-
-# 4. A swipe faster than the readings: the far reading moves nothing, and
-# moves go on from it.
-step1, kept = new_delta(reading(30, 0), reading(0, 0) & 0x7e)
-step2, kept = new_delta(reading(31, 0), kept)
-step3, kept = new_delta(reading(33, 1), kept)
-check("a far reading moves nothing; moves go on from it",
-      (step1, s8(step2), s8(step3)) == (0, 1, 2), (step1, s8(step2), s8(step3)))
+print("%-34s %-6s %6s %6s %8s %6s" % ("readings", "method", "final", "rest", "twitches", "jump"))
+cases = [
+    # name, speed, c, wobble, spikes
+    ("resting on an even count, +-1", 0, 0, (-1, 0, 1), 0),
+    ("resting on an odd count, +-1", 0, 1, (-1, 0, 1), 0),
+    ("to and fro slowly, +-1", 1, 1, (-1, 0, 1), 0),
+    ("to and fro, +-1", 4, 0, (-1, 0, 1), 0),
+    ("to and fro fast, noise bit 0/1", 12, 0, (0, 1), 0),
+    ("to and fro, +-1, 3% way off", 4, 1, (-1, 0, 1), 0.03),
+    ("to and fro fast, +-1, 3% way off", 10, 0, (-1, 0, 1), 0.03),
+]
+for name, speed, c, wobble, spikes in cases:
+    rnd = random.Random(name)
+    if speed == 0:
+        path, rest = [0] * 3000, [True] * 3000
+    else:
+        path, rest = to_and_fro(rnd, 60, speed)
+    results = {}
+    for kind in ("old", "bit0", "real"):
+        results[kind] = run(kind, path, rest, random.Random(name + "x"), c, wobble, spikes)
+        f, w, t, j = results[kind]
+        print("%-34s %-6s %6d %6d %8d %6d" % (name if kind == "old" else "", kind, f, w, t, j))
+    f, w, t, j = results["real"]
+    # The pointer may sit up to (MOUSE_STILL + 1) / 2 = 2 steps from the
+    # mouse; while moving it lags one reading (speed steps) behind, and a
+    # reading way off just as a move starts can make it catch up a reading
+    # early (twice the speed at most) - but never jump off somewhere else.
+    check("  no drift, no twitching, no jumps", abs(f) <= 2 and w <= 2 and t == 0
+          and j <= 2 * speed + 2, results["real"])
 
 print("ALL PASS" if ok else "SOME FAILED")

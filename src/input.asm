@@ -492,8 +492,14 @@ mouse_drag      !byte 0         ; 1 = the left button went down in the text
 mouse_zone      !byte 0         ; 0 text area, 1 top strip, 2 bottom strip
 mouse_sprite    !byte 0         ; the icon sprite under it (1-5), 0 none
 drag_timer      !byte 0
-pot_x           !byte 0         ; the paddle values last used
-pot_y           !byte 0
+
+; pot_delta's working bytes, in BASIC's input buffer ($0200-$0258), which
+; nothing uses while the editor runs. None needs a starting value (the
+; first frame sets them), so they take no room in the program.
+pot_k           = $0200         ; 2 (X, Y): where the pointer settled, as a
+                                ; paddle value
+pot_p1          = $0202         ; 2: the last reading
+pot_p2          = $0204         ; 2: the one before
 
 ; For the editor: where the last mouse event happened
 click_row       !byte 0         ; text row 0-24; $ff above the text, 25 below
@@ -520,31 +526,22 @@ icon_colors     !fill 5, LIGHT_BLUE ; sprites 1-5
 ; which switches the paddle inputs about.)
 ;----------------------------------------------------------------------------
 mouse_sample
-        lda SID_POTX
-!if DEBUG {
-        sta mouse_raw_x         ; (for the trace)
+        ldx #1                  ; Y ($d41a), then X ($d419)
+-       lda SID_POTX,x
+!ifdef MOUSE_TRACE {
+        sta mouse_raw_x,x       ; (for the trace)
 }
-        ldy pot_x
         jsr pot_delta
-        sty pot_x
         clc
-        adc mouse_acc_x
-        sta mouse_acc_x
-        lda SID_POTY
-!if DEBUG {
-        sta mouse_raw_y
-}
-        ldy pot_y
-        jsr pot_delta
-        sty pot_y
-        clc
-        adc mouse_acc_y
-        sta mouse_acc_y
+        adc mouse_acc_x,x
+        sta mouse_acc_x,x
+        dex
+        bpl -
         rts
 
 mouse_acc_x     !byte 0         ; movement since mouse_frame last took it
 mouse_acc_y     !byte 0         ; (signed; y as the paddle counts it)
-!if DEBUG {
+!ifdef MOUSE_TRACE {
 mouse_raw_x     !byte 0         ; the last paddle values read
 mouse_raw_y     !byte 0
 }
@@ -586,12 +583,14 @@ mouse_frame
         sta mouse_first
         sta mouse_dx
         sta mouse_dy
-        lda SID_POTX            ; (kept without bits 0 and 7: see pot_delta)
-        and #%01111110
-        sta pot_x
-        lda SID_POTY
-        and #%01111110
-        sta pot_y
+        ldx #1                  ; pot_delta's readings so far: the paddle
+-       lda SID_POTX,x          ; values as they are now
+        and #%01111111
+        sta pot_k,x
+        sta pot_p1,x
+        sta pot_p2,x
+        dex
+        bpl -
 +
 !ifdef MOUSE_TRACE {
         ; Trace (-DMOUSE_TRACE=1 builds): the last 64 frames' paddle values
@@ -1013,55 +1012,112 @@ mouse_rejects   !byte 0         ; readings thrown away (pot_delta)
 }
 
 ;----------------------------------------------------------------------------
-; pot_delta - A = a paddle value now, Y = the value kept from before (see
-; below). Returns A = how far the mouse moved, in steps (signed), and Y =
-; the value to keep for next time.
+; pot_delta - A = a paddle value just read, X = which one (0 = X, 1 = Y).
+; Returns A = how far the pointer moves, in steps (signed). Keeps X.
 ;
-; The paddle value counts in bits 1-6 (one step = 2) and wraps round; bit 0
-; is noise. So bit 0 comes off BOTH values first, and only then are they
-; subtracted: the steps of all the readings then add up to exactly where
-; the mouse is, whatever the noise did in between. (The 1351 manual's
-; method, and ours until phase 12, subtracted first and then halved, and
-; that rounds down both ways: +3 counts made 1 step but -3 made -2. Every
-; time a reading went off by an odd amount and came back, the pointer lost
-; a step the negative way - down the screen, as Jim's real 1351 showed.)
+; The paddle value counts 2 a step (bits 1-6) and wraps round; on Jim's
+; real 1351 it also wobbles a count either way, and now and then, while the
+; mouse moves, one reading is way off (his photos, phase 12). So:
 ;
-; A move of MOUSE_MAX_STEP or more between two readings (a third of a frame
-; apart, or less) moves nothing, but the new value is kept: a reading half
-; the range away can't tell forwards from backwards. It is a bad reading,
-; or a swipe faster than the readings can follow; either way the pointer
-; stays put rather than jump the wrong way.
+; 1. Of the last three readings, the middle one is used: a single reading
+;    way off, however far, is never used. (It costs one reading's delay.)
+; 2. That reading is compared with pot_k, where the pointer last settled.
+;    Within MOUSE_STILL counts of it: noise, no move - so the pointer can't
+;    twitch while the mouse rests. Further: the pointer moves the whole
+;    steps, and pot_k moves exactly as many (2 counts a step); the count
+;    left over (0 or 1) stays in the difference for next time. So the steps
+;    always add up to where the mouse is: no drift, ever.
+;
+; (Before phase 12 a reading's difference from the last was halved on its
+; own, rounding down both ways: +3 counts made 1 step but -3 made -2, and
+; the pointer crept down the screen. Then, for a while, bit 0 came off
+; before subtracting: no drift, but a pointer that twitched when the mouse
+; rested on an odd count, and the odd reading way off still got through.)
 ;----------------------------------------------------------------------------
+MOUSE_STILL     = 3             ; counts (1.5 steps): a move needs 2 steps
+
 !zone pot_delta
+.dnew   = $0206                 ; the three readings' distances from pot_k,
+.dp1    = $0207                 ; plus 64 (in BASIC's input buffer, as
+.dp2    = $0208                 ; pot_k)
+.twice  = $0209                 ; 2 x the move
+
 pot_delta
-        and #%01111110          ; the new value without its noise bit
-        sta .new
-        sty .old
-        sec
-        sbc .old
-        and #%01111110
-        cmp #%01000000          ; half the range or more: backwards
+        and #%01111111          ; (bit 7 means nothing)
+        tay                     ; Y = the new reading
+        jsr .dist
+        sta .dnew
+        lda pot_p1,x
+        jsr .dist
+        sta .dp1
+        lda pot_p2,x
+        jsr .dist
+        sta .dp2
+        lda pot_p1,x            ; move the readings along
+        sta pot_p2,x
+        tya
+        sta pot_p1,x
+
+        ; The middle one of the three.
+        lda .dp2
+        cmp .dp1
         bcc +
-        ora #%10000000
-+       cmp #$80                ; halve it, keeping the sign: the steps,
-        ror                     ; -32 to 31
-        sta .step
-        clc                     ; within -(MOUSE_MAX_STEP-1) to
-        adc #MOUSE_MAX_STEP-1   ; MOUSE_MAX_STEP-1?
-        cmp #2*MOUSE_MAX_STEP-1
-        ldy .new                ; (the new value is kept either way; LDY
-        bcs .far                ; leaves the carry alone)
-        lda .step               ; yes: a move
-        rts
-.far
+        ldy .dp1                ; (swap them, so that dp2 <= dp1)
+        sta .dp1
+        sty .dp2
++       lda .dnew
+        cmp .dp1
+        bcc +
+        lda .dp1                ; dnew >= dp1: dp1
+        bcs .mid
++       cmp .dp2
+        bcs .mid                ; dp2 <= dnew < dp1: dnew
+        lda .dp2                ; dnew < dp2: dp2
+.mid
 !ifdef MOUSE_SHOW {
+        pha                     ; the newest reading 8 steps or more from
+        sec                     ; the middle one: count it (thrown away,
+        sbc .dnew               ; for now)
+        clc
+        adc #16
+        cmp #33
+        bcc +
         inc mouse_rejects
++       pla
 }
-        lda #0                  ; no: no move
+        sec                     ; within MOUSE_STILL counts of pot_k: noise
+        sbc #64-MOUSE_STILL
+        cmp #2*MOUSE_STILL+1
+        bcc .none
+        adc #64-MOUSE_STILL-1   ; (back again: the carry adds the 1)
+
+        ; A move: the distance in whole steps, rounded towards pot_k (a
+        ; count left over stays for next time).
+        cmp #64
+        bcs +
+        adc #1                  ; (carry clear: below 64, round up)
++       and #%11111110
+        sec
+        sbc #64                 ; 2 x the move, signed
+        sta .twice
+        clc                     ; the pointer settles there
+        adc pot_k,x
+        and #%01111111
+        sta pot_k,x
+        lda .twice
+        cmp #$80                ; halve it, keeping the sign: the steps
+        ror
         rts
-.old    !byte 0
-.new    !byte 0
-.step   !byte 0
+.none   lda #0
+        rts
+
+; .dist - A = a paddle value -> A = how far it is from pot_k,x, plus 64
+; (so that -64..63 compare as plain numbers 0..127)
+.dist   sec
+        sbc pot_k,x
+        eor #%01000000
+        and #%01111111
+        rts
 
 !if DEBUG {
 ;============================================================================

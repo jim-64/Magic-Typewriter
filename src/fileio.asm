@@ -58,7 +58,10 @@ print_dev       !byte 4
 file_name       !fill 16, 0     ; the document's file name (PETSCII) ...
 file_name_len   !byte 0         ; ... 0 = none yet
 
-status_raw      !fill 40, 0     ; the drive's status line, as it came
+status_raw      = $0210         ; 40: the drive's status line, as it came
+                                ; (in BASIC's input buffer, which neither we
+                                ; nor the KERNAL's disk and tape routines use
+                                ; otherwise: no room in the program needed)
 status_buf      !fill 41, 0     ; ... as screen codes, 0 at the end
 name_buf        !fill 24, 0     ; a file name plus ",S,R" and the like
 name_len        !byte 0
