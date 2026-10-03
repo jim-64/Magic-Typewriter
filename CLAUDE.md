@@ -139,6 +139,10 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     Jim's, beside models of the two older methods. **`-DMOUSE_SHOW=1`** builds show the paddle
     values, the frame's move and how many readings the middle-of-three threw away for being 8
     steps or more off (hex, bottom right); `build/mousetest.d64` has one for Jim.
+    **Jim, real 1351 on his NTSC C64 (2026-10-03): "It works really good now!"** — it stays
+    still and hides after 10 s, no jumps, and the 2-pixel steps on slow moves feel fine ("helps
+    snap to the character outline"). MOUSETEST showed `d6`: 214 readings way off set aside in
+    one session, so his 1351 really does send them while it moves. **Mouse: done.**
   - **Badges and menu icon redrawn** (cut off on the 1702). Jim chose from VICE mockups
     (scratch builds, one PRG per design on a .d64 for his TV): **solid shapes with the letters
     cut out** — the F3/F5 badges an arrow ("SB3C"), ≡F1 a box with a pixel off each corner
