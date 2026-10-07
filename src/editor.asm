@@ -2297,13 +2297,32 @@ insert_space
 ; color_key - A = a color (0-15) from a color key. Inserts its code at the
 ; cursor, plus a code after the cursor that brings back the color the text
 ; after it had, so only what is typed next changes color.
+; A color code just before the cursor - from a color key pressed before, or
+; SHIFT + F1 pressed again - would do nothing once the new one follows it:
+; it comes out first, so stepping through colors leaves one code in the
+; text, not a row of them. (If it colored the text after the cursor, the
+; code that brings that color back keeps it so.)
 !zone color_key
 color_key
         cmp cur_color
         beq .done               ; that color already
         sta .new
         jsr begin_edit
-        lda #0                  ; does the text after the cursor set its
+        jsr gap_left            ; the byte before the cursor, to look at
+        bcs .none               ; (none: the start of the text)
+        tax
+        lda ctype,x
+        bpl +
+        jsr gap_right           ; not a color code: back it goes
+        jmp .none
++       ldy #0                  ; a color code: noted for CTRL-Z, then out
+        lda (gap_end),y
+        jsr undo_del_here
+        inc gap_end
+        bne +
+        inc gap_end+1
++       jsr color_gone
+.none   lda #0                  ; does the text after the cursor set its
         jsr codes_after         ; own color already?
         php
         ldx .new
@@ -3655,30 +3674,15 @@ toggle_mode
         sta edit_mode
         rts
 
-; next_text_color - SHIFT + F1: the next default text color, through all 16
-; (as the main menu's H; Jim, phase 12). Text before any color code takes
-; it, so the screen is drawn afresh. (Text in the background's color
-; disappears, as in BASIC; the user just steps on.)
-!zone next_text_color
-next_text_color
-        lda text_color
-        clc
-        adc #1
-        and #15
-        sta text_color
-        jmp redraw_fresh
-
 ; toggle_wrap - SHIFT + F7: word wrap on <-> off (as the main menu's D;
-; Jim, phase 12 - SHIFT + F7 stepped the background before).
+; Jim, phase 12 - SHIFT + F7 stepped the background before). The layout
+; changed: the screen is drawn afresh, with the cursor on its row (as when
+; the menus close).
+!zone toggle_wrap
 toggle_wrap
         lda wrap_on
         eor #1
         sta wrap_on
-        ; (on into redraw_fresh)
-
-; redraw_fresh - the colors or the layout changed: the screen drawn afresh,
-; with the cursor on its row (as when the menus close)
-redraw_fresh
         lda #0
         sta top_known
         ldx cur_row
@@ -3822,7 +3826,11 @@ editor_key
         lda .mods
         and #MOD_SHIFT
         beq ++
-        jmp next_text_color     ; SHIFT + F1 (F2): the next text color
+        lda cur_color           ; SHIFT + F1 (F2): the next color after the
+        clc                     ; one at the cursor, as if its color key
+        adc #1                  ; were pressed (Jim): what is typed next, or
+        and #15                 ; the marked text, takes it. Pressed again,
+        jmp .color              ; the one after that, round all 16.
 ++      jmp menu_open           ; F1: the menu
 +       lda .code               ; any other key: what does it type?
         ldy .mods

@@ -19,8 +19,9 @@ files. Copy the .d64 files or their contents to whatever the machine reads from.
       as you page.
 - [ ] **Typing:** both SHIFT keys give capitals; SHIFT LOCK too. INST/DEL, SHIFT+INST/DEL, RETURN.
 - [ ] **Cursor:** blinks about 3 times a second; F7 switches underline ↔ block.
-- [ ] **SHIFT + F1** steps the text color (all 16 and round); **SHIFT + F7** switches word wrap
-      (type a long line first to see it).
+- [ ] **SHIFT + F1** in the middle of some text: the cursor takes the next color, and what you
+      type next is in it (each press: the next of the 16), the text after it unchanged - like
+      the color keys. **SHIFT + F7** switches word wrap (type a long line first to see it).
 - [ ] **Colors:** CTRL-3 then type: red. C= 5 then type: grey. CTRL-9/CTRL-0: reverse on/off.
 - [ ] **Character set:** C= + SHIFT switches upper/lower ↔ upper/graphics.
 - [ ] **Cursor keys:** all four directions (SHIFT reverses); HOME, HOME.

@@ -147,10 +147,21 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   **Merged into `main` and pushed (2026-10-03), still v0.1** (Jim: no GitHub release was made yet,
   so the version stays). Work goes on on branch `phase12`.
   **Jim, 2026-10-07:**
-  - **SHIFT + F1 steps the text color, SHIFT + F7 switches word wrap** (SHIFT + F7 stepped the
-    background before; the background is now only in the menu, G). `next_text_color` /
-    `toggle_wrap` in editor.asm, both ending in `redraw_fresh` (as the menus closing: `top_known`
-    = 0, `show_cursor_at cur_row`); neither sets `modified` (the menu doesn't either).
+  - **SHIFT + F7 switches word wrap** (it stepped the background before; the background is now
+    only in the menu, G): `toggle_wrap` in editor.asm, redrawing as the menus do when they close
+    (`top_known` = 0, `show_cursor_at cur_row`); it doesn't set `modified` (the menu doesn't
+    either).
+  - **SHIFT + F1 = a color key for the next color** (Jim: "similar to pressing CTRL-3"; a first
+    version stepped the *default* text color, which recolored all text without codes — not what
+    he wanted): `cur_color` + 1 (round all 16, in color-key order) goes through editor_key's
+    `.color`, so it does exactly what that color's key does — the code at the cursor and a
+    restore code after it, or with text marked a recolor; one CTRL-Z action per press.
+  - **`color_key` takes out a color code right in front of the cursor** before putting in the
+    new one (it would have no effect after it): pressing SHIFT + F1 five times, or two color
+    keys, used to leave a row of unused codes before the typed text (cleanup only tidies the
+    cursor's place when the cursor moves, not when typing follows). If that code colored the
+    text after the cursor, the restore code put after the cursor keeps it so
+    (`AB[red]HELLO`, CTRL-2 after AB, type X → `AB[white]X[red]HELLO`).
   - **The release disk: the program packed with Exomizer, and only the manual** as an example
     file. `build.bat release` / `./build.sh release`: Exomizer (`exomizer sfx sys -x1`: a BASIC
     SYS line, the border flashing while it unpacks) writes `build/magictypewriter-packed.prg`,
@@ -428,8 +439,9 @@ no twitching at rest, no jumps).
 after any change to the mouse reading (a scratch script did it: sample the mailbox while typing).
 `python tools/test_phase12.py [c64|ntsc]` (the Format values without SpeedScript, the CTRL keys
 under the main menu, SHIFT + F3/F5 with and without marking, SHIFT + F7 switching word wrap (the
-screen's rows checked), SHIFT + F1 stepping the text color round all 16 (color RAM checked), F1
-alone still the menu, a PRG of ours read as a SEQ file as an SD2IEC gives it, and loading from
+screen's rows checked), SHIFT + F1 as a color key (the default color untouched, typed text in
+the new color, one code left in the text after two presses, CTRL-Z), a color key right after a
+color code (that code moves after the cursor), F1 alone still the menu, a PRG of ours read as a SEQ file as an SD2IEC gives it, and loading from
 VICE's file system drive, which answers 62).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
@@ -603,7 +615,7 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 | Side borders beside the text area | Dark grey (11) |
 | Page position marker (side borders) | Grey (12) |
 | Text background (default; the menu option changes it — SHIFT-F7 did until 2026-10-07) | Black (0) |
-| Default text color (menu option and SHIFT-F1; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
+| Default text color (menu option; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
 | Border icon sprites | Light blue (14) |
 | Mouse pointer sprite | Red (2); black on red, purple, orange and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm). A border icon under the pointer lights up **white** (phase 12: red hardly showed on the blue strip on Jim's 1702). |
 
@@ -863,8 +875,8 @@ Both settings:
   **SHIFT + F3 / SHIFT + F5 (F4 / F6): the top / the end of the document** (Jim, phase 12); the SHIFT
   that reverses cursor keys (right SHIFT with the left SHIFT mark key, either SHIFT with C=); with
   the mark key too, marking all the way (`doc_top` / `doc_bottom`; `reu_to_end` for long
-  documents, not while marking). **SHIFT + F1 (F2): the next text color; SHIFT + F7 (F8): word
-  wrap on/off** (Jim, 2026-10-07; either SHIFT).
+  documents, not while marking). **SHIFT + F1 (F2): the color key of the next color after the
+  one at the cursor; SHIFT + F7 (F8): word wrap on/off** (Jim, 2026-10-07; either SHIFT).
 - Either SHIFT types capitals normally; marking only happens with movement keys.
 - Mark key + mouse click extends the selection.
 - **Character set toggle (C= + SHIFT):** fires when C= and a SHIFT are both down **and released without any
@@ -879,7 +891,7 @@ Both settings:
 | F3 / F5 | Page up / page down (also clicking the F3 / F5 badges) |
 | SHIFT-F3 / SHIFT-F5 (F4 / F6) | Top / end of the document (phase 12) |
 | F7 | Toggle insert / overwrite mode (cursor changes shape) |
-| SHIFT-F1 (F2) | Next default text color (same as the menu item H) |
+| SHIFT-F1 (F2) | The next color after the one at the cursor, as if its color key were pressed (typing color, or recolor the marked text) |
 | SHIFT-F7 (F8) | Word wrap on / off (same as the menu item D; it stepped the background until 2026-10-07) |
 | C= + SHIFT | Toggle upper/graphics ↔ upper/lower character set, like BASIC |
 | HOME | Start of line; press again = top of document |
@@ -1200,7 +1212,7 @@ Editing rules:
 | E | Mode | **insert**, overwrite (same as F7) |
 | F | Mark key | **commodore**, left shift |
 | G | Background | 16 C64 colors, default **black** |
-| H | Text color | 16 C64 colors, default **light grey**; also the menu text color; also SHIFT-F1 |
+| H | Text color | 16 C64 colors, default **light grey**; also the menu text color |
 | I | Stats → shows a stats box | |
 | J | Save defaults (disk only) | |
 | Q | Quit Magic Typewriter → back to BASIC | |

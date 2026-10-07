@@ -43,7 +43,7 @@ What you see:
 | Key | What it does |
 |---|---|
 | F1, RUN/STOP | The menu |
-| SHIFT + F1 | Next text color |
+| SHIFT + F1 | The next color for what you type next, like pressing that color's key (again: the one after) |
 | F3 / F5 | Page up / page down |
 | SHIFT + F3 / SHIFT + F5 | Top / end of the document |
 | F7 | Insert / overwrite |
@@ -117,7 +117,7 @@ also lists the CTRL keys at its foot.
 | D Wordwrap | On (default) or off. Off cuts rows at 40 characters, like the BASIC screen (also SHIFT + F7) |
 | E Mode | Insert or overwrite (same as F7) |
 | F Mark key | Commodore or left SHIFT |
-| G Background, H Text color | Any of the 16 colors (the text color is for text without color codes; also SHIFT + F1) |
+| G Background, H Text color | Any of the 16 colors (the text color is for text without color codes) |
 | I Stats | Characters, words, sentences, room left (and the REU's size) |
 | J Save defaults | Keeps all settings in `MAGIC T DEFAULTS` on the disk the program came from; read at every start |
 | Q Quit Magic Typewriter | Back to BASIC (asks first if there are unsaved changes) |

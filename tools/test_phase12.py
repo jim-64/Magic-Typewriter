@@ -3,7 +3,8 @@
 - the main menu shows the CTRL keys at its foot
 - SHIFT + F3 / F5: the top / the end of the document (with the mark key:
   marking all the way)
-- SHIFT + F7: word wrap on/off; SHIFT + F1: the next text color
+- SHIFT + F7: word wrap on/off; SHIFT + F1: the next color for what is
+  typed next (like a color key)
 - a PRG of ours read as a SEQ file (an SD2IEC opens a PRG whatever type is
   asked for): its load address is not text
 - VICE's file system drive answers 62 for a SEQ open of a PRG: then the
@@ -125,15 +126,39 @@ try:
           v(e, "wrap_on") == 1 and rows(e)[1].startswith("ABCDEF"), (v(e, "wrap_on"), rows(e)[:2]))
     check("... the background and the insert mode untouched", v(e, "text_bg") == bg and v(e, "edit_mode") == 0,
           (v(e, "text_bg"), v(e, "edit_mode")))
+    # SHIFT + F1: the next color for what is typed next, as if that color's
+    # key were pressed (Jim): the default text color stays as it is
+    CODES = [0x90, 0x05, 0x1c, 0x9f, 0x9c, 0x1e, 0x1f, 0x9e,
+             0x81, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0x9b]     # colors 0-15
+    load_doc(e, b"ONE TWO" + CR)
     c0 = v(e, "text_color")
+    e.keys([(KEY["RIGHT"], 0)] * 4)                 # (before TWO)
     key(e, "F1", LS)
-    check("SHIFT+F1: the next text color", v(e, "text_color") == (c0 + 1) & 15, (c0, v(e, "text_color")))
-    check("... the text drawn in it", e.peek(0xd805)[0] & 15 == (c0 + 1) & 15, e.peek(0xd805)[0] & 15)
+    check("SHIFT+F1: the cursor's color steps on, the default stays",
+          v(e, "cur_color") == (c0 + 1) & 15 and v(e, "text_color") == c0,
+          (v(e, "cur_color"), v(e, "text_color")))
     check("... and no menu", not any("MAGIC TYPEWRITER" in r for r in rows(e)), rows(e)[4:6])
-    for _ in range(15):
-        key(e, "F1", RS, settle=0.2)
-    check("... round all 16 and back", v(e, "text_color") == c0 and e.peek(0xd805)[0] & 15 == c0,
-          v(e, "text_color"))
+    key(e, "F1", RS)
+    check("... again (right SHIFT): the next one", v(e, "cur_color") == (c0 + 2) & 15, v(e, "cur_color"))
+    e.type_text("xy")
+    col = [e.peek(0xd800 + i)[0] & 15 for i in range(8)]
+    check("typed in that color, the text after it as before (col 6: the cursor)",
+          col[4:6] == [(c0 + 2) & 15] * 2 and col[7] == c0 and col[0] == c0, col)
+    key(e, "RIGHT")                                 # (the cursor leaves: tidied)
+    want = b"ONE " + bytes([CODES[(c0 + 2) & 15]]) + b"XY" + bytes([CODES[c0]]) + b"TWO" + CR
+    check("... in the text: one color code before, one after (the first press's code replaced)",
+          e.text()[0] == want, e.text()[0])
+    key(e, "Z", CTRL)
+    check("... CTRL-Z: the typing gone", e.text()[0].count(b"XY") == 0, e.text()[0])
+    # Any color key right after a color code: that code comes out (the one
+    # put after the cursor keeps the word after it red)
+    load_doc(e, b"AB" + bytes([CODES[2]]) + b"HELLO" + CR)          # AB [red] HELLO
+    e.keys([(KEY["RIGHT"], 0)] * 2)
+    key(e, "2", CTRL)
+    e.type_text("x")
+    key(e, "RIGHT")
+    check("CTRL-2 right after a red code: AB [white] X [red] HELLO, nothing left over",
+          e.text()[0] == b"AB" + bytes([CODES[1]]) + b"X" + bytes([CODES[2]]) + b"HELLO" + CR, e.text()[0])
     key(e, "F1")
     check("F1 alone: still the menu", "MAGIC TYPEWRITER" in rows(e)[5], rows(e)[5])
     key(e, "X")
