@@ -16,10 +16,11 @@ The cursor shows the typing mode: a thick underline in {yellow}insert{lgrey} mod
 {cyan}{rvs} KEYS {off}{lgrey}
 
 {rvs}F1{off} or {rvs}RUN/STOP{off}  the menu
+{rvs}SHIFT{off}+{rvs}F1{off}  next text color
 {rvs}F3{off} / {rvs}F5{off}  page up / page down
 {rvs}SHIFT{off}+{rvs}F3{off} / {rvs}F5{off}  top / end of the text
 {rvs}F7{off}  insert / overwrite
-{rvs}SHIFT{off}+{rvs}F7{off}  next background color
+{rvs}SHIFT{off}+{rvs}F7{off}  word wrap on / off
 {rvs}C={off}+{rvs}SHIFT{off}  character set, as in BASIC
 {rvs}HOME{off}  start of the line; again: top
 {rvs}SHIFT{off}+{rvs}CLR{off}  CLEAR ALL: a new document
@@ -68,10 +69,10 @@ A 1351 mouse in port 1 is found by itself the first time you move it. Click to p
 Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. The main menu lists the {rvs}CTRL{off} keys at its foot. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
 
 {yellow}A{lgrey} Load, {yellow}B{lgrey} Save, {yellow}C{lgrey} Print: their own menus.
-{yellow}D{lgrey} Wordwrap: on, or off (rows are then cut at 40 characters).
+{yellow}D{lgrey} Wordwrap: on, or off (rows are then cut at 40 characters). Also {rvs}SHIFT{off}+{rvs}F7{off}.
 {yellow}E{lgrey} Mode: insert or overwrite.
 {yellow}F{lgrey} Mark key: Commodore or left shift.
-{yellow}G{lgrey} Background, {yellow}H{lgrey} Text color: any of the 16 colors. The text color is for text without color codes.
+{yellow}G{lgrey} Background, {yellow}H{lgrey} Text color: any of the 16 colors. The text color is for text without color codes; {rvs}SHIFT{off}+{rvs}F1{off} steps it too.
 {yellow}I{lgrey} Stats: characters, words, sentences, room left.
 {yellow}J{lgrey} Save defaults: keeps all settings in MAGIC T DEFAULTS on the disk the program came from, for every start.
 {yellow}Q{lgrey} Quit: back to BASIC (it asks first if there are changes).

@@ -3655,17 +3655,34 @@ toggle_mode
         sta edit_mode
         rts
 
-; next_background - SHIFT + F7: the next text background color, through all
-; 16. (Text in the same color as the background disappears, as in BASIC;
-; the user just steps on.) The top strip IRQ sets $D021 from text_bg.
-!zone next_background
-next_background
-        lda text_bg
+; next_text_color - SHIFT + F1: the next default text color, through all 16
+; (as the main menu's H; Jim, phase 12). Text before any color code takes
+; it, so the screen is drawn afresh. (Text in the background's color
+; disappears, as in BASIC; the user just steps on.)
+!zone next_text_color
+next_text_color
+        lda text_color
         clc
         adc #1
         and #15
-        sta text_bg
-        rts
+        sta text_color
+        jmp redraw_fresh
+
+; toggle_wrap - SHIFT + F7: word wrap on <-> off (as the main menu's D;
+; Jim, phase 12 - SHIFT + F7 stepped the background before).
+toggle_wrap
+        lda wrap_on
+        eor #1
+        sta wrap_on
+        ; (on into redraw_fresh)
+
+; redraw_fresh - the colors or the layout changed: the screen drawn afresh,
+; with the cursor on its row (as when the menus close)
+redraw_fresh
+        lda #0
+        sta top_known
+        ldx cur_row
+        jmp show_cursor_at
 
 ; clear_all - SHIFT + CLR/HOME: after asking, start a new document: no
 ; text, and no file name (so CTRL-S asks for one instead of saving over
@@ -3798,11 +3815,15 @@ editor_key
         lda .mods
         and #MOD_SHIFT
         beq ++
-        jmp next_background
-++      jmp toggle_mode
-+       cmp #KEY_F1             ; F1: the menu
+        jmp toggle_wrap         ; SHIFT + F7 (F8): word wrap on/off
+++      jmp toggle_mode         ; F7: insert/overwrite
++       cmp #KEY_F1
         bne +
-        jmp menu_open
+        lda .mods
+        and #MOD_SHIFT
+        beq ++
+        jmp next_text_color     ; SHIFT + F1 (F2): the next text color
+++      jmp menu_open           ; F1: the menu
 +       lda .code               ; any other key: what does it type?
         ldy .mods
         jsr key_to_petscii

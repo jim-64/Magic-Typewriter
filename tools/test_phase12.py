@@ -3,6 +3,7 @@
 - the main menu shows the CTRL keys at its foot
 - SHIFT + F3 / F5: the top / the end of the document (with the mark key:
   marking all the way)
+- SHIFT + F7: word wrap on/off; SHIFT + F1: the next text color
 - a PRG of ours read as a SEQ file (an SD2IEC opens a PRG whatever type is
   asked for): its load address is not text
 - VICE's file system drive answers 62 for a SEQ open of a PRG: then the
@@ -109,6 +110,34 @@ try:
     check("C= + SHIFT + F3: marked back to the top", v(e, "sel_on") == 0 or e.text()[1] == 0, e.text()[1])
     key(e, "RIGHT")
 
+    # SHIFT + F7: word wrap on/off (it stepped the background before);
+    # SHIFT + F1: the next text color (Jim, 2026-10-07). Words of 6 letters
+    # and a space: with word wrap the 6th word starts the second row,
+    # without it the row is cut after 40 characters, inside that word.
+    load_doc(e, b"ABCDEF " * 10 + CR + b"MORE TEXT" + CR)
+    bg = v(e, "text_bg")
+    check("word wrap on: the 6th word starts row 2", rows(e)[1].startswith("ABCDEF"), rows(e)[:2])
+    key(e, "F7", LS)
+    check("SHIFT+F7: word wrap off, rows cut at 40",
+          v(e, "wrap_on") == 0 and rows(e)[1].startswith("F ABCDEF"), (v(e, "wrap_on"), rows(e)[:2]))
+    key(e, "F7", RS)
+    check("... SHIFT+F7 again (right SHIFT): on again",
+          v(e, "wrap_on") == 1 and rows(e)[1].startswith("ABCDEF"), (v(e, "wrap_on"), rows(e)[:2]))
+    check("... the background and the insert mode untouched", v(e, "text_bg") == bg and v(e, "edit_mode") == 0,
+          (v(e, "text_bg"), v(e, "edit_mode")))
+    c0 = v(e, "text_color")
+    key(e, "F1", LS)
+    check("SHIFT+F1: the next text color", v(e, "text_color") == (c0 + 1) & 15, (c0, v(e, "text_color")))
+    check("... the text drawn in it", e.peek(0xd805)[0] & 15 == (c0 + 1) & 15, e.peek(0xd805)[0] & 15)
+    check("... and no menu", not any("MAGIC TYPEWRITER" in r for r in rows(e)), rows(e)[4:6])
+    for _ in range(15):
+        key(e, "F1", RS, settle=0.2)
+    check("... round all 16 and back", v(e, "text_color") == c0 and e.peek(0xd805)[0] & 15 == c0,
+          v(e, "text_color"))
+    key(e, "F1")
+    check("F1 alone: still the menu", "MAGIC TYPEWRITER" in rows(e)[5], rows(e)[5])
+    key(e, "X")
+
     # The manual's PRG bytes in a SEQ file (as an SD2IEC reads a PRG)
     load(e, "manseq")
     t, cur = e.text()
@@ -129,7 +158,9 @@ finally:
 # answers 62, FILE NOT FOUND
 fsdir = os.path.join(WORK, "fsdrive")
 shutil.rmtree(fsdir, ignore_errors=True)
-os.makedirs(fsdir)
+os.makedirs(fsdir, exist_ok=True)               # (OneDrive may keep it a moment)
+for f in os.listdir(fsdir):
+    os.remove(os.path.join(fsdir, f))
 shutil.copy(os.path.join(PROJ, "test", "manual.prg"), os.path.join(fsdir, "manual"))
 vice = start_vice(PRG, model=model, extra=["-device8", "1", "-fs8", fsdir, "-virtualdev8", "+drive8truedrive"])
 try:

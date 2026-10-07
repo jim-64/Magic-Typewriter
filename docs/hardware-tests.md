@@ -3,19 +3,24 @@
 Test whatever you have at hand, in any order; tick items off as you go and tell me what failed.
 For each failure: what you did, what you saw (a photo of the screen helps), and on which machine.
 
-**Which build:** `build.bat release` makes `build\magictypewriter.d64` with the release program
-(no test mailbox) plus the sample files: `sample`, `upper`, `long` (short ones) and `longdoc`
-(60 KB, for REU tests). Copy the .d64 or its files to whatever the machine reads from.
+**Which build:** `build.bat release` makes `build\magictypewriter.d64`, the release disk: the
+program packed with Exomizer (no test mailbox) and the manual. The sample files used below
+(`sample`, `upper`, `long`, and `longdoc`, 60 KB, for REU tests) are on the disk that `build.bat`
+alone makes (the debug build, which works the same for a person): copy that one too, or its
+files. Copy the .d64 files or their contents to whatever the machine reads from.
 
 ## A. On every machine (about 15 minutes)
 
-- [ ] **Start:** `LOAD"MAGIC TYPEWRITER",8` (or from the machine's own file menu), `RUN`. Blue
+- [ ] **Start:** `LOAD"MAGIC TYPEWRITER",8` (or from the machine's own file menu), `RUN`. The
+      border flashes a moment while it unpacks. Blue
       strips top and bottom, F3/F5 badges (solid arrows) in the four corners, the ≡F1 box near
       the top left, and the sides all grey (the page marker fills them while the document is
       empty). Type a few screens of text: the sides turn dark grey with a grey band that moves
       as you page.
 - [ ] **Typing:** both SHIFT keys give capitals; SHIFT LOCK too. INST/DEL, SHIFT+INST/DEL, RETURN.
 - [ ] **Cursor:** blinks about 3 times a second; F7 switches underline ↔ block.
+- [ ] **SHIFT + F1** steps the text color (all 16 and round); **SHIFT + F7** switches word wrap
+      (type a long line first to see it).
 - [ ] **Colors:** CTRL-3 then type: red. C= 5 then type: grey. CTRL-9/CTRL-0: reverse on/off.
 - [ ] **Character set:** C= + SHIFT switches upper/lower ↔ upper/graphics.
 - [ ] **Cursor keys:** all four directions (SHIFT reverses); HOME, HOME.
@@ -56,6 +61,9 @@ For each failure: what you did, what you saw (a photo of the screen helps), and 
 - [ ] **Datasette:** set the Save device to TAPE: save as MAGIC and as PETSCII (two files); rewind;
       load each (Load device TAPE, Format MAGIC for the first, PETSCII for the second). RUN/STOP at
       PRESS PLAY gives BREAK and leaves the document alone.
+- [ ] **The program from tape:** `LOAD"MAGIC TYPEWRITER",8` (no RUN), then `SAVE"MAGIC
+      TYPEWRITER",1` puts the packed program on a tape. Rewind, `LOAD`, `RUN`: it unpacks and
+      starts as from disk (without reading MAGIC T DEFAULTS: those only come from a disk).
 - [ ] **Printer** (device 4–7): Print with Convert to ASCII NO on a Commodore printer (reverse text
       prints reversed, case right), and YES on an ASCII printer or interface.
 

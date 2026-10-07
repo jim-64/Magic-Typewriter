@@ -3,7 +3,9 @@ video system - PAL, NTSC, old NTSC, Drean - with no REU, a 128 KB one and a
 512 KB one (long documents). It can't be typed into (no mailbox), so it
 checks what it can from outside: the IRQs run (the frame counter moves),
 the system and the REU are found, the text buffer is the right size, the
-sprites are on and the ROMs out.
+sprites are on and the ROMs out. Then the same with the program packed by
+Exomizer, as on the release disk (if Exomizer is on the PATH, or at
+C:/bin/exomizer.exe), with no REU and a 512 KB one.
 Run from the project folder:  python tools/test_release.py
 It assembles its own release copy into build/release/, so the debug build
 the other tests use stays as it is."""
@@ -41,10 +43,21 @@ def peek(m, addr, n=1):
     m.resume()
     return d
 
+EXO = shutil.which("exomizer") or r"C:/bin/exomizer.exe"
+PACKED = os.path.join(OUT, "magictypewriter-packed.prg")
+runs = [(PRG, "", reu) for reu in (0, 128, 512)]
+if os.path.exists(EXO) or shutil.which(EXO):
+    r = subprocess.run([EXO, "sfx", "sys", "-x1", "-q", "-o", PACKED, PRG], capture_output=True, text=True)
+    check("Exomizer packs the release build (%d -> %d bytes)" % (os.path.getsize(PRG),
+          os.path.getsize(PACKED) if os.path.exists(PACKED) else 0), r.returncode == 0, r.stdout + r.stderr)
+    runs += [(PACKED, "packed, ", reu) for reu in (0, 512)]
+else:
+    print("(Exomizer not found: the packed program is not tried)")
+
 for model, want_sys in (("c64", 0), ("ntsc", 1), ("oldntsc", 2), ("drean", 3)):
-    for reu in (0, 128, 512):
+    for prg, kind, reu in runs:
         extra = ["-reu", "-reusize", str(reu)] if reu else []
-        vice = start_vice(PRG, model=model, extra=extra)
+        vice = start_vice(prg, model=model, extra=extra)
         try:
             m = Mon()
             frames = lambda: int.from_bytes(peek(m, lab["frame_count"], 2), "little")
@@ -62,7 +75,7 @@ for model, want_sys in (("c64", 0), ("ntsc", 1), ("oldntsc", 2), ("drean", 3)):
             spr = peek(m, 0xd015)[0]
             cpu = peek(m, 0x01)[0]
             mb = peek(m, MB, 4)
-            name = "%s, REU %d KB" % (model, reu)
+            name = "%s%s, REU %d KB" % (kind, model, reu)
             long_docs = reu >= 192
             check(name + ": runs (frame counter %d -> %d in a second)" % (f1, f2),
                   (f2 - f1) & 0xffff != 0)                  # (16 bits: it wraps)

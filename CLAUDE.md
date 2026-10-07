@@ -53,7 +53,8 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   which runs once from the text buffer (freed ~900 bytes in the lower part; **Jim: "good idea"**),
   and a 1581 fix for PRG loading (see Formats).
 - **Phase 12 started** (2026-10-01), branch `phase12`: the release build checked in VICE on all
-  four video systems with 0/128/512 KB REUs (`tools/test_release.py`). Exomizer is not installed.
+  four video systems with 0/128/512 KB REUs (`tools/test_release.py`). (Exomizer came later, see
+  below.)
   The hardware tests are Jim's: **`docs/hardware-tests.md`** is his checklist (a common part for
   every machine, then one section per target). **`README.md`** is the user manual (keys, menus,
   files, REU, the VICE notes about Tab = C= and the left SHIFT mark key, SHIFT LOCK, building).
@@ -143,6 +144,24 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     still and hides after 10 s, no jumps, and the 2-pixel steps on slow moves feel fine ("helps
     snap to the character outline"). MOUSETEST showed `d6`: 214 readings way off set aside in
     one session, so his 1351 really does send them while it moves. **Mouse: done.**
+  **Merged into `main` and pushed (2026-10-03), still v0.1** (Jim: no GitHub release was made yet,
+  so the version stays). Work goes on on branch `phase12`.
+  **Jim, 2026-10-07:**
+  - **SHIFT + F1 steps the text color, SHIFT + F7 switches word wrap** (SHIFT + F7 stepped the
+    background before; the background is now only in the menu, G). `next_text_color` /
+    `toggle_wrap` in editor.asm, both ending in `redraw_fresh` (as the menus closing: `top_known`
+    = 0, `show_cursor_at cur_row`); neither sets `modified` (the menu doesn't either).
+  - **The release disk: the program packed with Exomizer, and only the manual** as an example
+    file. `build.bat release` / `./build.sh release`: Exomizer (`exomizer sfx sys -x1`: a BASIC
+    SYS line, the border flashing while it unpacks) writes `build/magictypewriter-packed.prg`,
+    which goes on the disk as MAGIC TYPEWRITER; without Exomizer on the PATH the unpacked one
+    goes on, with a message. 25,458 → 16,090 bytes (101 → 64 blocks). The debug build's disk
+    keeps the program unpacked and all the test files (the tests need them). **The unpacker
+    (3.1.2, from its own report):** zero page $9E, $9F, $A7, $A8, $AE, $AF, $FD–$FF only, its
+    code in the stack page, its table in the tape buffer ($0334–$03D0); $01 = $37 and IRQs on
+    throughout; then JMP $080D as RUN would. So **$BA (the load device) and BASIC's zero page
+    ($02–$1B, put back on Quit) are untouched** — `tools/test_packed.py` checks both. It is an
+    ordinary BASIC program, so it loads from tape too (Jim asked).
   - **Badges and menu icon redrawn** (cut off on the 1702). Jim chose from VICE mockups
     (scratch builds, one PRG per design on a .d64 for his TV): **solid shapes with the letters
     cut out** — the F3/F5 badges an arrow ("SB3C"), ≡F1 a box with a pixel off each corner
@@ -391,7 +410,11 @@ frames, so it hung once in a while).
 `python tools/test_release.py` (phase 12: assembles a release build into `build/release/` and
 starts it on PAL, NTSC, old NTSC and Drean with no REU, 128 KB and 512 KB: the IRQs run, the system
 and REU are found, the text buffer has the right size, sprites on, ROMs out, no mailbox — all
-that can be seen without typing).
+that can be seen without typing; then the same with it packed by Exomizer, no REU and 512 KB).
+`python tools/test_packed.py [c64|ntsc]` (the debug build packed by Exomizer, on a disk with a
+MAGIC T DEFAULTS, started with LOAD"*",8 and RUN: it unpacks, knows it came from device 8, reads
+the defaults; typing; Quit, then BASIC answers `PRINT 2+3` and `?"A"+"B"` — the unpacker left
+$BA and BASIC's zero page alone).
 `python tools/test_undo.py [c64|ntsc]` (CTRL-Z after typing, a cut, typing over and deleting
 marked text, a recolor, a run of DELs, two runs of typing, a color key, overwrite mode, a paste —
 each gives back exactly the text before; "NOTHING TO UNDO" twice and after CLEAR ALL; "TOO BIG TO
@@ -404,8 +427,10 @@ no twitching at rest, no jumps).
 **Mouse timing:** `MB_BOT_END` (mailbox +62) and `late_irqs`/`missed_irqs` on all four systems
 after any change to the mouse reading (a scratch script did it: sample the mailbox while typing).
 `python tools/test_phase12.py [c64|ntsc]` (the Format values without SpeedScript, the CTRL keys
-under the main menu, SHIFT + F3/F5 with and without marking, a PRG of ours read as a SEQ file as an
-SD2IEC gives it, and loading from VICE's file system drive, which answers 62).
+under the main menu, SHIFT + F3/F5 with and without marking, SHIFT + F7 switching word wrap (the
+screen's rows checked), SHIFT + F1 stepping the text color round all 16 (color RAM checked), F1
+alone still the menu, a PRG of ours read as a SEQ file as an SD2IEC gives it, and loading from
+VICE's file system drive, which answers 62).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -427,7 +452,8 @@ asking one at a time. Don't guess on items listed under Open Questions — ask.
 - Edit text files natively on a C64: **PETSCII SEQ** files are the primary format.
 - Stretch formats: **ASCII SEQ** (read/write) and **SpeedScript** documents (read/write).
 - Modern comforts: text selection, CTRL-X/C/V, soft word wrap toggle, 1351 mouse, menu.
-- **Single small PRG.** Target roughly 6–10 KB before compression. Optional Exomizer crunch for release.
+- **Single small PRG.** Target roughly 6–10 KB before compression (it grew to ~25 KB). The release
+  disk has it packed with Exomizer (16 KB).
 - Works on **PAL, NTSC, old NTSC, and Drean (PAL-N)** machines.
 - Works with 1541/1571/1581, SD2IEC, Pi1541, and Ultimate devices by using KERNAL disk I/O only.
 - **REU optional**: auto-detect and use if present; fully functional without one.
@@ -457,7 +483,10 @@ Features that a platform lacks (e.g. REU or mouse) must fail gracefully: detect 
   relevant tests (see C64 Bridge section).
 - **c1541** (ships with VICE, same `bin` folder) to build a `.d64` with the PRG and sample test files.
 - **C64 Bridge** MCP server (see its section below).
-- Optional: **Exomizer** for the release PRG.
+- **Exomizer** 3.1.2 for the release disk's packed program: `C:\bin\exomizer.exe`, on Jim's PATH
+  (since 2026-10-07; a Claude session started before that may not see it on its PATH — then use
+  the full path). Its documentation and sources: `G:\My Drive\retro computers 2\exomizer-3.1.2`
+  (`exo20info.txt`: the sfx options; `exo31info.txt`: what 3.1 changed).
 - Editor: VS Code with the **VS64** extension (2.6.2 installed), which supports ACME. VS64 builds from
   `project-config.json`. Its output file is named after the project `name` there, set to
   `magictypewriter` so VS64 and `build.bat` both write `build/magictypewriter.prg` (VS64 makes no .d64).
@@ -483,7 +512,9 @@ src/reu.asm         REU detection and sizing, DMA copies, clipboard in the REU
 src/reudoc.asm      long documents in the REU (runs at $C000, only with an REU of 192 KB or more)
 src/startup.asm     everything that runs once at start-up (runs from the text buffer, see Memory Map)
 src/data.asm        menu strings, tables
-test/               sample SEQ files (longdoc: 60 KB, for REU tests), put on the .d64 by the build
+test/               the manual (manual.prg, from docs/manual.txt) and sample SEQ files (longdoc:
+                    60 KB, for REU tests); the debug disk gets them all, the release disk only
+                    the manual
 docs/               hardware-tests.md: the phase 12 checklist
 README.md           the user manual
 build.bat           assemble + make d64 (Windows)
@@ -571,8 +602,8 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 | Top and bottom border strips (full width, including corners) | Blue (6) |
 | Side borders beside the text area | Dark grey (11) |
 | Page position marker (side borders) | Grey (12) |
-| Text background (default; menu option and SHIFT-F7 change it) | Black (0) |
-| Default text color (menu option; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
+| Text background (default; the menu option changes it — SHIFT-F7 did until 2026-10-07) | Black (0) |
+| Default text color (menu option and SHIFT-F1; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
 | Border icon sprites | Light blue (14) |
 | Mouse pointer sprite | Red (2); black on red, purple, orange and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm). A border icon under the pointer lights up **white** (phase 12: red hardly showed on the blue strip on Jim's 1702). |
 
@@ -832,7 +863,8 @@ Both settings:
   **SHIFT + F3 / SHIFT + F5 (F4 / F6): the top / the end of the document** (Jim, phase 12); the SHIFT
   that reverses cursor keys (right SHIFT with the left SHIFT mark key, either SHIFT with C=); with
   the mark key too, marking all the way (`doc_top` / `doc_bottom`; `reu_to_end` for long
-  documents, not while marking). (No F2 functions.)
+  documents, not while marking). **SHIFT + F1 (F2): the next text color; SHIFT + F7 (F8): word
+  wrap on/off** (Jim, 2026-10-07; either SHIFT).
 - Either SHIFT types capitals normally; marking only happens with movement keys.
 - Mark key + mouse click extends the selection.
 - **Character set toggle (C= + SHIFT):** fires when C= and a SHIFT are both down **and released without any
@@ -847,7 +879,8 @@ Both settings:
 | F3 / F5 | Page up / page down (also clicking the F3 / F5 badges) |
 | SHIFT-F3 / SHIFT-F5 (F4 / F6) | Top / end of the document (phase 12) |
 | F7 | Toggle insert / overwrite mode (cursor changes shape) |
-| SHIFT-F7 (F8) | Next text background color (same as the menu item) |
+| SHIFT-F1 (F2) | Next default text color (same as the menu item H) |
+| SHIFT-F7 (F8) | Word wrap on / off (same as the menu item D; it stepped the background until 2026-10-07) |
 | C= + SHIFT | Toggle upper/graphics ↔ upper/lower character set, like BASIC |
 | HOME | Start of line; press again = top of document |
 | SHIFT + CLR/HOME | Prompt **"CLEAR ALL Y/N"**; Y clears the whole document, N or RUN/STOP cancels |
@@ -1163,11 +1196,11 @@ Editing rules:
 | A | Load → Load menu | |
 | B | Save → Save menu | |
 | C | Print → Print menu | |
-| D | Wordwrap | **on**, off |
+| D | Wordwrap | **on**, off; also SHIFT-F7 |
 | E | Mode | **insert**, overwrite (same as F7) |
 | F | Mark key | **commodore**, left shift |
-| G | Background | 16 C64 colors, default **black**; also SHIFT-F7 |
-| H | Text color | 16 C64 colors, default **light grey**; also the menu text color |
+| G | Background | 16 C64 colors, default **black** |
+| H | Text color | 16 C64 colors, default **light grey**; also the menu text color; also SHIFT-F1 |
 | I | Stats → shows a stats box | |
 | J | Save defaults (disk only) | |
 | Q | Quit Magic Typewriter → back to BASIC | |
@@ -1215,7 +1248,7 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 - **Color items** show the color name (e.g. `G BACKGROUND: BLACK`) and step to the next of the 16 colors
   each time they're chosen. **No colors are skipped** (Jim, 2026-09-27): skipping the text color never
   protected the other colors a document uses, so the user simply steps on if the background hides some
-  text. Same for SHIFT-F7. To keep menus and prompts readable, they are drawn in the default text color
+  text. Same for SHIFT-F1. To keep menus and prompts readable, they are drawn in the default text color
   unless it equals the background; then in black or white, whichever reads better on that background
   (`readable_color` / `contrast_color`).
 - Settings last until the program exits, unless saved with **Save defaults**.

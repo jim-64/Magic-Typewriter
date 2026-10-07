@@ -21,15 +21,12 @@ LOAD"MAGIC TYPEWRITER",8
 RUN
 ```
 
-You get an empty page. Just type. Press **F1** (or RUN/STOP) for the menu.
+The program is packed to load faster: after `RUN` it unpacks itself for a moment (the border
+flashes). It loads from tape the same way. You get an empty page. Just type. Press **F1** (or
+RUN/STOP) for the menu.
 
-The disk also holds:
-
-| File | What it is |
-|---|---|
-| `MANUAL` | This manual as a Magic Typewriter document, in color: F1, A, A, type `manual`, RETURN |
-| `SAMPLE`, `UPPER`, `LONG` | Small sample texts (colors and reverse, upper case/graphics, 60 lines) |
-| `LONGDOC` | A 60 KB document, to try long documents with an REU |
+The disk also holds `MANUAL`: this manual as a Magic Typewriter document, in color. To read it:
+F1, A, A, type `manual`, RETURN.
 
 What you see:
 
@@ -46,10 +43,11 @@ What you see:
 | Key | What it does |
 |---|---|
 | F1, RUN/STOP | The menu |
+| SHIFT + F1 | Next text color |
 | F3 / F5 | Page up / page down |
 | SHIFT + F3 / SHIFT + F5 | Top / end of the document |
 | F7 | Insert / overwrite |
-| SHIFT + F7 | Next background color |
+| SHIFT + F7 | Word wrap on / off |
 | C= + SHIFT | Upper case/graphics ↔ upper/lower case, as in BASIC |
 | Cursor keys | Move (SHIFT reverses the direction, as usual) |
 | HOME | Start of the line; again: top of the document |
@@ -116,10 +114,10 @@ also lists the CTRL keys at its foot.
 | Main menu | |
 |---|---|
 | A Load, B Save, C Print | Their own menus (below) |
-| D Wordwrap | On (default) or off. Off cuts rows at 40 characters, like the BASIC screen |
+| D Wordwrap | On (default) or off. Off cuts rows at 40 characters, like the BASIC screen (also SHIFT + F7) |
 | E Mode | Insert or overwrite (same as F7) |
 | F Mark key | Commodore or left SHIFT |
-| G Background, H Text color | Any of the 16 colors (the text color is for text without color codes) |
+| G Background, H Text color | Any of the 16 colors (the text color is for text without color codes; also SHIFT + F1) |
 | I Stats | Characters, words, sentences, room left (and the REU's size) |
 | J Save defaults | Keeps all settings in `MAGIC T DEFAULTS` on the disk the program came from; read at every start |
 | Q Quit Magic Typewriter | Back to BASIC (asks first if there are unsaved changes) |
@@ -200,8 +198,11 @@ Only needed if you want to change the program. You need
 - **Windows:** `build.bat` (debug build) or `build.bat release`. The tool paths are set at the top.
 - **Linux:** `./build.sh` or `./build.sh release`, with `acme` and `c1541` on the PATH.
 
-Both write `build/magictypewriter.prg` and a `build/magictypewriter.d64` with the program, the
-manual and the sample files from `test/`. The manual's text is `docs/manual.txt`;
+Both write `build/magictypewriter.prg` and a `build/magictypewriter.d64`. The release disk has the
+program packed with [Exomizer](https://bitbucket.org/magli143/exomizer/wiki/Home) (3.1; it must be
+on the PATH, otherwise the program goes on the disk unpacked) and the manual. The debug build's
+disk has the program and all the sample files from `test/` (`sample`, `upper`, `long`, and
+`longdoc`, 60 KB, for long documents with an REU). The manual's text is `docs/manual.txt`;
 `python tools/make_manual.py` turns it into `test/manual.prg` (a Magic Typewriter document). The debug build includes a small test mailbox that the automated tests
 in `tools/` use (Python 3 and VICE 3.9).
 
