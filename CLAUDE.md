@@ -173,6 +173,18 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     throughout; then JMP $080D as RUN would. So **$BA (the load device) and BASIC's zero page
     ($02–$1B, put back on Quit) are untouched** — `tools/test_packed.py` checks both. It is an
     ordinary BASIC program, so it loads from tape too (Jim asked).
+  **Merged into `main` and pushed again (2026-10-07; Jim on SHIFT + F1/F7: "works well"), still
+  v0.1.** `build/magictypewriter-release.d64` (a copy of the release disk, not in git) is what Jim
+  attaches to the GitHub pre-release, which he makes himself. When a session ends, everything is
+  committed and `main` = `phase12`.
+  **Next (phase 12 goes on; start a new branch from `main`):** Jim's v0.1 pre-release for
+  friends; the rest of `docs/hardware-tests.md` — real floppy drives (1541, 1571, 1581; so far
+  only the SD2IEC), the Datasette (documents, and the packed program itself from tape), the C64
+  Ultimate (Claude can drive it over the network, see above; Jim turns it on), the MEGA65,
+  TheC64 and the BlingBox keyboard if he has them at hand.
+  **If room runs out:** Jim offered (2026-10-07) that the clean Quit could go — "many programs
+  you had to just power off" — which would free its code and the 26-byte copy of BASIC's zero
+  page. Not needed so far (see Space under Memory Map).
   - **Badges and menu icon redrawn** (cut off on the 1702). Jim chose from VICE mockups
     (scratch builds, one PRG per design on a .d64 for his TV): **solid shapes with the letters
     cut out** — the F3/F5 badges an arrow ("SB3C"), ≡F1 a box with a pixel off each corner
@@ -570,8 +582,8 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
 - Space (phase 12, after undo and the mouse fixes): debug tables end $3E68, so **only ~24 bytes
   free below the sprite blocks in debug builds** (the median mouse filter needed `status_raw`
-  moved to $0210 to fit) (release: $3C21, ~600); the editor + find end $FF9D (~90 bytes free under
-  the KERNAL); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. **The next
+  moved to $0210 to fit) (release: $3C21, ~600); the editor + find end $FFD7 (~34 bytes free under
+  the KERNAL, after the SHIFT + F1/F7 keys and color_key's tidying); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. **The next
   feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
   must stay 0), BASIC's input buffer $0200–$0258 for variables, or (ask Jim) moving BUF_START up.
   Earlier: debug build, phase 11b: lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
