@@ -103,17 +103,35 @@ try:
     key(e, "F")
     key(e, "G")
     check("G: background white", v(e, "text_bg") == 1 and "BACKGROUND: WHITE" in rows(e)[ITEM_ROW + 6])
-    check("... mouse pointer red", e.peek(0xd027)[0] & 15 == 2, e.peek(0xd027))
-    key(e, "G")
-    check("G again: red", v(e, "text_bg") == 2)
-    check("... mouse pointer black on red", e.peek(0xd027)[0] & 15 == 0, e.peek(0xd027))
-    pointer = {}
-    for _ in range(14):
+    # The pointer's color for each background (Jim, 2026-10-08): light green
+    # (13), green (5) on white, cyan, purple, yellow, light green, light grey
+    POINTER = [13, 5, 13, 5, 5, 13, 13, 5, 13, 13, 13, 13, 13, 5, 13, 5]
+    # The menus' color for each background (Jim, 2026-10-09): black on white,
+    # cyan, green, yellow, light red, grey, light green and light grey,
+    # light grey on the others - whatever the text color
+    MENU = [0 if c in (1, 3, 5, 7, 10, 12, 13, 15) else 15 for c in range(16)]
+    def menu_color():                           # (the title's color RAM)
+        return e.peek(0xd800 + TITLE_ROW * 40 + 12)[0] & 15
+    pointer, menu = {}, {}
+    for _ in range(16):                         # white, red, ... round to black
+        bg = v(e, "text_bg")
+        pointer[bg] = e.peek(0xd027)[0] & 15
+        menu[bg] = menu_color()
+        key(e, "G", settle=0.3)
+    check("... round the 16 back to white", v(e, "text_bg") == 1)
+    check("... the pointer's color right on every background",
+          all(pointer[c] == POINTER[c] for c in range(16)), pointer)
+    check("... the menus black or light grey, by background",
+          all(menu[c] == MENU[c] for c in range(16)), menu)
+    key(e, "H")                                 # another text color: the
+    check("... another text color: the menus as they were",  # menus stay so
+          v(e, "text_color") != 15 and menu_color() == MENU[1], (v(e, "text_color"), menu_color()))
+    for _ in range(15):
+        key(e, "H", settle=0.1)
+    check("... the text color back to light grey", v(e, "text_color") == 15, v(e, "text_color"))
+    for _ in range(15):
         key(e, "G", settle=0.1)
-        pointer[v(e, "text_bg")] = e.peek(0xd027)[0] & 15
-    check("... round the 16 back to black", v(e, "text_bg") == 0)
-    check("... pointer black on purple, orange and brown only", sorted(c for c in pointer if pointer[c] == 0) == [4, 8, 9]
-          and all(pointer[c] == 2 for c in pointer if c not in (4, 8, 9)), pointer)
+    check("... the background back to black", v(e, "text_bg") == 0, v(e, "text_bg"))
 
     # Submenus: A opens Load, X backs out
     key(e, "A")

@@ -13,7 +13,7 @@ files. Copy the .d64 files or their contents to whatever the machine reads from.
 
 - [ ] **Start:** `LOAD"MAGIC TYPEWRITER",8` (or from the machine's own file menu), `RUN`. The
       border flashes a moment while it unpacks. Blue
-      strips top and bottom, F3/F5 badges (solid arrows) in the four corners, the ≡F1 box near
+      strips top and bottom, F3/F5 badges (solid shapes) in the four corners, the ≡F1 box near
       the top left, and the sides all grey (the page marker fills them while the document is
       empty). Type a few screens of text: the sides turn dark grey with a grey band that moves
       as you page.
@@ -38,9 +38,9 @@ files. Copy the .d64 files or their contents to whatever the machine reads from.
 
 ## B. Real C64 (PAL and/or NTSC)
 
-- [ ] **NTSC TV (the 1702):** are the F3/F5 badges and the ≡F1 box whole? They are 9 rows now
-      (lines 41–49 and 252–260): look for the flat tip of each arrow and the top and bottom
-      edges of the ≡F1 box.
+- [ ] **NTSC TV (the 1702):** are the F3/F5 badges and the ≡F1 box whole? They are 7 rows
+      (lines 43–49 and 252–258), chosen on the 1702 (2026-10-08); a quick look on other
+      NTSC sets.
 - [ ] **Drives:** whatever you have: 1541, 1571, 1581, SD2IEC, Pi1541. Load and save on each;
       a write-protected disk gives `26, WRITE PROTECT ON`; no disk/no drive gives an error box,
       not a hang.

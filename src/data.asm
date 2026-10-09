@@ -75,20 +75,32 @@ color_codes
         !byte $90, $05, $1c, $9f, $9c, $1e, $1f, $9e
         !byte $81, $95, $96, $97, $98, $99, $9a, $9b
 
-; A color that reads well on each background color (black on the light
-; ones, white on the dark ones), for prompts when the text color is the
-; same as the background.
-contrast_color
-        !byte WHITE, BLACK, WHITE, BLACK, WHITE, BLACK, WHITE, BLACK
-        !byte WHITE, WHITE, BLACK, WHITE, BLACK, BLACK, BLACK, BLACK
+; The color of menus, prompts and the disk directory on each background
+; color (Jim's list, 2026-10-09): black on the light backgrounds, light
+; grey on the dark ones. It does not follow the text color setting.
+box_colors
+        ;     black       white       red         cyan
+        !byte LIGHT_GREY, BLACK,      LIGHT_GREY, BLACK
+        ;     purple      green       blue        yellow
+        !byte LIGHT_GREY, BLACK,      LIGHT_GREY, BLACK
+        ;     orange      brown       light red   dark grey
+        !byte LIGHT_GREY, LIGHT_GREY, BLACK,      LIGHT_GREY
+        ;     grey        light green light blue  light grey
+        !byte BLACK,      BLACK,      LIGHT_GREY, BLACK
 
-; The mouse pointer's color on each background color: red, but black on
-; the backgrounds where red hardly shows (red, purple, orange and brown).
-; The line 10 IRQ (irq_frame_top) puts it in every frame, and a border
-; icon under the pointer lights up in the same color (mouse_frame).
+; The mouse pointer's color on each background color (Jim's list): light
+; green, but green on white, cyan, purple, yellow, light green and light
+; grey. The line 10 IRQ (irq_frame_top) puts it in every frame, and a
+; border icon under the pointer lights up in the same color (mouse_frame).
 pointer_colors
-        !byte RED, RED, BLACK, RED, BLACK, RED, RED, RED
-        !byte BLACK, BLACK, RED, RED, RED, RED, RED, RED
+        ;     black        white        red          cyan
+        !byte LIGHT_GREEN, GREEN,       LIGHT_GREEN, GREEN
+        ;     purple       green        blue         yellow
+        !byte GREEN,       LIGHT_GREEN, LIGHT_GREEN, GREEN
+        ;     orange       brown        light red    dark grey
+        !byte LIGHT_GREEN, LIGHT_GREEN, LIGHT_GREEN, LIGHT_GREEN
+        ;     grey         light green  light blue   light grey
+        !byte LIGHT_GREEN, GREEN,       LIGHT_GREEN, GREEN
 
 ; Questions for prompt_yes_no. Written in lower case: that gives screen
 ; codes 1-26, which the prompt shows as capitals in either character set.

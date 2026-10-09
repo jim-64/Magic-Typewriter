@@ -163,6 +163,42 @@ try:
     check("F1 alone: still the menu", "MAGIC TYPEWRITER" in rows(e)[5], rows(e)[5])
     key(e, "X")
 
+    # RETURN in reversed text (Jim, 2026-10-08): the rest of the line moves
+    # down still reversed (an RVS ON after the new line end); DEL joins it
+    # back up and the RVS ON is tidied away. At the end of a line reverse
+    # ends, as in BASIC. (The cursor's own cell is never checked: it blinks.)
+    RVS = b"\x12"
+    rdoc = RVS + b"HELLO" + CR + b"WORLD" + CR
+    def rvs_cells(row, col, n):                 # reversed on the screen?
+        return [c >= 0x80 for c in e.peek(0x0400 + row * 40 + col, n)]
+    load_doc(e, rdoc)
+    key(e, "HOME"); key(e, "HOME")
+    key(e, "RETURN")
+    check("RETURN at the start of a reversed line: an RVS ON after the line end",
+          e.text()[0] == RVS + CR + RVS + b"HELLO" + CR + b"WORLD" + CR, e.text()[0])
+    check("... HELLO still reversed, on the next row", rvs_cells(1, 1, 4) == [True] * 4, rvs_cells(1, 0, 5))
+    key(e, "DEL")
+    check("... DEL joins it back up: the text as it was", e.text()[0] == rdoc, e.text()[0])
+    e.keys([(KEY["RIGHT"], 0)] * 2)             # (on the first L)
+    key(e, "RETURN")
+    check("RETURN in the middle of a reversed line: HE / [RVS ON] LLO",
+          e.text()[0] == RVS + b"HE" + CR + RVS + b"LLO" + CR + b"WORLD" + CR, e.text()[0])
+    check("... both halves reversed", rvs_cells(0, 0, 2) + rvs_cells(1, 1, 2) == [True] * 4,
+          (rvs_cells(0, 0, 2), rvs_cells(1, 0, 3)))
+    key(e, "Z", CTRL)
+    check("... CTRL-Z: the text as it was", e.text()[0] == rdoc, e.text()[0])
+    key(e, "HOME"); key(e, "HOME")
+    e.keys([(KEY["RIGHT"], 0)] * 5)             # (after HELLO)
+    key(e, "RETURN")
+    e.type_text("x")
+    check("RETURN at the end of a reversed line: reverse ends (nothing added)",
+          e.text()[0] == RVS + b"HELLO" + CR + b"X" + CR + b"WORLD" + CR, e.text()[0])
+    check("... X typed on the new line is not reversed", rvs_cells(1, 0, 1) == [False], rvs_cells(1, 0, 1))
+    load_doc(e, b"HELLO" + CR)
+    e.keys([(KEY["RIGHT"], 0)] * 2)
+    key(e, "RETURN")
+    check("RETURN in plain text: no codes added", e.text()[0] == b"HE" + CR + b"LLO" + CR, e.text()[0])
+
     # The manual's PRG bytes in a SEQ file (as an SD2IEC reads a PRG)
     load(e, "manseq")
     t, cur = e.text()

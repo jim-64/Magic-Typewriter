@@ -2189,15 +2189,33 @@ leave_cursor
 type_char
         sta .ch
         jsr begin_edit
-        lda edit_mode
-        beq +
         lda .ch
         cmp #$0d
-        beq +                   ; RETURN never overwrites
+        beq .return             ; RETURN never overwrites
+        lda edit_mode
+        beq +
         jsr overwrite_next
 +       lda .ch
-        jsr insert_byte
-        jmp after_edit
+.ins    jsr insert_byte
+.done   jmp after_edit
+
+        ; RETURN. A line end turns reverse off (as CHROUT does), so in the
+        ; middle of reversed text an RVS ON goes after it: the rest of the
+        ; line moves down still reversed (Jim). At the end of a line reverse
+        ; just ends, as in BASIC. (If the RVS ON is not needed - its line
+        ; joined up again with DEL - cleanup takes it out.)
+.return jsr insert_byte         ; (A = $0d)
+        lda cur_rvs             ; reverse on at the cursor ...
+        beq .done
+        jsr gap_at_end          ; ... and the line goes on after it?
+        bcs .done
+        ldy #0
+        lda (gap_end),y
+        jsr is_visible          ; (A = 1: a line end)
+        cmp #1
+        beq .done
+        lda #$12                ; RVS ON
+        bne .ins                ; (always)
 .ch     !byte 0
 
 ; overwrite_next - overwrite mode: take out the character after the cursor

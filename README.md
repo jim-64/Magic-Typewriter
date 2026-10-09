@@ -72,6 +72,9 @@ in the text and saved with it, but take no room on the screen. Text after the cu
 look — pressing a color key in the middle of a line only colors what you type there. Codes that
 no longer do anything are tidied away by themselves.
 
+CTRL-9 and CTRL-0 switch reverse on and off. A line end switches it off too, as in BASIC, but
+RETURN in the middle of reversed text keeps the rest of the line reversed.
+
 ### Marking text
 
 Hold the **mark key** while moving the cursor: the text you pass over is marked (shown reversed).
@@ -101,7 +104,7 @@ the way. The match is marked; **CTRL-F, RETURN** finds the next one.
 A **1351 mouse in port 1** is found by itself the first time you move it; a joystick is ignored.
 
 - Click to put the cursor there; drag to mark (hold the mark key to extend marked text).
-- Move past the text onto a badge (it lights up white) and click: F3/F5 page, ≡F1 opens the menu.
+- Move past the text onto a badge (it lights up in the pointer's color) and click: F3/F5 page, ≡F1 opens the menu.
 - The right button opens the menu.
 - The pointer hides after 10 seconds of rest; moving the mouse brings it back.
 

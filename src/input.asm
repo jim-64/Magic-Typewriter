@@ -432,8 +432,8 @@ key_to_petscii
 ; Where the pointer goes (Jim's choice): over the text area only. The
 ; border strips above and below it are timed to the exact cycle, and the
 ; pointer sprite's fetches there would upset that. Moved on past the text,
-; the pointer hides and the border icon under it turns white instead; a
-; click then works that icon.
+; the pointer hides and the border icon under it lights up in the pointer's
+; color instead; a click then works that icon.
 ;
 ; The VIC fetches all 21 rows of a sprite from its top line, even blank
 ; ones, stealing CPU cycles at the end of each of those lines. For the
@@ -785,16 +785,17 @@ mouse_frame
 .set_icon
         sty mouse_sprite
         ldx #4                  ; the icons light blue, the one under the
-        lda #LIGHT_BLUE         ; pointer white (while the mouse is in use)
--       sta icon_colors,x
+        lda #LIGHT_BLUE         ; pointer in the pointer's color (while the
+-       sta icon_colors,x       ; mouse is in use)
         dex
         bpl -
         ldx mouse_sprite
         beq +
         jsr .is_idle
         bcs +
-        lda #WHITE              ; (white: red hardly showed on the blue
-        sta icon_colors-1,x     ; strip - Jim, on a real 1702)
+        ldy text_bg             ; (pointer_colors in data.asm: the line 10
+        lda pointer_colors,y    ; IRQ colors the pointer from it too)
+        sta icon_colors-1,x
 +
         ; 5. The pointer sprite, for the next frame.
         lda #0

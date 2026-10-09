@@ -13,7 +13,9 @@ def check(name, cond, info=""):
     ok = ok and cond
 
 LEFT, RIGHT = 1, 2
-RED, LIGHT_BLUE, WHITE = 2, 14, 1
+RED, LIGHT_BLUE, WHITE, GREEN, LIGHT_GREEN = 2, 14, 1, 5, 13
+# the pointer's color on each background (pointer_colors in data.asm)
+POINTER = [13, 5, 13, 5, 5, 13, 13, 5, 13, 13, 13, 13, 13, 5, 13, 5]
 
 def load_doc(e, doc):
     te = int.from_bytes(e.peek(0x1a, 2), "little")
@@ -121,32 +123,35 @@ try:
     e.move_to(*cell_xy(0, 10))
     check("row 0: the box starts on line 52 (not 51)", e.mouse_pos()[1] == 52, e.mouse_pos())
 
-    # Up into the top strip: the pointer hides, the icon under it turns white
+    # Up into the top strip: the pointer hides, the icon under it lights up
+    # in the pointer's color (light green on black)
     e.move_to(8, 40)
     check("top strip: pointer hidden", v(e, "ptr_next_on") == 0)
     colors = list(e.peek(e.lab["icon_colors"], 5))
-    check("over the left F3 badge: it is red, the rest light blue",
-          colors == [LIGHT_BLUE, WHITE, LIGHT_BLUE, LIGHT_BLUE, LIGHT_BLUE], colors)
+    check("over the left F3 badge: it is light green, the rest light blue",
+          colors == [LIGHT_BLUE, LIGHT_GREEN, LIGHT_BLUE, LIGHT_BLUE, LIGHT_BLUE], colors)
     e.move_to(40, 40)
     colors = list(e.peek(e.lab["icon_colors"], 5))
-    check("over the menu icon: it is white", colors[0] == WHITE and colors[1] == LIGHT_BLUE, colors)
+    check("over the menu icon: it is light green", colors[0] == LIGHT_GREEN and colors[1] == LIGHT_BLUE, colors)
     e.move_to(350, 40)
     colors = list(e.peek(e.lab["icon_colors"], 5))
-    check("over the right F3 badge: it is white", colors[2] == WHITE, colors)
-    e.poke(e.lab["text_bg"], [8])                   # orange background:
-    e.mouse([(1, 0, 0), (-1, 0, 0)], settle=0.1)    # the pointer is black,
-    colors = list(e.peek(e.lab["icon_colors"], 5))  # the badge still white
-                                                    # (the nudge: in warp, a
-                                                    # pause soon adds up to
-                                                    # the 10-second idle)
-    check("... white on an orange background too (phase 12)", colors[2] == WHITE, colors)
+    check("over the right F3 badge: it is light green", colors[2] == LIGHT_GREEN, colors)
+    # Every background: the badge lights up in the pointer's color, and the
+    # line 10 IRQ gives the pointer sprite that color too (2026-10-08)
+    for bg in range(16):
+        e.poke(e.lab["text_bg"], [bg])
+        e.mouse([(1, 0, 0), (-1, 0, 0)], settle=0.1)    # (the nudge: in warp,
+        colors = list(e.peek(e.lab["icon_colors"], 5))  # a pause soon adds up
+        spr0 = e.peek(0xd027)[0] & 15                    # to the 10-second idle)
+        check("background %d: badge and pointer color %d" % (bg, POINTER[bg]),
+              colors[2] == POINTER[bg] and spr0 == POINTER[bg], (colors, spr0))
     e.poke(e.lab["text_bg"], [0])
     time.sleep(0.3)
 
     # F5 badge click: page down; F3 badge click: page up
     e.move_to(350, 255)
     colors = list(e.peek(e.lab["icon_colors"], 5))
-    check("over the right F5 badge: it is white", colors[4] == WHITE, colors)
+    check("over the right F5 badge: it is light green", colors[4] == LIGHT_GREEN, colors)
     t0 = top(e)
     e.mouse([(0, 0, LEFT), (0, 0, 0)])
     t1 = top(e)

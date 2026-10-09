@@ -38,7 +38,7 @@ The cursor shows the typing mode: a thick underline in {yellow}insert{lgrey} mod
 
 Colors work as in BASIC: press {rvs}CTRL{off}+{rvs}3{off} and what you type next is {red}red{lgrey}. {rvs}CTRL{off}+{rvs}1{off} to {rvs}8{off} and {rvs}C={off}+{rvs}1{off} to {rvs}8{off} give the 16 colors: {white}white {red}red {cyan}cyan {purple}purple {green}green {blue}blue {yellow}yellow {orange}orange {brown}brown {lred}light red {dgrey}dark grey {grey}grey {lgreen}light green {lblue}light blue {lgrey}light grey, and black (which doesn't show on a black background).
 
-{rvs}CTRL{off}+{rvs}9{off} and {rvs}CTRL{off}+{rvs}0{off} switch {rvs}reverse{off} on and off. A line end switches it off too.
+{rvs}CTRL{off}+{rvs}9{off} and {rvs}CTRL{off}+{rvs}0{off} switch {rvs}reverse{off} on and off. A line end switches it off too, as in BASIC, but {rvs}RETURN{off} in the middle of reversed text keeps the rest of the line reversed.
 
 The color codes are kept in the text and saved with it, but take no room on the screen. Pressing a color key in the middle of a line colors only what you type there: the text after the cursor keeps its look. Codes that no longer do anything are tidied away by themselves.
 
@@ -62,7 +62,7 @@ Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass ov
 
 {cyan}{rvs} THE MOUSE {off}{lgrey}
 
-A 1351 mouse in port 1 is found by itself the first time you move it. Click to put the cursor there; drag to mark. Move past the text onto a badge (it lights up white) and click: {rvs}F3{off} and {rvs}F5{off} page, {rvs}F1{off} opens the menu. The right button opens the menu too. The pointer hides after 10 seconds of rest.
+A 1351 mouse in port 1 is found by itself the first time you move it. Click to put the cursor there; drag to mark. Move past the text onto a badge (it lights up in the pointer's color) and click: {rvs}F3{off} and {rvs}F5{off} page, {rvs}F1{off} opens the menu. The right button opens the menu too. The pointer hides after 10 seconds of rest.
 
 {cyan}{rvs} THE MENU {off}{lgrey}
 

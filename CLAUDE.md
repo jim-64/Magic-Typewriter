@@ -190,6 +190,7 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     cut out** — the F3/F5 badges an arrow ("SB3C"), ≡F1 a box with a pixel off each corner
     ("M1"); 9 rows on lines 41–49 and 252–260; the badges' widest rows touch the text area
     (X = 2 and 342). A badge under the pointer lights up **white** (red hardly showed on blue).
+    (All redrawn again on 2026-10-08, see below.)
   - **SpeedScript** gone from the Format values.
   - **SHIFT + F3 / F5:** top / end of the document.
   - **The main menu lists the CTRL keys** at its foot (rows 19–22; the panel is now rows 4–23).
@@ -209,6 +210,32 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     the SPLIT_TEST build gives both compare results on all four systems, and BORDER_TEST pictures
     show every strip line's side border open on all four. (SPLIT_TEST builds leave out
     `mailbox_mouse`, which they don't need, to fit.)
+  **Jim, 2026-10-07/09 (branch `badges`, merged into `main` 2026-10-09, not pushed yet):**
+  - **Badges and menu icon redrawn again.** Jim drew them on a grid in three rounds. Each round
+    got a test disk with every version, for his 1702, made from throwaway builds with `main` left
+    alone. Chosen:
+    - All three icons are 7 rows: ≡F1 and F3 on lines 43–49, F5 on 252–258.
+    - The F3/F5 badges are the flat end of an arrow with the letters cut out, their wide side
+      facing the text area.
+    - The badges sit **2 pixels out from the text area** (X = 1 and 346). He compared touching,
+      1 pixel and 2 pixels.
+
+    See Border icons.
+  - **Pointer colors:** light green or green, by background (Jim's list, `pointer_colors`), and
+    **a badge under the pointer lights up in the pointer's color** (it was white). test_phase7
+    checks all 16 backgrounds, the badge and the pointer sprite alike.
+  - Tried and dropped: letting the character show through the insert cursor (see Cursor), and
+    hanging a space in the margin for word wrap (see Text Model).
+  - Space: the lower part grew 4 bytes (debug tables end $3E6C, 20 bytes free).
+  - **RETURN in reversed text keeps the rest of the line reversed** (an RVS ON after the new line
+    end; see Colors and Reverse). 28 bytes: **7 bytes are left under the KERNAL.** Jim: "works
+    good" (2026-10-09).
+  - **Menu colors by background** (Jim, 2026-10-09): a fixed 16-entry table, `box_colors` (see
+    Menus). That saved 8 bytes in the lower part (debug tables end $3E64, 28 bytes free).
+  - **Mouse speed:** VICE feels too fast and a real 1351 on Jim's C64 a little slow. There is no
+    reliable way for the program to tell VICE from a real C64, and VICE's speed depends on the
+    PC's mouse anyway. **Jim: keep the speed as it is, a good compromise.** A speed setting in
+    the menu would be the way if it comes up again (needs room).
 
 ## Working with Jim
 
@@ -580,11 +607,11 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (phase 12, after undo and the mouse fixes): debug tables end $3E68, so **only ~24 bytes
-  free below the sprite blocks in debug builds** (the median mouse filter needed `status_raw`
-  moved to $0210 to fit) (release: $3C21, ~600); the editor + find end $FFD7 (~34 bytes free under
-  the KERNAL, after the SHIFT + F1/F7 keys and color_key's tidying); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. **The next
-  feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
+- Space (2026-10-08, after the badge highlight color and RETURN in reversed text): debug tables
+  end $3E64, so **only 28 bytes free below the sprite blocks in debug builds** (the median mouse
+  filter needed `status_raw` moved to $0210 to fit) (release: ~600); the editor + find end $FFF3
+  (**7 bytes free under the KERNAL**); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm
+  is ~1.2 KB. **The next feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
   must stay 0), BASIC's input buffer $0200–$0258 for variables, or (ask Jim) moving BUF_START up.
   Earlier: debug build, phase 11b: lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
   build adds a 256-byte mouse trace); editor + find $E000–$FEE4; reudoc.asm $C000–$CBAC. Phase 8 took about 4 KB, phase 9's REU part about 0.6 KB, phase 10
@@ -627,9 +654,10 @@ Reference mockup: `resources/Text Edit Screen 9-25-26.png` (Jim's drawing). The 
 | Side borders beside the text area | Dark grey (11) |
 | Page position marker (side borders) | Grey (12) |
 | Text background (default; the menu option changes it — SHIFT-F7 did until 2026-10-07) | Black (0) |
-| Default text color (menu option; also the menu/prompt text color; the document can change text color with color codes) | Light grey (15) |
+| Default text color (menu option; the document can change text color with color codes) | Light grey (15) |
+| Menus, prompts, disk directory | By background (Jim, 2026-10-09; `box_colors` in data.asm): **black** on white, cyan, green, yellow, light red, grey, light green and light grey; **light grey** on the others. Not the text color setting any more. |
 | Border icon sprites | Light blue (14) |
-| Mouse pointer sprite | Red (2); black on red, purple, orange and brown backgrounds (Jim, 2026-09-29; `pointer_colors` in data.asm). A border icon under the pointer lights up **white** (phase 12: red hardly showed on the blue strip on Jim's 1702). |
+| Mouse pointer sprite | By background (Jim, 2026-10-08; `pointer_colors` in data.asm): **light green (13)**, but **green (5)** on white, cyan, purple, yellow, light green and light grey. A border icon under the pointer lights up **in the pointer's color**. (Before: red, black on some backgrounds, and the icon white.) |
 
 ### Color splits
 
@@ -648,7 +676,8 @@ The frame is two colors: blue strips top and bottom, dark grey sides next to the
 
 ### Border icons (sprites)
 
-Six hardware sprites, no multiplexer, all hi-res. Border icons (1–5) are light blue (14); pointer red (2).
+Six hardware sprites, no multiplexer, all hi-res. Border icons (1–5) are light blue (14); the pointer
+light green or green (see Colors).
 
 | Sprite | Use | Click action |
 |---|---|---|
@@ -659,56 +688,53 @@ Six hardware sprites, no multiplexer, all hi-res. Border icons (1–5) are light
 | 4 | Bottom-left "F5" badge | Page down |
 | 5 | Bottom-right "F5" badge (same image as 4) | Page down |
 
-**Phase 12 (Jim's choice from VICE mockups):** the 13-row badges of the mockup were cut off on his
-NTSC 1702. Now all three images are **solid shapes with the letters cut out**, 9 rows (the cut-out
-letters need a solid row above and below). Sprite 2/3 data (24×9, a solid up arrow with "F3" cut
-out, "SB3C"; the head's top is 2 pixels narrower than the base, 2 pixels beside the letters):
+**Chosen 2026-10-08 (Jim drew them on a grid; three rounds of test disks on his 1702):** all three
+images are **7 rows**, solid shapes with the letters cut out (the cut-out letters need a solid row
+above and below). Taller ones lost rows on the 1702 (13-row badges at both ends; the 9-row ≡F1 on
+41–49 "just a bit"). Sprite 2/3 data (21×7, the flat end of an up arrow with "F3" cut out; the wide
+row faces the text area):
 ```
-......XXXXXXXXXXXX......   $03,$FF,$C0
-.....XX....XX...XXX.....   $06,$18,$E0
-....XXX..XXX..X..XXX....   $0E,$72,$70
-...XXXX..XXXXXX..XXXX...   $1E,$7E,$78
-..XXXXX...XXXX..XXXXXX..   $3E,$3C,$FC
-.....XX..XXXXXX..XX.....   $06,$7E,$60
-.....XX..XXX..X..XX.....   $06,$72,$60
-.....XX..XXXX...XXX.....   $06,$78,$E0
-.....XXXXXXXXXXXXXX.....   $07,$FF,$E0
+......XXXXXXXXX.........   $03,$FE,$00
+.....X....X...XX........   $04,$23,$00
+....XX..XXXXX..XX.......   $0C,$F9,$80
+...XXX...XX...XXXX......   $1C,$63,$C0
+..XXXX..XXXXX..XXXX.....   $3C,$F9,$E0
+.XXXXX..XXX...XXXXXX....   $7C,$E3,$F0
+XXXXXXXXXXXXXXXXXXXXX...   $FF,$FF,$F8
 ```
-Sprite 4/5 data (24×9, the same arrow upside down with "F5" cut out):
+Sprite 4/5 data (21×7, the same shape upside down with "F5" cut out):
 ```
-.....XXXXXXXXXXXXXX.....   $07,$FF,$E0
-.....XX....X.....XX.....   $06,$10,$60
-.....XX..XXX..XXXXX.....   $06,$73,$E0
-.....XX..XXX....XXX.....   $06,$70,$E0
-..XXXXX...XXXXX..XXXXX..   $3E,$3E,$7C
-...XXXX..XXXXXX..XXXX...   $1E,$7E,$78
-....XXX..XXX..X..XXX....   $0E,$72,$70
-.....XX..XXXX...XXX.....   $06,$78,$E0
-......XXXXXXXXXXXX......   $03,$FF,$C0
+XXXXXXXXXXXXXXXXXXXXX...   $FF,$FF,$F8
+.XXXXX....X....XXXXX....   $7C,$21,$F0
+..XXXX..XXX..XXXXXX.....   $3C,$E7,$E0
+...XXX...XX....XXX......   $1C,$61,$C0
+....XX..XXXXX...X.......   $0C,$F8,$80
+.....X..XXX....X........   $04,$E1,$00
+......XXXXXXXXX.........   $03,$FE,$00
 ```
-Sprite 1 data (23×9, "≡F1" cut out of a box with a pixel off each corner, "M1"):
+Sprite 1 data (19×7, "≡F1" cut out of a box with a pixel off each corner):
 ```
-.XXXXXXXXXXXXXXXXXXXXX..   $7F,$FF,$FC
-XX........XX....XX..XXX.   $C0,$30,$CE
-XXXXXXXXXXXX..XXX...XXX.   $FF,$F3,$8E
-XXXXXXXXXXXX..XXXX..XXX.   $FF,$F3,$CE
-XX........XX...XXX..XXX.   $C0,$31,$CE
-XXXXXXXXXXXX..XXXX..XXX.   $FF,$F3,$CE
-XXXXXXXXXXXX..XXXX..XXX.   $FF,$F3,$CE
-XX........XX..XXX....XX.   $C0,$33,$86
-.XXXXXXXXXXXXXXXXXXXXX..   $7F,$FF,$FC
+.XXXXXXXXXXXXXXXXX......   $7F,$FF,$C0
+XX....XX....XX..XXX.....   $C3,$0C,$E0
+XXXXXXXX..XXX...XXX.....   $FF,$38,$E0
+XX....XX...XXX..XXX.....   $C3,$1C,$E0
+XXXXXXXX..XXXX..XXX.....   $FF,$3C,$E0
+XX....XX..XXX....XX.....   $C3,$38,$60
+.XXXXXXXXXXXXXXXXX......   $7F,$FF,$C0
 ```
-Store only the rows above (9×3 bytes); expand into 64-byte sprite blocks at init and zero the rest
-(the images are in `src/startup.asm` since phase 11b). (Before phase 12: "F3"/"F5" between two
-arrows and an open "≡F1", 7 rows; earlier still the mockup's 13-row badges.)
+Store only the rows above (7×3 bytes); expand into 64-byte sprite blocks at init and zero the rest
+(the images are in `src/startup.asm` since phase 11b). Earlier designs: the mockup's 13-row badges;
+"F3"/"F5" between two arrows and an open "≡F1", 7 rows (phase 1); solid 9-row arrows ("SB3C") and a
+9-row ≡F1 box ("M1", phase 12, 2026-10-02 to 10-07). Jim's other tries on 2026-10-07/08: 12-row
+pointed arrows (tips cut off on the 1702), 10-row pointed arrows with flat bases.
 
 **Decided (2026-09-27):** the badges sit in the side borders, as in Jim's mockup. (Branch `phase1`
 keeps the earlier layout, with the badges above/below the text area.)
 
 Vertical placement (same on PAL and NTSC), as raster lines:
-- Top badges and menu icon: raster 41–49 (phase 12; the badges were 37–49 in the mockup, the
-  icon 42–48).
-- Bottom badges: raster 252–260 (phase 12; were 252–264).
+- Top badges and menu icon: raster 43–49 (2026-10-08; the badges were 37–49 in the mockup, then
+  41–49).
+- Bottom badges: raster 252–258 (2026-10-08; were 252–264, then 252–260).
 
 Why one line away from the text area: showing a sprite in the right border of line 50 means opening
 that border, and that also opens the **left** border of line 51, the first text line. There the VIC
@@ -719,19 +745,20 @@ mockup exactly would need two more sprites (6 and 7) as dark grey patches over t
 Found in phase 1 (VICE): a sprite's first row shows on raster line **Y+1**, and the VIC always fetches
 all **21 rows** of a sprite, stealing CPU cycles at the end of each of those lines. The top badges and
 the menu icon share the same 21 fetched lines (29–49, Y = 28), with their pictures low in their blocks
-(badges and icon rows 12–20), so every line of the top strip loses the same cycles and the line
-50/51 color split has no sprite fetches. The bottom badges use rows 0–8 with Y = 251. Also, the VIC
+(badges and icon rows 14–20), so every line of the top strip loses the same cycles and the line
+50/51 color split has no sprite fetches. The bottom badges use rows 0–6 with Y = 251. Also, the VIC
 compares sprite Y with only the low 8 bits of the raster line, so on PAL the top sprites would appear
 again at line 256+Y; sprites 1–3 are switched off after the bottom strip and back on at line 10.
-- **NTSC (Jim's 1702, phase 12):** the old 13-row badges were cut off at both ends; the menu icon
-  (42–48) showed whole. The new icons are 9 rows, on 41–49 and 252–260: one line more at each
-  end than the icon that showed. Check them on the 1702 again.
+- **NTSC (Jim's 1702):** the old 13-row badges were cut off at both ends, the 9-row ≡F1 on 41–49
+  "just a bit". The 7-row icons on 43–49 and 252–258 show whole (Jim, 2026-10-08: "looks great").
 
-**Horizontal placement (as in the mockup):**
-- Left badges (sprites 2 and 4): X = 2, in the left border; the widest row (columns 2–21) ends at
-  X = 23, touching the text area (X = 24) (Jim, phase 12).
-- Right badges (sprites 3 and 5): X = 342, in the right border; the widest row starts at X = 344,
-  touching the text area. X > 255, so set their bits in the sprite X MSB register $D010.
+**Horizontal placement:**
+- Left badges (sprites 2 and 4): X = 1, in the left border; the widest row (columns 0–20) ends at
+  X = 21, **2 pixels from the text area** (X = 24) (Jim, 2026-10-08; he compared touching, 1 and
+  2 pixels on the 1702).
+- Right badges (sprites 3 and 5): X = 346, in the right border; the widest row starts at X = 346,
+  2 pixels from the text area (which ends at X = 343). X > 255, so set their bits in the sprite X
+  MSB register $D010.
 - Menu icon (sprite 1): X = 32, 8 pixels in from the text area's left edge.
 - The side borders are opened on lines 28–49 and 251–264 with the 38/40-column trick ($D016 written
   in one exact cycle per line), from the two stable IRQs. An open side border shows $D021 (blue in
@@ -773,6 +800,27 @@ The cursor shape shows the typing mode:
   when the cursor moves.
 - If the 121 cursor proves annoying, a later fallback is a sprite underline (sprite 6, 8×2 pixels) that
   overlays the character instead of replacing it.
+- **Tried and dropped (Jim, 2026-10-07): letting the character show through the insert cursor.**
+  - **Frame swapping (tested):** in the "on" phase the cell swapped between the character and 121
+    every frame (19 bytes in `cursor_blink`). It worked as built, but a 25/30 Hz swap looks like a
+    buzzing, half-bright cell. **Jim: "not a good solution, looks annoying"** in VICE and on the C64U.
+    Don't try it again.
+  - **Sprite underline (assessed, not built):** the only way to show the character and an underline
+    together without flicker (no custom font). Estimate: ~90–120 bytes (editor ~50–65, IRQ/lower part
+    ~25–40) plus sprite block 255 (the last spare). The catches:
+    - Sprite DMA must stay off lines ≤ 51 and ≥ 250, so one image can't serve both the top and the
+      bottom text rows. Choose one: a second block, the line-10 IRQ moving the underline inside the
+      block, or the 121 cursor on the edge rows.
+    - On row 24 the underline sits a line higher (line 250 is the split).
+    - Sprite 6 is fetched at the *start* of each line (sprite 0 at the end of the one before), so the
+      line 249 stable IRQ needs re-measuring on all four systems.
+    - On PAL, a cursor on row 0 (Y ≈ 51) triggers again at line 307 and needs switching off after
+      the bottom strip.
+    - On reversed cells (marked text too) the underline must be drawn in the background color, or it
+      vanishes.
+
+    Needs room first (35 bytes free under the KERNAL, 24 in the debug lower part). The cursor stays as
+    it is for now.
 - **The cursor is drawn in the current typing color** (see Colors and Reverse). Press CTRL-3 and the
   cursor turns red.
 - Blink every ~1/3 second, as the KERNAL does: 17 frames PAL, 20 frames NTSC (timing table).
@@ -928,7 +976,8 @@ movement keys** — C= + digit still selects a color.
 
 - Read SID POTX/POTY ($D419/$D41A) once per frame; compute signed deltas from bits 1–6 (standard 1351
   method). Buttons: left = $DC01 bit 4, right = $DC01 bit 0.
-- **Pointer:** hi-res sprite, **red (2)**, shown as the red box in the mockup. Shape: 8×8 box outline. Top and bottom edges 1 pixel thick; left and right edges 2 pixels wide:
+- **Pointer:** hi-res sprite, **red (2)**, shown as the red box in the mockup (now light green or
+  green by background, see Colors). Shape: 8×8 box outline. Top and bottom edges 1 pixel thick; left and right edges 2 pixels wide:
   ```
   11111111
   11000011
@@ -956,13 +1005,13 @@ movement keys** — C= + digit still selects a color.
 **As built (phase 7, "The 1351 mouse" in `src/input.asm`; read its header comment first):**
 - **Where the pointer goes (Jim, 2026-09-28): over the text area only.** A sprite's fetches steal CPU
   cycles on all 21 of its lines, and the strips are exact-timed, so the pointer never enters them.
-  Moved on past the text, it **hides and the border icon under it turns white** (phase 12; was the pointer's color:
-  since phase 8 black on some backgrounds, `pointer_colors`);
+  Moved on past the text, it **hides and the border icon under it lights up in the pointer's
+  color** (`pointer_colors[text_bg]`, 2026-10-08; it was white in phase 12, and the pointer's red or
+  black before that);
   a click then works that icon: F3 badges page up, F5 badges page down (with the mark key held: marking
   by page), the menu icon opens the menu. Hit zones in the strips (box left
-  edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60. (Phase 12:
-  the redrawn badges' inner edges are where the old ones' were, X = 23 and 344, and the ≡F1 box
-  covers X = 32–54, so the zones still fit.)
+  edge x): left badges x < 20, right badges x >= 340, menu icon (top only) 20 <= x < 60. (2026-10-08:
+  the badges cover X = 1–21 and 346–366, the ≡F1 box X = 32–50, so the zones still fit.)
 - The box's top line stays within **52–242** (not 51 or 250: its fetches must stay within lines 52–249,
   clear of the line 50 split, the line 249 stable check and the strips). From line 229 it uses a second
   picture low in its block (block 254, rows 13–20; `spr_pointer_low`), so the fetches run above the box.
@@ -1038,7 +1087,9 @@ Rendering rules (same as printing the file with CHROUT):
 - A color code sets the color of every following character until the next color code. Color carries
   across CRs. At the start of the document the color is the **default text color** (setting, light grey
   unless changed), RVS off. Changing the default text color recolors all text that comes before any color code.
-- RVS ON / RVS OFF turn reverse on/off. **CR also turns reverse off**, as CHROUT does.
+- RVS ON / RVS OFF turn reverse on/off. **CR also turns reverse off**, as CHROUT does. (Kept on
+  purpose: PETSCII files everywhere rely on it, so dropping it would show BBS files wrong and make
+  our files look different elsewhere. Jim agreed, 2026-10-08.)
 - Color codes: $05 white, $1C red, $1E green, $1F blue, $81 orange, $90 black, $95 brown, $96 light red,
   $97 dark grey, $98 grey, $99 light green, $9A light blue, $9B light grey, $9C purple, $9E yellow, $9F cyan.
 - $8D (SHIFT-RETURN) is treated as a line end like CR.
@@ -1068,6 +1119,13 @@ Editing rules:
 - **Clean-up:** when the cursor leaves, remove codes that have no effect: a color code followed directly by
   another color code, a color code equal to the color already in effect, an RVS ON directly followed by
   RVS OFF, and so on. This keeps files from filling up with unused codes.
+- **RETURN in reversed text** (Jim, 2026-10-08): if reverse is on at the cursor and the line goes on
+  after it, RETURN puts an **RVS ON after the new line end**, so the rest of the line moves down
+  still reversed (at the start of a reversed line, or in the middle). At the end of a line nothing
+  is added: reverse ends there, as in BASIC. DEL at the start of the moved line joins it back up and
+  clean-up removes the RVS ON, which then does nothing. (`.return` in `type_char`, 28 bytes;
+  checked in test_phase12.) Small leftover, accepted: at the start of a reversed line the line
+  left above keeps its own RVS ON, so text typed there later comes out reversed.
 - **INST/DEL** deletes the visible character left of the cursor; codes around it stay (then clean-up runs).
   Deleting a selection removes the codes inside it too, then fixes the state after it with a restore code
   if needed.
@@ -1155,6 +1213,17 @@ Editing rules:
   exactly 40 characters wraps its last word too. `redraw_from` (drawing) and `row_next` (walking one
   row without drawing) follow the same rule and **must be kept the same**; tools/test_phase6.py checks
   the screen against a Python model of it.
+- **Decided against (Jim, 2026-10-07): hanging a space in the margin.** A word that ends exactly at
+  column 39 still moves to the next row when a space follows it. "Hanging" that space (taking it into
+  the full row without drawing it, so the next word starts at column 0) was assessed:
+  - ~40–60 bytes under the KERNAL.
+  - Changes to both layout routines and test_phase6's model.
+  - A cursor quirk: on the hidden space the cursor would show at column 40, i.e. on the first
+    character of the next row, so one CRSR RIGHT seems to do nothing.
+  - An off-screen cursor on row 24.
+
+  **Jim: not worth the space or the risk to this critical code.** Don't propose it again unless he
+  asks.
 - **Word wrap off:** a row is cut after 40 characters, even mid-word (the phase 3 rule). Rows never
   reach past column 39, so all columns fit in a byte.
 - Word wrap is switched in the main menu (D); the document is redrawn when the menu closes, with the
@@ -1224,7 +1293,7 @@ Editing rules:
 | E | Mode | **insert**, overwrite (same as F7) |
 | F | Mark key | **commodore**, left shift |
 | G | Background | 16 C64 colors, default **black** |
-| H | Text color | 16 C64 colors, default **light grey**; also the menu text color |
+| H | Text color | 16 C64 colors, default **light grey** |
 | I | Stats → shows a stats box | |
 | J | Save defaults (disk only) | |
 | Q | Quit Magic Typewriter → back to BASIC | |
@@ -1272,9 +1341,10 @@ separately. "magic" = the Magic Typewriter format (see Formats).
 - **Color items** show the color name (e.g. `G BACKGROUND: BLACK`) and step to the next of the 16 colors
   each time they're chosen. **No colors are skipped** (Jim, 2026-09-27): skipping the text color never
   protected the other colors a document uses, so the user simply steps on if the background hides some
-  text. Same for SHIFT-F1. To keep menus and prompts readable, they are drawn in the default text color
-  unless it equals the background; then in black or white, whichever reads better on that background
-  (`readable_color` / `contrast_color`).
+  text. Same for SHIFT-F1. **Menus and prompts have a fixed color for each background** (Jim,
+  2026-10-09): black on white, cyan, green, yellow, light red, grey, light green and light grey,
+  light grey on the others (`readable_color` / `box_colors`). Before, they followed the text color,
+  with black or white when it equaled the background.
 - Settings last until the program exits, unless saved with **Save defaults**.
 
 ### Menu item behavior

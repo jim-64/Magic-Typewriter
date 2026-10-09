@@ -224,17 +224,13 @@ box_capitals
 ++      pla
 +       rts
 
-; readable_color - A = the color for boxes: the default text color, unless
-; the background is that same color - then black or white, whichever
-; shows up better on it.
+; readable_color - A = the color for boxes: black or light grey, by the
+; background color (box_colors in data.asm).
 !zone readable_color
 readable_color
-        lda text_color
-        cmp text_bg
-        bne +
         ldx text_bg
-        lda contrast_color,x
-+       rts
+        lda box_colors,x
+        rts
 
 ; wait_key - wait for a key event. Returns A = key code, Y = modifiers.
 !zone wait_key
