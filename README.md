@@ -151,7 +151,11 @@ magic document, which is always PRG.
 A good habit: work in magic, and save a PETSCII copy when the text is done.
 
 Loading recognises a magic file whatever the Format setting says, and afterwards saves the
-document back in the format it came in.
+document back in the format it came in. **For the fastest loads, set the Load format to MAGIC**
+(and keep it with Save defaults): then a magic file always goes the way fast loaders speed up.
+With another Load format it is tried as a SEQ file first, and an SD2IEC (which opens any file
+as SEQ) then hands it over byte by byte, without the fast loader. With the Load format MAGIC, a
+SEQ file gives `64, FILE TYPE MISMATCH`: choose PETSCII or ASCII for those.
 
 **Saving over a file** scratches the old one first (never the risky `@0:`). Drive errors show as
 the drive reports them, e.g. `62, FILE NOT FOUND,00,00`. A spinner turns while the drive works.

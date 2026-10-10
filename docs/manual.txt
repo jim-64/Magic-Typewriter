@@ -89,7 +89,7 @@ The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the 
 
 {lgreen}Tip:{lgrey} work in magic, and save a PETSCII copy when the text is done.
 
-A magic file is recognised whatever the Load format says. A document saves back in the format it came in. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
+A magic file is recognised whatever the Load format says. For the fastest loads set the Load format to {yellow}MAGIC{lgrey}: then a fast loader cartridge speeds up magic files on every drive, SD2IEC too. (A SEQ file then says 64, FILE TYPE MISMATCH: choose PETSCII or ASCII for those.) A document saves back in the format it came in. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
 
 {yellow}Tape:{lgrey} choose TAPE as the device. Magic documents become program files, PETSCII and ASCII data files. A box asks you to press PLAY (or RECORD and PLAY); {rvs}RUN/STOP{off} gives up. A blank name loads the next file.
 

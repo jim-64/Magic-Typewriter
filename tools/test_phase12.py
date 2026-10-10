@@ -204,6 +204,26 @@ try:
     t, cur = e.text()
     check("a PRG of ours read as SEQ: the load address is not text, the header is used",
           t == manual_text and v(e, "save_format") == 0, (len(t), t[:24]))
+
+    # Load format MAGIC (Jim, 2026-10-09): straight to the PRG way, no SEQ
+    # try first (an SD2IEC hands a PRG over as SEQ, and that was read byte by
+    # byte, without the fast loader) - so KERNAL LOAD
+    e.poke(e.lab["load_format"], [0])
+    load(e, "manual")
+    t, cur = e.text()
+    check("Load format MAGIC: the manual comes by KERNAL LOAD (fast loaders)",
+          t == manual_text and v(e, "load_fast") == 1, (len(t), v(e, "load_fast")))
+    # ... a SEQ file with format MAGIC: refused, the document as it was
+    e.poke(e.lab["load_format"], [0])
+    e.poke(e.lab["modified"], [0])
+    before = e.text()[0]
+    key(e, "F1"); key(e, "A"); key(e, "A")
+    e.keys([(KEY["DEL"], 0)] * 16)
+    e.type_text("long")
+    key(e, "RETURN", settle=3)
+    check("... a SEQ file with format MAGIC: 64, FILE TYPE MISMATCH, the document untouched",
+          any("64, FILE TYPE MISMATCH" in r for r in rows(e)) and e.text()[0] == before, rows(e)[10:14])
+    key(e, "SPACE")
 finally:
     try:
         e.m.quit()

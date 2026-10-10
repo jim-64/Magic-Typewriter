@@ -420,6 +420,12 @@ load_file
 
         ldy #0                  ; the command channel, no command
         jsr open_cmd
+        lda load_format         ; Load format MAGIC: magic files are always
+        cmp #FORMAT_MAGIC       ; PRG files saved here, so straight to the
+        beq .prg_way            ; PRG way, no SEQ try first (Jim). (An
+                                ; SD2IEC opens a PRG as SEQ too, so that try
+                                ; would read it byte by byte, without the
+                                ; fast loader.)
         jsr open_file
         bcc +
         jmp .no_device
@@ -436,6 +442,7 @@ load_file
         bne .to_fail
 +       lda #FILE_LFN
         jsr CLOSE
+.prg_way
         jsr prg_fits            ; its size, from the directory - now, while
         lda #0                  ; no file is open (a 1581 ended an open
         rol                     ; file after 2 blocks when the directory

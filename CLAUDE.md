@@ -210,7 +210,7 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     the SPLIT_TEST build gives both compare results on all four systems, and BORDER_TEST pictures
     show every strip line's side border open on all four. (SPLIT_TEST builds leave out
     `mailbox_mouse`, which they don't need, to fit.)
-  **Jim, 2026-10-07/09 (branch `badges`, merged into `main` 2026-10-09, not pushed yet):**
+  **Jim, 2026-10-07/09 (branch `badges`, merged into `main` and pushed 2026-10-09; the Load format MAGIC change after it is on branch `fastload`):**
   - **Badges and menu icon redrawn again.** Jim drew them on a grid in three rounds. Each round
     got a test disk with every version, for his 1702, made from throwaway builds with `main` left
     alone. Chosen:
@@ -232,6 +232,8 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     good" (2026-10-09).
   - **Menu colors by background** (Jim, 2026-10-09): a fixed 16-entry table, `box_colors` (see
     Menus). That saved 8 bytes in the lower part (debug tables end $3E64, 28 bytes free).
+  - **Load format MAGIC goes straight to the PRG way** (Jim's idea): fast loaders now speed up
+    magic files on an SD2IEC too (see Formats, as built). 7 bytes.
   - **Mouse speed:** VICE feels too fast and a real 1351 on Jim's C64 a little slow. There is no
     reliable way for the program to tell VICE from a real C64, and VICE's speed depends on the
     PC's mouse anyway. **Jim: keep the speed as it is, a good compromise.** A speed setting in
@@ -608,7 +610,7 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
 - Space (2026-10-08, after the badge highlight color and RETURN in reversed text): debug tables
-  end $3E64, so **only 28 bytes free below the sprite blocks in debug builds** (the median mouse
+  end $3E6B, so **only 21 bytes free below the sprite blocks in debug builds** (the median mouse
   filter needed `status_raw` moved to $0210 to fit) (release: ~600); the editor + find end $FFF3
   (**7 bytes free under the KERNAL**); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm
   is ~1.2 KB. **The next feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
@@ -1519,7 +1521,10 @@ visible characters (CT_CHAR / CT_EOL in `ctype`); both $C1–$DA and $61–$7A f
   RUN/STOP at PRESS PLAY it held an old address and the "partial load" looked like garbage (found in
   phase 11). If the file ran past `text_end`, the clipboard is gone (`text_end` = BUF_END). **Not
   guarded: a foreign tape program over 36 KB, or an absolute one (type 3, loads at its own address)
-  — only possible with files not made here.**
+  — only possible with files not made here.** Jim, 2026-10-10: leave it so ("tape can be less
+  forgiving"); a guard would need the tape header found and checked before LOAD (~40–60 bytes).
+  Disk loads are guarded already: only a PRG at $4000 that fits goes by KERNAL LOAD, any other is
+  read byte by byte into the buffer (Jim agreed no magic-header check is needed).
 - Our own boxes: "PRESS PLAY ON TAPE" / "PRESS RECORD & PLAY ON TAPE" (with the spinner). The
   KERNAL waits for the button; RUN/STOP there → "BREAK", the document untouched.
 - `read_status` knows tape has no drive to ask: it reports the KERNAL's status (short/long block,
@@ -1606,6 +1611,19 @@ PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arr
   (the first $0E/$8E picks the set if nothing did), or ASCII converted (A–Z ↔ $C1–$DA, a–z ↔ $41–$5A,
   CR, LF or CR LF → CR, tab → space, other control codes dropped). **The Save format becomes the
   format loaded.**
+- **Load format MAGIC skips the SEQ try** (Jim, 2026-10-09): magic files are always PRG files saved
+  at $4000, so `load_file` goes straight to the PRG way (`.prg_way`: prg_fits, `name,P,R`, the load
+  address, KERNAL LOAD). Why: **an SD2IEC opens a PRG as SEQ**, so the SEQ try succeeded and the
+  manual was read byte by byte, without Epyx FastLoad (Jim, real C64 + SD2IEC/Epyx cartridge: the
+  program 5 s, the manual 15 s). Measured in VICE (NTSC, 1541 true drive, the Epyx .crt from Jim's
+  `G:\My Drive\retro computers 2\Projects\sd2iec cart\freeload\EPYX Fastload-531014.crt`): the
+  manual 22 s without the cartridge, 7–8 s with it, either format (a 1541 always reaches the PRG way). A SEQ file with
+  format MAGIC: "64, FILE TYPE MISMATCH" on a 1541, document untouched; on an SD2IEC it would open
+  as a PRG and lose its first 2 bytes (accepted: choose PETSCII/ASCII for SEQ files). With another
+  Load format the SD2IEC still reads magic files byte by byte (the header check in
+  `convert_start` keeps that right, only slow). **VICE + Epyx:** start with `-cartcrt <crt>`;
+  VICE's autostart then doesn't RUN the program (type RUN into the keyboard buffer). Time loads
+  with CIA 1's TOD clock: the frame counter stops during disk work (our IRQs are off).
 - **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it is a PRG: it opens
   `name,P,R` and reads the load address itself. **Only a file with address $4000 (saved here) that
   fits** is then closed and loaded again with **KERNAL LOAD, secondary address 1** — to its own
