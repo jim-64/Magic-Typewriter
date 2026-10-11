@@ -112,7 +112,7 @@ A **1351 mouse in port 1** is found by itself the first time you move it; a joys
 
 Letters choose; **X** goes back one level; RUN/STOP or ← closes the menu. You can also click a
 line. Settings show their value and step to the next each time you choose them. The main menu
-also lists the CTRL keys at its foot.
+also lists the CTRL keys and the function keys at its foot.
 
 | Main menu | |
 |---|---|
@@ -121,9 +121,9 @@ also lists the CTRL keys at its foot.
 | E Mode | Insert or overwrite (same as F7) |
 | F Mark key | Commodore or left SHIFT |
 | G Background, H Text color | Any of the 16 colors (the text color is for text without color codes) |
-| I Stats | Characters, words, sentences, room left (and the REU's size) |
+| I Stats | Characters, words, sentences, bytes free (and the REU's size) |
 | J Save defaults | Keeps all settings in `MAGIC T DEFAULTS` on the disk the program came from; read at every start |
-| Q Quit Magic Typewriter | Back to BASIC (asks first if there are unsaved changes) |
+| Q Quit Magic Typewriter | Resets the C64, back to BASIC's start-up screen (asks first if there are unsaved changes) |
 
 **Load:** A Load, B Format, C Device (8–14 or TAPE), D Disk directory, E Disk command.
 **Save:** A Save (asks for the name), B Format, C File type, D Device, E Disk directory, F Disk command.
@@ -150,12 +150,13 @@ magic document, which is always PRG.
 
 A good habit: work in magic, and save a PETSCII copy when the text is done.
 
-Loading recognises a magic file whatever the Format setting says, and afterwards saves the
-document back in the format it came in. **For the fastest loads, set the Load format to MAGIC**
-(and keep it with Save defaults): then a magic file always goes the way fast loaders speed up.
-With another Load format it is tried as a SEQ file first, and an SD2IEC (which opens any file
-as SEQ) then hands it over byte by byte, without the fast loader. With the Load format MAGIC, a
-SEQ file gives `64, FILE TYPE MISMATCH`: choose PETSCII or ASCII for those.
+**The Load format starts as MAGIC**, and that is the one to use for everything except PC files:
+a magic file loads the way fast loader cartridges speed up (Epyx FastLoad and the like, on any
+drive, SD2IEC too), and any other file - SEQ or PRG - loads as PETSCII text. (A PRG file of
+another program keeps its first two bytes, its load address, as text.) Choose **ASCII** for
+files from a PC. A document saves back in the format it came in - magic if it had the magic
+header, PETSCII otherwise - and the Save menu's Format changes that, e.g. to keep a plain file
+as magic from then on.
 
 **Saving over a file** scratches the old one first (never the risky `@0:`). Drive errors show as
 the drive reports them, e.g. `62, FILE NOT FOUND,00,00`. A spinner turns while the drive works.

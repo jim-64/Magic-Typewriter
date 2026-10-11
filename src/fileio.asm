@@ -44,7 +44,8 @@ FORMAT_MAGIC    = 0             ; file formats (the Format settings)
 FORMAT_PETSCII  = 1
 FORMAT_ASCII    = 2
 load_dev        !byte 8         ; device (1 = tape)
-load_format     !byte FORMAT_PETSCII
+load_format     !byte FORMAT_MAGIC ; (v0.2: magic files the fast way, any
+                                ; other file as PETSCII text - see load_file)
 save_dev        !byte 8
 save_format     !byte FORMAT_MAGIC ; (a loaded document: the format it
                                 ; was loaded as, so it saves back the same)
@@ -62,8 +63,10 @@ status_raw      = $0210         ; 40: the drive's status line, as it came
                                 ; (in BASIC's input buffer, which neither we
                                 ; nor the KERNAL's disk and tape routines use
                                 ; otherwise: no room in the program needed)
+name_buf        = $0238         ; 24: a file name plus ",S,R" and the like
+                                ; (BASIC's input buffer too; num_text in
+                                ; menu.asm has the rest, $0250-$0258)
 status_buf      !fill 41, 0     ; ... as screen codes, 0 at the end
-name_buf        !fill 24, 0     ; a file name plus ",S,R" and the like
 name_len        !byte 0
 
 ;============================================================================
@@ -405,42 +408,42 @@ load_file
         sta cur_dev
         lda #0
         sta load_fast
+        sta .kept               ; (no bytes read ahead that are text)
         lda cur_dev
         cmp #1
         bne +
         jmp .tape
-+
-        lda #<suffix_read       ; a SEQ file first ...
-        ldx #>suffix_read
-        jsr name_plus
-        lda #<msg_loading
++       lda #<msg_loading
         ldx #>msg_loading
         jsr busy_box
         jsr io_begin
 
         ldy #0                  ; the command channel, no command
         jsr open_cmd
-        lda load_format         ; Load format MAGIC: magic files are always
-        cmp #FORMAT_MAGIC       ; PRG files saved here, so straight to the
-        beq .prg_way            ; PRG way, no SEQ try first (Jim). (An
-                                ; SD2IEC opens a PRG as SEQ too, so that try
-                                ; would read it byte by byte, without the
-                                ; fast loader.)
+
+        ; Which way first. Load format MAGIC: as a PRG file - magic files
+        ; are always PRG files saved at $4000 (and an SD2IEC would hand a
+        ; PRG over as a SEQ file too: byte by byte, without the fast
+        ; loader). The other formats: as a SEQ file. If the drive says the
+        ; file is the other kind ("64, FILE TYPE MISMATCH"; VICE's folder
+        ; drive says "62, FILE NOT FOUND"), the other way is tried once.
+        lda load_format
+        beq .prg_way            ; (FORMAT_MAGIC is 0)
+.seq_way
+        lda #<suffix_read
+        ldx #>suffix_read
+        jsr name_plus
         jsr open_file
         bcc +
         jmp .no_device
-+       jsr read_status         ; e.g. 62, FILE NOT FOUND
++       jsr read_status
         bcs +
-        jmp .opened             ; (a SEQ file)
-+       lda status_buf          ; ... but "64, FILE TYPE MISMATCH" (a 1541:
-        cmp #$36                ; it is a PRG file) or "62, FILE NOT FOUND"
-        bne .to_fail            ; (VICE's file system drive looks for a SEQ
-        lda status_buf+1        ; file only): open it as a PRG. (If there
-        cmp #$34                ; is none, that says 62 again.)
-        beq +
-        cmp #$32
+        jmp .opened             ; a SEQ file (or any file, on an SD2IEC)
++       jsr .mismatch           ; the other kind?
         bne .to_fail
-+       lda #FILE_LFN
+        lda load_format         ; (MAGIC: the PRG way was tried already)
+        beq .to_fail
+        lda #FILE_LFN
         jsr CLOSE
 .prg_way
         jsr prg_fits            ; its size, from the directory - now, while
@@ -454,10 +457,19 @@ load_file
         bcc +
         jmp .no_device
 +       jsr read_status
-        bcc +
+        bcc .prg_open
+        jsr .mismatch           ; the other kind?
+        bne .to_fail
+        lda load_format         ; (not MAGIC: the SEQ way was tried already)
+        bne .to_fail
+        lda #FILE_LFN
+        jsr CLOSE
+        jmp .seq_way
 .to_fail
         jmp .fail
-+       ldx #FILE_LFN           ; its load address (read off here: the
+
+.prg_open
+        ldx #FILE_LFN           ; its load address (read off here: the
         jsr CHKIN               ; bytes after it are the document)
         bcc +
         jmp .no_device
@@ -465,19 +477,26 @@ load_file
         sta .addr
         jsr CHRIN
         sta .addr+1
+        jsr READST              ; (a short file may end there)
+        sta .ended
         jsr CLRCHN
         lda .addr               ; $4000: one saved here. If it fits, it
         cmp #<BUF_START         ; is loaded again with KERNAL LOAD, which
-        bne .by_bytes           ; fast loaders speed up. Other PRG files,
-        lda .addr+1             ; and ones too big: read on from here,
-        cmp #>BUF_START         ; byte by byte.
-        bne .by_bytes
+        bne .not_ours           ; fast loaders speed up. Too big: read on
+        lda .addr+1             ; from here, byte by byte.
+        cmp #>BUF_START
+        bne .not_ours
         lda .too_big
         bne .by_bytes
         lda #FILE_LFN
         jsr CLOSE
         jmp .kernal_load
-.by_bytes
+.not_ours
+        lda load_format         ; Load format MAGIC: not one of ours, so it
+        bne .by_bytes           ; is PETSCII text from its first byte (Jim):
+        lda #2                  ; those 2 bytes are its first 2 characters.
+        sta .kept               ; (Other formats: a PRG file of another
+.by_bytes                       ; program - its load address is dropped.)
         jmp .opened
 
         ; A PRG file saved here that fits: loaded with the KERNAL's LOAD,
@@ -544,7 +563,17 @@ load_file
         lda #0
         sta conv_started
         jsr .reu_reset          ; (and nothing in the REU)
-        ldx #FILE_LFN
+        lda .kept               ; 2 bytes read already that are text (see
+        beq +                   ; .not_ours): they come first
+        lda .addr
+        sta BUF_START
+        lda .addr+1
+        sta BUF_START+1
+        lda #<(BUF_START+2)     ; (no page is crossed: BUF_START is $4000)
+        sta gap_start
+        lda .ended              ; the file ended with them?
+        bne .end
++       ldx #FILE_LFN
         jsr CHKIN
         bcc .byte
         jmp .no_device
@@ -619,6 +648,20 @@ load_file
         lda #<status_buf
         ldx #>status_buf
         jmp message_box
+
+; .mismatch - did the drive say the file is the other kind? Z set (EQ) for
+; "64, FILE TYPE MISMATCH" (a 1541, 1571 or 1581) or "62, FILE NOT FOUND"
+; (VICE's folder drive looks for the kind asked for only; and if there
+; really is no such file, the other way says 62 again).
+.mismatch
+        lda status_buf
+        cmp #$36                ; "6" ...
+        bne +
+        lda status_buf+1
+        cmp #$34                ; ... "4"
+        beq +
+        cmp #$32                ; ... "2"
++       rts
 
 ; .tape - from tape (device 1), with the KERNAL's own routines; our box
 ; asks for PLAY (the KERNAL says so only at the READY prompt), and the
@@ -752,6 +795,8 @@ load_fast       !byte 0         ; 1: it came with KERNAL LOAD (the tests
                                 ; look)
 .addr           !word 0         ; a PRG file's load address
 .too_big        !byte 0         ; 1: it doesn't fit (prg_fits)
+.kept           !byte 0         ; 2: .addr is the text's first 2 bytes
+.ended          !byte 0         ; READST after those 2 bytes
 .cut            !byte 0         ; 1: a tape program cut short at $c000
 zp_keep         !fill ZP_END-ZP_START, 0 ; our zero page during LOAD
 
@@ -809,8 +854,10 @@ convert_start
         sta .skip_lf
         lda #1
         sta conv_started
-        lda load_format         ; how to read it (unless it has the header)
-        sta .fmt
+        lda load_format         ; how to read it (unless it has the header).
+        bne +                   ; MAGIC: PETSCII until the header says it is
+        lda #FORMAT_PETSCII     ; magic - so a plain file is saved back plain
++       sta .fmt                ; (the Save format follows .fmt)
 
         ; A PRG file's load address is off already (load_file read it, or
         ; KERNAL LOAD took it) - unless the drive gave the PRG as a SEQ

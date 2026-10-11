@@ -2,7 +2,7 @@
 disk the usual way (LOAD"*",8 and RUN), it unpacks itself and starts as the
 unpacked one does - it still knows the device it was loaded from ($BA), so
 it reads MAGIC T DEFAULTS there - and after Quit BASIC works (the unpacker
-leaves BASIC's zero page, which Quit puts back, alone).
+leaves $BA alone; since v0.2 Quit resets the C64).
 Run from the project folder:  python tools/test_packed.py [c64|ntsc]
 Needs a debug build (build.bat; this test packs it itself) and Exomizer
 (on the PATH, or C:\\bin\\exomizer.exe)."""
@@ -73,7 +73,11 @@ try:
     e.keys([(KEY["Q"], 0)])
     check("Q (with changes) asks first", "QUIT WITHOUT SAVING" in e.screen_rows()[12].upper(),
           e.screen_rows()[12])
-    e.keys([(KEY["Y"], 0)], settle=2.0)
+    try:                                        # (Y resets the C64, which
+        e.keys([(KEY["Y"], 0)], settle=0, timeout=5)    # clears the mailbox:
+    except TimeoutError:                        # the key is never counted)
+        pass
+    time.sleep(3)
     check("back in BASIC: ROMs in ($01 = $37)", e.peek(0x01)[0] == 0x37, hex(e.peek(0x01)[0]))
     check("BASIC zero page: $13 = 0, $16 = $19, $18 = 0",
           (e.peek(0x13)[0], e.peek(0x16)[0], e.peek(0x18)[0]) == (0, 0x19, 0),

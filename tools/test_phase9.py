@@ -56,7 +56,7 @@ def detect(e):
     banks = v(e, "reu_banks")
     docs = v(e, "reu_docs"), v(e, "buf_top", 2)
     e.keys([(KEY["F1"], 0), (KEY["I"], 0)], settle=1.0)  # Stats shows it
-    row = e.screen_rows()[12].upper()
+    row = e.screen_rows()[8].upper()      # (Stats: the REU line, v0.2 row 8)
     e.keys([(KEY["SPACE"], 0), (KEY["X"], 0)])
     return banks, row, docs
 

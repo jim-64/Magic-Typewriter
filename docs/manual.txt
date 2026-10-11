@@ -1,7 +1,7 @@
 @banner yellow MAGIC TYPEWRITER
 {lgrey}
 {lgreen}A text editor for the Commodore 64.{lgrey}
-Version 0.1, an early version for review.
+Version 0.2, an early version for review.
 
 This manual is itself a Magic Typewriter document. Read it with {rvs}F5{off} (page down) and {rvs}F3{off} (page up), or the cursor keys. Press {rvs}HOME{off} twice to come back to the top.
 
@@ -73,9 +73,11 @@ Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or
 {yellow}E{lgrey} Mode: insert or overwrite.
 {yellow}F{lgrey} Mark key: Commodore or left shift.
 {yellow}G{lgrey} Background, {yellow}H{lgrey} Text color: any of the 16 colors. The text color is for text without color codes.
-{yellow}I{lgrey} Stats: characters, words, sentences, room left.
+{yellow}I{lgrey} Stats: characters, words, sentences, bytes free.
 {yellow}J{lgrey} Save defaults: keeps all settings in MAGIC T DEFAULTS on the disk the program came from, for every start.
-{yellow}Q{lgrey} Quit: back to BASIC (it asks first if there are changes).
+{yellow}Q{lgrey} Quit: resets the C64, back to BASIC (it asks first if there are changes).
+
+The foot of the main menu lists the {rvs}CTRL{off} keys and the function keys.
 
 The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the disk directory and a disk command. The {yellow}Save{lgrey} menu has the format, the file type and the device too. A setting that other settings decide for you shows in [brackets].
 
@@ -89,7 +91,7 @@ The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the 
 
 {lgreen}Tip:{lgrey} work in magic, and save a PETSCII copy when the text is done.
 
-A magic file is recognised whatever the Load format says. For the fastest loads set the Load format to {yellow}MAGIC{lgrey}: then a fast loader cartridge speeds up magic files on every drive, SD2IEC too. (A SEQ file then says 64, FILE TYPE MISMATCH: choose PETSCII or ASCII for those.) A document saves back in the format it came in. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
+The Load format starts as {yellow}MAGIC{lgrey}: magic files load the way fast loader cartridges speed up, on every drive, and any other file, SEQ or PRG, loads as PETSCII text. Choose {yellow}ASCII{lgrey} for files from a PC. A document saves back in the format it came in (magic only if it had the magic header); the Save menu's Format changes that. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
 
 {yellow}Tape:{lgrey} choose TAPE as the device. Magic documents become program files, PETSCII and ASCII data files. A box asks you to press PLAY (or RECORD and PLAY); {rvs}RUN/STOP{off} gives up. A blank name loads the next file.
 

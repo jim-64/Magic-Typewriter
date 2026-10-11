@@ -124,9 +124,8 @@ ccol            = $16           ; color RAM of the cursor
 work            = $18           ; 16-bit scratch
 text_end        = $1a           ; end of the text; the clipboard is above it
 
-; All of $02 up to ZP_END is BASIC's too. Start-up keeps a copy of it and
-; quit puts it back (BASIC keeps some values there between commands).
-; Move ZP_END up when adding zero page variables.
+; All of $02 up to ZP_END is BASIC's too (Quit resets the C64, so BASIC
+; gets it back fresh). Move ZP_END up when adding zero page variables.
 ZP_START        = $02
 ZP_END          = $1c           ; the first byte we do not use
 
@@ -203,57 +202,23 @@ toggle_charset
         rts
 
 ;----------------------------------------------------------------------------
-; quit - undo everything we changed and return to BASIC's READY prompt.
-; Can be jumped to from anywhere: BASIC's warm start resets the stack.
-;
-; It ends with a NEW, as the program in BASIC memory is no longer whole:
-; the run-time tables lie over the stored copy of the editor, so RUN would
-; crash. Load it again to restart.
+; quit - back to BASIC by resetting the C64, as the reset button would
+; (Jim, v0.2: it frees the room a step-by-step restore took). The reset
+; puts everything back - VIC, CIAs, SID, vectors, BASIC - and ends at the
+; power-up screen with READY. The document and the program are gone (Quit
+; always ended with a NEW: load the program again to restart).
 ;----------------------------------------------------------------------------
-BASIC_NEW       = $a644         ; BASIC's NEW, after its syntax check
-BASIC_WARM      = $a002         ; vector to BASIC's warm start (the one that
-                                ; RUN/STOP + RESTORE uses)
+RESET_VECTOR    = $fffc         ; the KERNAL ROM's reset vector
 quit
--       lda key_now+7           ; wait until RUN/STOP is let go, so BASIC
-        bmi -                   ; doesn't see it and print BREAK
-
         sei
-        jsr restore_irq
-        jsr restore_keyboard
-        lda #0
-        sta VIC_SPR_ENABLE
-        lda #CTRL1_25ROWS
-        sta VIC_CTRL1
-        lda #CSEL_40
-        sta VIC_CTRL2
-        lda #MEMPTR_UPPER
-        sta VIC_MEMPTR
-        lda #LIGHT_BLUE         ; BASIC's power-on colors
-        sta VIC_BORDER
-        lda #BLUE
-        sta VIC_BG0
-        lda #ROMS_ALL           ; BASIC and KERNAL ROMs back in
-        sta CPU_PORT
-
-        ; BASIC's zero page back as it was. BASIC keeps a few values there
-        ; between commands (e.g. $13, the current I/O channel, and $18,
-        ; used with its string stack); without them it forgets the RETURN
-        ; after a command, or gives ?FORMULA TOO COMPLEX for "A"+"B".
-        ldx #ZP_END-ZP_START-1
--       lda basic_zp,x
-        sta ZP_START,x
-        dex
-        bpl -
-        cli
-        jsr KERNAL_CLRSCR
-        jsr BASIC_NEW           ; forget the program (see above)
-        jmp (BASIC_WARM)        ; READY.
+        lda #ROMS_ALL           ; the ROMs in, so the CPU takes the ROM's
+        sta CPU_PORT            ; reset vector, not the RAM under it
+        jmp (RESET_VECTOR)
 
 ;----------------------------------------------------------------------------
 ; Variables
 ;----------------------------------------------------------------------------
 load_device     !byte 0         ; $BA at start-up
-basic_zp        !fill ZP_END-ZP_START, 0 ; BASIC's zero page at start-up
 text_bg         !byte BLACK     ; text background color (setting)
 text_color      !byte LIGHT_GREY ; default text color (setting)
 
@@ -306,15 +271,16 @@ REUDOC_SIZE     = reudoc_end - REUDOC
 tables          = high_load
 ctype           = tables                ; 256: what each byte of text is
 scrcode         = ctype + 256           ; 256: the screen code of each byte
-row_off_lo      = scrcode + 256         ; per screen row (MROWS each):
-row_off_hi      = row_off_lo + MROWS    ;   where it starts in the text,
-row_color       = row_off_hi + MROWS    ;   the color there,
-row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
-row_len         = row_rvs + MROWS       ;   how many cursor places it has
-dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
-prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
-border_code     = prompt_save + 240     ; the border code for this video
-                                        ; system (startup.asm puts it here)
+border_code     = scrcode + 256         ; the border code for this video
+                                        ; system (startup.asm puts it here).
+                                        ; Right after the two 256-byte
+                                        ; tables it starts where the lower
+                                        ; part ends in its page, so its loops
+                                        ; (kept within a page: same_page)
+                                        ; seldom need padding (v0.2).
+                                        ; The rest of the tables come after
+                                        ; it: see below startup.asm, where
+                                        ; its size (BORDER_SIZE) is known.
 
 ;----------------------------------------------------------------------------
 ; ... and last the start-up code, which runs once from where the PRG file
@@ -331,11 +297,21 @@ HIGH_SIZE       = high_end - HIGH_CODE  ; (the editor alone: reudoc follows it)
         !error "The code under the KERNAL ROM has grown into the vectors at $fffa"
 }
 
+; The rest of the tables, after the border code (defined here, below
+; startup.asm, because the size checks below need BORDER_SIZE known)
+row_off_lo      = border_code + BORDER_SIZE ; per screen row (MROWS each):
+row_off_hi      = row_off_lo + MROWS    ;   where it starts in the text,
+row_color       = row_off_hi + MROWS    ;   the color there,
+row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
+row_len         = row_rvs + MROWS       ;   how many cursor places it has
+dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
+prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
+
 !ifdef MOUSE_TRACE {
-mouse_trace     = border_code + BORDER_SIZE ; 256: mouse trace (input.asm)
+mouse_trace     = prompt_save + 240     ; 256: mouse trace (input.asm)
 tables_end      = mouse_trace + 256
 } else {
-tables_end      = border_code + BORDER_SIZE
+tables_end      = prompt_save + 240
 }
 
 ; The lower part and the tables must end before the sprite blocks at $3e80.

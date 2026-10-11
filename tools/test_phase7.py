@@ -164,10 +164,10 @@ try:
     before = e.text()[0]
     e.move_to(*cell_xy(5, 5))
     e.mouse([(0, 0, RIGHT), (0, 0, 0)])
-    check("right button: the menu", "MAGIC TYPEWRITER" in e.screen_rows()[5].upper())
+    check("right button: the menu", "MAGIC TYPEWRITER" in e.screen_rows()[1].upper())
     e.mouse([(0, 0, RIGHT), (0, 0, 0)])
     check("right button again: closed, text as it was",
-          "MAGIC TYPEWRITER" not in e.screen_rows()[5].upper() and e.text()[0] == before
+          "MAGIC TYPEWRITER" not in e.screen_rows()[1].upper() and e.text()[0] == before
           and v(e, "ptr_next_on") == 1)
 
     # Dragging past the bottom of the text scrolls, marking as it goes

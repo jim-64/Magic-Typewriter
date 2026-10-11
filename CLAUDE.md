@@ -71,6 +71,8 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   **Version 0.1** (2026-10-01): an early release for friends to review before a public one. The
   version shows in the main menu's title (`t_main` in menu.asm, "MAGIC TYPEWRITER V0.1") and in
   the manual (`docs/manual.txt`, then `python tools/make_manual.py`): change both for a release.
+  **Version 0.2** (2026-10-10): Jim had sent v0.1 to friends, so the changes below (from the
+  2026-10-07/09 block on) go out as 0.2: "MAGIC TYPEWRITER V0.2" and the manual's version line.
   **C64 Ultimate:** 192.168.1.64, firmware 1.1.0, core 1.49, **NTSC**. `.mcp.json` has
   `C64U_HOST` (the bridge keeps VICE as its starting backend; `c64_select_backend` switches;
   needs a Claude Code restart). Its REST API works directly too: `POST /v1/runners:run_prg`
@@ -193,7 +195,7 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     (All redrawn again on 2026-10-08, see below.)
   - **SpeedScript** gone from the Format values.
   - **SHIFT + F3 / F5:** top / end of the document.
-  - **The main menu lists the CTRL keys** at its foot (rows 19–22; the panel is now rows 4–23).
+  - **The main menu lists the CTRL keys** at its foot (rows 19–22; the panel is now rows 4–23; v0.2: rows 16–23 with the function keys, the panel rows 0–24).
   - **SD2IEC opens a PRG as SEQ** (no "64, FILE TYPE MISMATCH"), so the manual showed its load
     address and header as text (`@mtw1m@oaa...`). `convert_start` now skips a leading $00 $40 when
     our header or a case code follows. And **VICE's file system drive answers "62, FILE NOT FOUND"**
@@ -238,6 +240,33 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     reliable way for the program to tell VICE from a real C64, and VICE's speed depends on the
     PC's mouse anyway. **Jim: keep the speed as it is, a good compromise.** A speed setting in
     the menu would be the way if it comes up again (needs room).
+  **Jim, 2026-10-10 - version 0.2 (branch `v0.2`, after `fastload`):**
+  - **Stats:** "BYTES FREE" (was "FREE").
+  - **The main menu lists the CTRL keys and the function keys** at its foot (Jim's "option A":
+    two blocks of two columns, 8 rows). For the room, **the menu panel fills the screen**: rows
+    0-24 for every menu (`MENU_TOP` 0, `MENU_ROWS` 25). The lines are one string after another
+    in `t_keys` (no pointer table). Three columns side by side, Jim's first idea, would have
+    needed ~49 columns.
+  - **Quit resets the C64** (`jmp ($fffc)` with the ROMs in): it ends at the power-up screen.
+    That replaced the step-by-step restore (restore_irq, restore_keyboard, the copy of BASIC's
+    zero page) and freed ~125 bytes. Jim had offered to drop the clean Quit for room.
+  - **The Load format starts as MAGIC**, and with it any file loads (Jim's rules): one of ours
+    ($4000) the fast way; a PRG with another address as PETSCII text whose first 2 characters
+    are those bytes; a SEQ file (the drive refuses the PRG open: 64, or 62 from VICE's folder
+    drive) opened as SEQ. A file without the magic header sets the Save format to PETSCII, so a
+    BBS file is saved back plain; the Save menu's Format can make it magic. See Formats.
+  - **Room:** `name_buf` and `num_text` moved into BASIC's input buffer ($0238-$0258), and the
+    run-time tables now put `border_code` right after `ctype`/`scrcode`: there it starts where
+    the lower part ends in its page, so its page-bound loops need no padding (240 -> 218
+    bytes). The tables after it are defined below `!source "src/startup.asm"` in main.asm,
+    where BORDER_SIZE is known (the size check `!if` needs it in ACME's first pass).
+  - **Where it stands (2026-10-11):** v0.2 is committed on branch `v0.2` (which has `fastload`
+    under it); the whole test suite passes. **Waiting for Jim's real-hardware test** of
+    `build\magic-typewriter-v0.2.d64` (packed release disk; also the file for the GitHub
+    release): the menu with the key list, BYTES FREE, the Load format MAGIC loading a plain SEQ
+    file whole (SD2IEC, and a 1541/1581 if at hand), Quit resetting. **Then:** merge `v0.2` into
+    `main`, push, and Jim makes the v0.2 release on GitHub with that disk. (v0.1 was never
+    released on GitHub; Jim sent it to friends.)
 
 ## Working with Jim
 
@@ -422,7 +451,8 @@ clashes with the bridge on 6502) and speaks the binary monitor protocol; `mtest.
 through the test mailbox (keys, screen text, buffer text, labels from `build/main.lbl`). Tests:
 `python tools/test_phase3.py [c64|ntsc]` (editing regression), `python tools/test_phase4_load_save.py
 [c64|ntsc]`, `python tools/test_phase4_new_doc.py [c64|ntsc] [ro]`, `python tools/test_phase5.py [c64|ntsc]`,
-`python tools/test_quit.py [c64|ntsc]` (RESTORE, and a healthy BASIC after Quit),
+`python tools/test_quit.py [c64|ntsc]` (RESTORE, and after Quit - a reset since v0.2 - the power-up
+screen and a healthy BASIC),
 `python tools/test_phase6.py [c64|ntsc]` (word wrap checked against a Python model of the wrap rule,
 paging both ways, reflow, wrap off, marker, and timings in a 30 KB document).
 **Run them all after any change to the editor** — test_phase3 caught a real regression in phase 5.
@@ -483,7 +513,10 @@ under the main menu, SHIFT + F3/F5 with and without marking, SHIFT + F7 switchin
 screen's rows checked), SHIFT + F1 as a color key (the default color untouched, typed text in
 the new color, one code left in the text after two presses, CTRL-Z), a color key right after a
 color code (that code moves after the cursor), F1 alone still the menu, a PRG of ours read as a SEQ file as an SD2IEC gives it, and loading from
-VICE's file system drive, which answers 62).
+VICE's file system drive, which answers 62; v0.2: the CTRL and function keys at the main menu's
+foot, the Load format starting as MAGIC, the manual by KERNAL LOAD with it, a SEQ file loading
+with it (Save format PETSCII), another program's PRG keeping its 2 address bytes as text (dropped
+with PETSCII), and a 2-byte PRG).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -581,12 +614,12 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 
 | Address | What |
 |---|---|
-| $02–$1B | zero page (list in `src/main.asm`); BASIC's too: start-up copies it, Quit puts it back |
-| $0200–$0237 | BASIC's input buffer, used for work bytes that need no starting value (so they take no room in the program): `pot_k`/`pot_p1`/`pot_p2` and pot_delta's temporaries ($0200–$0209), `status_raw` ($0210–$0237). Neither we nor the KERNAL's disk and tape routines use it otherwise; BASIC only after Quit. $0238–$0258 still free |
+| $02–$1B | zero page (list in `src/main.asm`); BASIC's too (Quit resets the C64, v0.2) |
+| $0200–$0237 | BASIC's input buffer, used for work bytes that need no starting value (so they take no room in the program): `pot_k`/`pot_p1`/`pot_p2` and pot_delta's temporaries ($0200–$0209), `status_raw` ($0210–$0237), `name_buf` ($0238–$024F) and `num_text` ($0250–$0258) (v0.2). Neither we nor the KERNAL's disk and tape routines use it otherwise; BASIC only after Quit. All in use |
 | $02C0–$02FE | debug test mailbox (debug builds only) |
 | $0400–$07FF | screen |
 | $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, undo, data; then the stored copies of the editor and of reudoc.asm, then startup.asm (with the four copies of the border code) |
-| after the lower part | run-time tables (ctype, per-row arrays, prompt save area, `border_code`: this system's strip code), **over the stored copy** once it is copied |
+| after the lower part | run-time tables (ctype, scrcode, `border_code`: this system's strip code, the per-row arrays, prompt save area), **over the stored copy** once it is copied |
 | $3E80–$3FFF | sprite blocks 250–255 (**$3FFF must be $00**: the idle-graphics byte drawn in the opened borders) |
 | $4000–$CBFF | text buffer (35 KB), clipboard at its top (none with an REU: it is in the REU). `startup.asm` runs from here once (the PRG file carries it there), before the document takes the room |
 | $CC00–$CFFF | **the undo log** (1 KB, phase 12: `undo_base`, taken from the top of the buffer at start-up; `buf_top` = $CC00) |
@@ -609,12 +642,14 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (2026-10-08, after the badge highlight color and RETURN in reversed text): debug tables
-  end $3E6B, so **only 21 bytes free below the sprite blocks in debug builds** (the median mouse
-  filter needed `status_raw` moved to $0210 to fit) (release: ~600); the editor + find end $FFF3
-  (**7 bytes free under the KERNAL**); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm
-  is ~1.2 KB. **The next feature needs room first** — ideas: the 63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF
-  must stay 0), BASIC's input buffer $0200–$0258 for variables, or (ask Jim) moving BUF_START up.
+- Space (v0.2, 2026-10-10): debug tables end $3E7B, so **only 5 bytes free below the sprite
+  blocks in debug builds** (release: ~580); the editor + find end $FFF3 (**7 bytes free under the
+  KERNAL**); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. BASIC's
+  input buffer $0200-$0258 is all in use now. **The next feature needs room first** — ideas: the
+  63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF must stay 0), $02A7-$02B3 (unused by the
+  KERNAL; the debug mailbox starts at $02B4), or (ask Jim) moving BUF_START up. **Watch the
+  border code's padding:** it starts at `high_load` + 512, so if the lower part's end moves past
+  ~$xx26 in its page, its loops may need same_page padding again (up to ~20 bytes).
   Earlier: debug build, phase 11b: lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
   build adds a 256-byte mouse trace); editor + find $E000–$FEE4; reudoc.asm $C000–$CBAC. Phase 8 took about 4 KB, phase 9's REU part about 0.6 KB, phase 10
   about 0.9 KB, phase 11 about 1.3 KB, 11b ~2.9 KB in reudoc.asm and ~0.3 KB elsewhere (after
@@ -626,8 +661,8 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   mailbox, load_defaults) and jumps back to `start_done` (editor_init, main loop). The sprite
   images live there too (init_sprites copies them to $3E80). **Nothing in startup.asm may be
   called later** — the document overwrites it. The build stops if it would start below $4000.
-- **Quit ends with a BASIC NEW** (the tables overwrite the stored copy, so RUN would crash) and BASIC's
-  warm start. Restarting means loading the program again. (`SYS 2061` after Quit would crash too.)
+- **Quit resets the C64** (v0.2; before: a BASIC NEW and warm start). Restarting means loading the
+  program again.
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
 - Zero page: we use $02–$1B (`ZP_END` in main.asm; move it up when adding zero page). Leave the KERNAL's
   area alone.
@@ -1306,7 +1341,7 @@ Editing rules:
 | Key | Item | Values |
 |---|---|---|
 | A | Load | Asks for a file name. On tape, a blank name loads the next file found |
-| B | Format | magic, **petscii**, ascii |
+| B | Format | **magic** (v0.2; was petscii), petscii, ascii |
 | C | Device | **8**, tape, 9, 10, 11, 12, 13, 14 |
 | D | Disk directory | |
 | E | Disk command | |
@@ -1374,10 +1409,14 @@ separately. "magic" = the Magic Typewriter format (see Formats).
   keeps values there between commands ($13 = I/O channel, $18 = string stack) and without them forgot
   the RETURN after a command and gave ?FORMULA TOO COMPLEX for `"A"+"B"`. Then NEW (`JSR $A644`) and
   BASIC's warm start (`JMP ($A002)`, as RUN/STOP+RESTORE), which resets the rest and prints READY.
+  **v0.2 (Jim): Quit resets the C64 instead** (`quit` in main.asm: SEI, $01 = $37, `JMP ($FFFC)`):
+  the reset puts VIC, CIAs, SID, vectors and BASIC back, and shows the power-up screen. It freed
+  ~125 bytes. test_quit checks the power-up screen and a working BASIC after it.
 
 ### As built (phase 8, "Menus" section of `src/menu.asm`)
 
-- **One fixed panel for every menu:** rows 4–23 (phase 12; was 4–19), columns 5–34, so going from
+- **One fixed panel for every menu:** rows 0–24 (v0.2, for the key list; was 4–23, earlier 4–19),
+  columns 5–34, so going from
   one menu to another only redraws the panel. Title, a line, then one row per item: letter, name and,
   for a setting, `: VALUE`. The document is drawn afresh when the menus close (`top_known` = 0,
   `show_cursor_at cur_row`), since a setting may have changed how it looks.
@@ -1594,7 +1633,7 @@ PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arr
 - **SpeedScript**: PRG of **screen codes** with a special character as the return marker. It keeps
   SpeedScript's own load address, not $0000.
   **Verify the return code and load address against real SpeedScript files before implementing.**
-- Format chosen in the Load/Save menus; Load default PETSCII, Save default magic (see Menus).
+- Format chosen in the Load/Save menus; Load default magic (v0.2; was PETSCII), Save default magic (see Menus).
 - Saving as plain PETSCII keeps colors but not the background or default text color; text with no color
   code will show in whatever color the reading program uses.
 - Saving as ASCII or SpeedScript loses colors (and, for ASCII, reverse). If the document has any, warn:
@@ -1617,11 +1656,19 @@ PETSCII/magic saves). Test: VICE's printer 4 with the raw driver writes what arr
   manual was read byte by byte, without Epyx FastLoad (Jim, real C64 + SD2IEC/Epyx cartridge: the
   program 5 s, the manual 15 s). Measured in VICE (NTSC, 1541 true drive, the Epyx .crt from Jim's
   `G:\My Drive\retro computers 2\Projects\sd2iec cart\freeload\EPYX Fastload-531014.crt`): the
-  manual 22 s without the cartridge, 7–8 s with it, either format (a 1541 always reaches the PRG way). A SEQ file with
-  format MAGIC: "64, FILE TYPE MISMATCH" on a 1541, document untouched; on an SD2IEC it would open
-  as a PRG and lose its first 2 bytes (accepted: choose PETSCII/ASCII for SEQ files). With another
-  Load format the SD2IEC still reads magic files byte by byte (the header check in
-  `convert_start` keeps that right, only slow). **VICE + Epyx:** start with `-cartcrt <crt>`;
+  manual 22 s without the cartridge, 7–8 s with it, either format (a 1541 always reaches the PRG way).
+  With another Load format the SD2IEC still reads magic files byte by byte (the header check in
+  `convert_start` keeps that right, only slow).
+  **v0.2 - MAGIC is the default, and loads any file** (Jim's rules; `load_file`): `.prg_way` first;
+  if the drive refuses (`.mismatch`: 64, or 62 from VICE's folder drive) `.seq_way` once (and the
+  other formats, which start with `.seq_way`, try `.prg_way` once the same way). A PRG whose
+  address isn't $4000: with MAGIC its 2 bytes are text (`.kept`; `.opened` puts them first, and
+  ends there if READST said the file ended with them - a 2-byte file); with the other formats
+  they are dropped as a load address, as before. On an SD2IEC a SEQ file opens as a PRG, so this
+  is what keeps its text whole. `convert_start` reads MAGIC as PETSCII until the header says
+  magic, so a file without the header sets the Save format to PETSCII. A plain SEQ file on a
+  1541 costs one refused open (and the directory read for the size) before it loads. Tape is
+  unchanged: with MAGIC it looks for program files only, so PETSCII data files need PETSCII. **VICE + Epyx:** start with `-cartcrt <crt>`;
   VICE's autostart then doesn't RUN the program (type RUN into the keyboard buffer). Time loads
   with CIA 1's TOD clock: the frame counter stops during disk work (our IRQs are off).
 - **SEQ or PRG:** Load opens `name,S,R`; on "64, FILE TYPE MISMATCH" it is a PRG: it opens

@@ -67,6 +67,14 @@ disk = os.path.join(WORK, "p12.d64")
 shutil.copy(os.path.join(PROJ, "build/magictypewriter.d64"), disk)
 subprocess.run([C1541, "-attach", disk, "-write", os.path.join(PROJ, "test", "manual.prg"), "manseq,s"],
                capture_output=True)
+# ... and two PRG files of other programs (v0.2: with the Load format MAGIC
+# a file that isn't ours is PETSCII text from its first byte): one at $0801
+# with HELLO after its load address, one of only 2 bytes ("AB")
+for name, data in (("foreign", b"\x01\x08HELLO\r"), ("tiny", b"AB")):
+    f = os.path.join(WORK, name + ".prg")
+    open(f, "wb").write(data)
+    subprocess.run([C1541, "-attach", disk, "-write", f, name + ",p"], capture_output=True)
+long_text = open(os.path.join(PROJ, "test", "long.seq"), "rb").read()
 
 vice = start_vice(PRG, disk=disk, model=model)
 try:
@@ -75,6 +83,7 @@ try:
 
     # The Format setting: three values, no SpeedScript
     key(e, "F1"); key(e, "A")
+    check("v0.2: the Load format starts as MAGIC", v(e, "load_format") == 0, v(e, "load_format"))
     seen = []
     for _ in range(4):
         seen.append(v(e, "load_format"))
@@ -85,9 +94,12 @@ try:
     e.poke(e.lab["load_format"], [1])
     key(e, "X")
     r = rows(e)
-    check("the main menu: the CTRL keys at its foot",
-          "CTRL+ A MARK ALL" in r[20] and "X CUT" in r[21] and "C COPY" in r[22] and "Z UNDO" in r[23],
-          r[19:25])
+    # (v0.2, Jim: the CTRL keys and the function keys, rows 16-23)
+    want = ["CTRL+ X CUT   A MARK ALL", "C COPY  F FIND", "V PASTE S SAVE", "Z UNDO",
+            "F1 MENU       F2 TEXT COLOR", "F3 PAGE UP    F4 TOP",
+            "F5 PAGE DOWN  F6 BOTTOM", "F7 INSERT     F8 WORD WRAP"]
+    check("the main menu: the CTRL and function keys at its foot",
+          all(w in r[16 + i] for i, w in enumerate(want)), r[15:25])
     key(e, "X")
 
     # SHIFT + F5: the end, on the bottom row; SHIFT + F3: the top
@@ -160,7 +172,7 @@ try:
     check("CTRL-2 right after a red code: AB [white] X [red] HELLO, nothing left over",
           e.text()[0] == b"AB" + bytes([CODES[1]]) + b"X" + bytes([CODES[2]]) + b"HELLO" + CR, e.text()[0])
     key(e, "F1")
-    check("F1 alone: still the menu", "MAGIC TYPEWRITER" in rows(e)[5], rows(e)[5])
+    check("F1 alone: still the menu", "MAGIC TYPEWRITER" in rows(e)[1], rows(e)[1])
     key(e, "X")
 
     # RETURN in reversed text (Jim, 2026-10-08): the rest of the line moves
@@ -213,17 +225,27 @@ try:
     t, cur = e.text()
     check("Load format MAGIC: the manual comes by KERNAL LOAD (fast loaders)",
           t == manual_text and v(e, "load_fast") == 1, (len(t), v(e, "load_fast")))
-    # ... a SEQ file with format MAGIC: refused, the document as it was
+    # v0.2: MAGIC is the Load format a session starts with, and any other
+    # file loads as PETSCII text (Jim). A SEQ file: the drive refuses the
+    # PRG open (64), so it is opened as SEQ - and saved back plain.
     e.poke(e.lab["load_format"], [0])
-    e.poke(e.lab["modified"], [0])
-    before = e.text()[0]
-    key(e, "F1"); key(e, "A"); key(e, "A")
-    e.keys([(KEY["DEL"], 0)] * 16)
-    e.type_text("long")
-    key(e, "RETURN", settle=3)
-    check("... a SEQ file with format MAGIC: 64, FILE TYPE MISMATCH, the document untouched",
-          any("64, FILE TYPE MISMATCH" in r for r in rows(e)) and e.text()[0] == before, rows(e)[10:14])
-    key(e, "SPACE")
+    load(e, "long")
+    t, cur = e.text()
+    check("... a SEQ file with format MAGIC: loaded as PETSCII, all of it",
+          t == long_text and v(e, "save_format") == 1, (len(t), t[:16], v(e, "save_format")))
+    # A PRG file of another program: its 2 "load address" bytes are text
+    e.poke(e.lab["load_format"], [0])
+    load(e, "foreign")
+    check("... another program's PRG: its first 2 bytes kept as text",
+          e.text()[0] == b"\x01\x08HELLO\r" and v(e, "save_format") == 1, (e.text()[0], v(e, "save_format")))
+    e.poke(e.lab["load_format"], [1])
+    load(e, "foreign")
+    check("... with the Load format PETSCII: its load address dropped, as before",
+          e.text()[0] == b"HELLO\r", e.text()[0])
+    e.poke(e.lab["load_format"], [0])
+    load(e, "tiny")
+    check("... a PRG of only 2 bytes: they are the whole text",
+          e.text()[0] == b"AB", e.text()[0])
 finally:
     try:
         e.m.quit()

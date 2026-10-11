@@ -17,7 +17,7 @@ def check(name, cond, info=""):
     ok = ok and cond
 
 RED = 0x1c
-TITLE_ROW, ITEM_ROW = 5, 7
+TITLE_ROW, ITEM_ROW = 1, 3      # (v0.2: the panel fills the screen)
 
 def load_doc(e, doc):
     te = int.from_bytes(e.peek(0x1a, 2), "little")
@@ -136,7 +136,7 @@ try:
     # Submenus: A opens Load, X backs out
     key(e, "A")
     r = rows(e)
-    check("A: the Load menu", "LOAD" in r[TITLE_ROW] and "MAGIC" not in r[TITLE_ROW] and "B FORMAT: PETSCII" in r[ITEM_ROW + 1]
+    check("A: the Load menu", "LOAD" in r[TITLE_ROW] and "MAGIC" not in r[TITLE_ROW] and "B FORMAT: MAGIC" in r[ITEM_ROW + 1]
           and "C DEVICE: 8" in r[ITEM_ROW + 2], r[TITLE_ROW:ITEM_ROW + 6])
     check("... no leftovers of the main menu in the panel", r[ITEM_ROW + 7].strip("\u2502 ") == "" or "EXIT" not in r[ITEM_ROW + 11],
           r[ITEM_ROW + 6:ITEM_ROW + 12])
@@ -315,7 +315,7 @@ check("PHASE8 on disk: a PRG ($4000), the magic header, the case code, the docum
       saved[:2] == b"\x00\x40" and saved[2:6] == b"\x00MTW" and saved[23:] == doc, saved[:26])
 d = read_seq("magic t defaults")
 exp = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + 13]) + bytes(0x40 + x for x in
-      [3, 15, 1, 0, 0, 1, 1, 8, 0, 0, 8, 0, 4]) + b"\r"
+      [3, 15, 1, 0, 0, 1, 0, 8, 0, 0, 8, 0, 4]) + b"\r"     # (Load format magic: v0.2)
 check("MAGIC T DEFAULTS on disk: the header with every setting", d == exp, (d, exp))
 check("SAMPLE still on disk (the refused 'SA*' scratched nothing)", len(read_seq("sample")) > 20)
 

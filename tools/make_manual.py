@@ -35,7 +35,7 @@ SETTINGS = [0,      # background: black
             1,      # wordwrap: on
             0,      # mode: insert
             1,      # mark key: C=
-            1, 8,   # Load format PETSCII, device 8
+            0, 8,   # Load format magic (v0.2), device 8
             0, 0, 8,  # Save format magic, File type SEQ, device 8
             0, 4]   # Print: no ASCII, device 4
 HEADER = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + len(SETTINGS)]) + \

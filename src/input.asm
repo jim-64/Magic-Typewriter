@@ -113,22 +113,12 @@ key_q_mods      !fill KEY_QUEUE_SIZE, 0 ; ... and modifiers
 key_q_head      !byte 0         ; next free slot (written by the IRQ)
 key_q_tail      !byte 0         ; next event to read (main program)
 
-old_nmi         !word 0         ; the NMI vector before we started
-
 ; $DC00 value that selects each row
 row_select      !byte $fe, $fd, $fb, $f7, $ef, $df, $bf, $7f
 ; one bit for each bit number
 bit_mask        !byte $01, $02, $04, $08, $10, $20, $40, $80
 ; per row: the bits that are NOT modifier keys (modifiers make no events)
 not_modifier    !byte $ff, $7f, $ff, $ff, $ff, $ff, $ef, $db
-
-; restore_keyboard - put the NMI vector back (for Quit). IRQs off.
-restore_keyboard
-        lda old_nmi
-        sta NMI_VECTOR
-        lda old_nmi+1
-        sta NMI_VECTOR+1
-        rts
 
 ; nmi_handler - the RESTORE key. Just counts it; scan_keyboard turns it
 ; into a KEY_RESTORE event (treated like RUN/STOP). INC changes no

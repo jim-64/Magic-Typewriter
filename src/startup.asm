@@ -15,11 +15,6 @@ startup
         ; device the program was loaded from (used for MAGIC T DEFAULTS).
         lda LAST_DEVICE
         sta load_device
-        ldx #ZP_END-ZP_START-1  ; a copy of BASIC's zero page, for quit
--       lda ZP_START,x
-        sta basic_zp,x
-        dex
-        bpl -
 
         sei                   ; no interrupts while we set things up
         cld
@@ -530,11 +525,7 @@ init_keyboard
 
         ; RESTORE makes an NMI. The KERNAL's NMI handler would warm-start
         ; BASIC on RUN/STOP + RESTORE and lose the document, so send it to
-        ; our own handler instead.
-        lda NMI_VECTOR
-        sta old_nmi
-        lda NMI_VECTOR+1
-        sta old_nmi+1
+        ; our own handler instead. (Quit's reset puts the KERNAL's back.)
         lda #<nmi_handler
         sta NMI_VECTOR
         lda #>nmi_handler

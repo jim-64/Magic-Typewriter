@@ -427,8 +427,8 @@ MI_RUN          = 3             ; runs a routine, then shows the menu again
 MI_DO           = 4             ; closes the menus, then runs a routine
 MI_EXIT         = 5             ; back one level
 
-MENU_TOP        = 4             ; the panel: rows 4-24 ...
-MENU_ROWS       = 21
+MENU_TOP        = 0             ; the panel: rows 0-24 (the whole height:
+MENU_ROWS       = 25            ; the main menu's keys need it - v0.2) ...
 MENU_LEFT       = 5             ; ... and columns 5-34
 MENU_WIDTH      = 30
 MENU_TITLE_ROW  = MENU_TOP + 1
@@ -680,32 +680,34 @@ menu_draw
         inx
         jmp .item
 
-; .ctrl_keys - the main menu's foot: a line, then the CTRL keys (Jim)
+; .ctrl_keys - the main menu's foot: a line, then the CTRL keys and the
+; function keys (Jim). The lines of t_keys follow one another, each ending
+; in a 0: box_print leaves X = the length of the one it printed.
 .ctrl_keys
-        ldx #MENU_CTRL_ROW-1
+        ldx #MENU_KEYS_ROW-1
         lda #$6b
         ldy #$73
         jsr box_edge
-        ldx #0
+        lda #<t_keys
+        sta .line
+        lda #>t_keys
+        sta .line+1
+        ldx #MENU_KEYS_ROW
 -       stx .i
-        txa
-        clc
-        adc #MENU_CTRL_ROW
-        tax
         jsr box_row_ptrs
-        lda .i
-        asl
-        tax
-        lda ctrl_lines,x
-        pha
-        lda ctrl_lines+1,x
-        tax
-        pla
+        lda .line
+        ldx .line+1
         ldy #2
         jsr box_print
-        ldx .i
+        txa                     ; the next line starts just after the 0
+        sec
+        adc .line
+        sta .line
+        bcc +
+        inc .line+1
++       ldx .i
         inx
-        cpx #4
+        cpx #MENU_KEYS_ROW+KEYS_LINES
         bcc -
         rts
 
@@ -716,13 +718,18 @@ menu_draw
 .what   !word 0
 .i      !byte 0
 .col    !byte 0
+.line   !word 0
 
-MENU_CTRL_ROW   = MENU_TOP + 16 ; the CTRL keys: rows 20-23
-ctrl_lines      !word t_ctrl1, t_ctrl2, t_ctrl3, t_ctrl4
-t_ctrl1         !scr "ctrl+ a mark all   f find", 0
-t_ctrl2         !scr "      x cut        v paste", 0
-t_ctrl3         !scr "      c copy       s save", 0
-t_ctrl4         !scr "      z undo", 0
+MENU_KEYS_ROW   = MENU_TOP + 16 ; the keys: rows 16-23, below the 12 items
+KEYS_LINES      = 8             ; (at most 27 characters a line)
+t_keys          !scr "ctrl+ x cut   a mark all", 0
+                !scr "      c copy  f find", 0
+                !scr "      v paste s save", 0
+                !scr "      z undo", 0
+                !scr "f1 menu       f2 text color", 0
+                !scr "f3 page up    f4 top", 0
+                !scr "f5 page down  f6 bottom", 0
+                !scr "f7 insert     f8 word wrap", 0
 
 ;----------------------------------------------------------------------------
 ; panel_open - an empty panel (MENU_TOP ... ) with a title (A/X, screen
@@ -1242,14 +1249,15 @@ num24_text
 .t      !word 0
 
 num24           !byte 0, 0, 0
-num_text        !fill 9, 0
+num_text        = $0250         ; 9: a number as text (in BASIC's input
+                                ; buffer, $0250-$0258: after name_buf)
 
 t_stats         !scr "stats", 0
 m_counting      !scr "counting...", 0
 m_characters    !scr "characters", 0
 m_words         !scr "words", 0
 m_sentences     !scr "sentences", 0
-m_free          !scr "free", 0
+m_free          !scr "bytes free", 0
 m_reu           !scr "reu", 0
 m_kb            !scr " kb", 0
 
@@ -1342,7 +1350,7 @@ letter_keys
 
 ; Titles and names (screen codes; letters as small letters show as
 ; capitals in either character set)
-t_main          !scr "magic typewriter v0.1", 0 ; (the version: also in
+t_main          !scr "magic typewriter v0.2", 0 ; (the version: also in
                                 ; docs/manual.txt)
 t_load          !scr "load", 0
 t_save          !scr "save", 0

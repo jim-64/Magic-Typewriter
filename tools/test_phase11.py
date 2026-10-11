@@ -74,14 +74,14 @@ try:
 
     # The File type, fixed by the format and the device: shown in [ ]
     key(e, "F1"); key(e, "B")
-    check("magic: 'C FILE TYPE: [PRG]'", "FILE TYPE: [PRG]" in rows(e)[9], rows(e)[9])
+    check("magic: 'C FILE TYPE: [PRG]'", "FILE TYPE: [PRG]" in rows(e)[5], rows(e)[5])
     key(e, "C")
-    check("... C changes nothing", v(e, "save_type") == 0 and "[PRG]" in rows(e)[9], rows(e)[9])
+    check("... C changes nothing", v(e, "save_type") == 0 and "[PRG]" in rows(e)[5], rows(e)[5])
     key(e, "B")                                     # format: PETSCII
     check("PETSCII on disk: 'FILE TYPE: SEQ', free to change",
-          "FILE TYPE: SEQ" in rows(e)[9] and "[" not in rows(e)[9], rows(e)[9])
+          "FILE TYPE: SEQ" in rows(e)[5] and "[" not in rows(e)[5], rows(e)[5])
     key(e, "D")                                     # device: tape
-    check("PETSCII on tape: 'FILE TYPE: [SEQ]'", "FILE TYPE: [SEQ]" in rows(e)[9], rows(e)[9])
+    check("PETSCII on tape: 'FILE TYPE: [SEQ]'", "FILE TYPE: [SEQ]" in rows(e)[5], rows(e)[5])
     e.poke(e.lab["save_format"], [0]); e.poke(e.lab["save_dev"], [8])
     key(e, "STOP")
 
@@ -108,7 +108,7 @@ try:
     check("... in upper case/graphics", e.peek(0xd018)[0] == UPPER, e.peek(0xd018))
     for _ in range(10):
         e.m.cmd(0x72, bytes([1]) + b" "); e.m.resume()
-        if wait_for(lambda: "LOAD" in rows(e)[5], 3):
+        if wait_for(lambda: "LOAD" in rows(e)[1], 3):
             break
     check("... back: upper/lower again", e.peek(0xd018)[0] == LOWER, e.peek(0xd018))
     key(e, "X")

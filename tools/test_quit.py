@@ -5,7 +5,8 @@ Needs a debug build (build.bat).
 RESTORE is fired with a CIA2 timer NMI (the same way into the CPU as the
 key). After QUIT, BASIC must work as on a freshly switched-on C64: the
 program is gone (NEW), and commands that need BASIC's zero page values
-(the RETURN after a command, string expressions) work."""
+(the RETURN after a command, string expressions) work. (Since v0.2 Quit
+resets the C64, so this checks the reset brings BASIC back properly.)"""
 import sys, os, time
 from mtest import *
 
@@ -42,12 +43,18 @@ try:
     time.sleep(1.5)
     e.m.write(0xdd0d, [0x7f]); e.m.read(0xdd0d, 1)   # timer NMI off, cleared
     e.m.resume()
-    check("RESTORE opens the menu", "MAGIC TYPEWRITER" in e.screen_rows()[5].upper(), e.screen_rows()[5])
+    check("RESTORE opens the menu", "MAGIC TYPEWRITER" in e.screen_rows()[1].upper(), e.screen_rows()[1])
     e.keys([(KEY["Q"], 0)])
     check("Q (with changes) asks first", "QUIT WITHOUT SAVING" in e.screen_rows()[12].upper(),
           e.screen_rows()[12])
 
-    e.keys([(KEY["Y"], 0)], settle=2.0)
+    try:                                        # (Y resets the C64, which
+        e.keys([(KEY["Y"], 0)], settle=0, timeout=5)    # clears the mailbox:
+    except TimeoutError:                        # the key is never counted)
+        pass
+    time.sleep(3)
+    check("Quit resets the C64: the power-up screen (v0.2)",
+          any("COMMODORE 64 BASIC V2" in r for r in screen_text(e)[:4]), screen_text(e)[:4])
     check("back in BASIC: ROMs in ($01 = $37)", e.peek(0x01)[0] == 0x37, hex(e.peek(0x01)[0]))
     check("NEW: no program", e.peek(0x0801, 2) == b"\0\0", e.peek(0x0801, 2))
     check("BASIC zero page: $13 = 0, $16 = $19, $18 = 0",

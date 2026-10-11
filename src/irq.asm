@@ -270,23 +270,6 @@ init_irq
         rts
 
 ;----------------------------------------------------------------------------
-; restore_irq - give the IRQ back to the KERNAL. Call with IRQs off.
-;----------------------------------------------------------------------------
-!zone restore_irq
-restore_irq
-        lda #0                  ; no more raster IRQs
-        sta VIC_IRQ_MASK
-        lda #$ff
-        sta VIC_IRQ_FLAGS
-        lda #<KERNAL_IRQ
-        sta IRQ_VECTOR
-        lda #>KERNAL_IRQ
-        sta IRQ_VECTOR+1
-        lda #$81                ; CIA1 timer A IRQ back on (60 Hz KERNAL tick)
-        sta CIA1_ICR
-        rts
-
-;----------------------------------------------------------------------------
 ; irq_entry - where the CPU goes on an IRQ while the KERNAL ROM is switched
 ; out (the vector at $fffe points here). It is the KERNAL's own entry code
 ; from $FF48, instruction for instruction, so it takes exactly as many

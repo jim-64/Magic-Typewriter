@@ -148,9 +148,17 @@ try:
     # A PRG from elsewhere (load address $0801): read byte by byte, never
     # LOADed to its own address
     clear_all(e)
+    e.poke(e.lab["load_format"], [1])           # (Load format PETSCII)
     load(e, "foreign")
     check("a PRG from elsewhere: not with KERNAL LOAD, its text all there",
           v(e, "load_fast") == 0 and e.text()[0] == b"HELLO FOREIGN", (v(e, "load_fast"), e.text()[0]))
+    # v0.2: with the Load format MAGIC (the default) it is text from its first
+    # byte - its load address bytes too (and the case code after them is text)
+    clear_all(e)
+    e.poke(e.lab["load_format"], [0])
+    load(e, "foreign")
+    check("... with the Load format MAGIC: not with KERNAL LOAD, the 2 address bytes kept as text",
+          v(e, "load_fast") == 0 and e.text()[0] == b"\x01\x08\x0eHELLO FOREIGN", (v(e, "load_fast"), e.text()[0]))
     load_doc(e, doc)                                # (the document again)
 
     # ASCII: asks first (colors to lose), then saves without them
