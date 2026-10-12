@@ -146,6 +146,35 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     still and hides after 10 s, no jumps, and the 2-pixel steps on slow moves feel fine ("helps
     snap to the character outline"). MOUSETEST showed `d6`: 214 readings way off set aside in
     one session, so his 1351 really does send them while it moves. **Mouse: done.**
+  - **Jim, 2026-10-11: the mouse no longer worked in VICE 3.8** — the pointer ran into the
+    bottom right corner and stuck on the F5 badge. Cause: the third fix above. `pot_k` (where
+    the pointer settled) is the middle reading of the one before, so the newest reading is two
+    readings' worth of movement away from it; past 64 counts that wraps round and the move
+    comes out the wrong way. That happens above 15 steps a reading, and **VICE's 1351 moves up
+    to 63 counts (31 steps) a reading** (its `mouse.c`: one count per host mouse unit, capped
+    at 63 per POT read), so in VICE the pointer went the wrong way all the time. A real 1351
+    is far slower, so Jim's hardware test was fine. **Fourth fix (as built, `pot_delta`):** the
+    other two of the last three readings are measured from the **middle one in time**, so even
+    VICE's fastest moves stay inside the 63. If either is **`MOUSE_FAR` (48 counts) or more**
+    from it, a reading is way off (or VICE moves faster than that): no move, and `pot_c` takes
+    up the newest reading. Otherwise the middle one in value is used, as before. How far it is
+    from the reading used last time (`pot_c`) goes into **`pot_rest`**, the counts not moved
+    yet; the `MOUSE_STILL` dead band works on that, and moves are rounded towards 0 (rounding
+    down made the pointer twitch now and then at rest). Checked in test_mouse_delta: never
+    the wrong way at any VICE speed (the third fix: wrong 22–88 times a run). With readings way
+    off it loses the move of a reading or two each time. At a real 1351's speeds (1–6 steps a
+    reading) it makes fewer and smaller wrong-way moves than the third fix over 30 runs. Known
+    weakness: at a fling of 10 steps a reading, a reading way off in the middle can look like
+    one of VICE's fast moves. Cost: 2 bytes (seven mouse variables moved into the free part of
+    BASIC's input buffer to make room) and ~42 cycles a reading: the bottom strip IRQ ends at
+    line 274 (PAL, Drean) / 11 (NTSC) / 12 (old NTSC) with the mouse still, about a line later
+    while it moves; `late_irqs`/`missed_irqs` 0 on all four. **Recorded in VICE 3.7 (Jim's
+    hand, every reading logged): it follows left, up, right and down exactly** (2 counts a
+    step, nothing lost, nothing the wrong way; readings up to 44 counts apart, past the 30 the
+    third fix could take). **But VICE 3.8 still sticks in the bottom right corner — with the
+    old build too: 3.8 (and 3.9) on Jim's laptop only ever count right/down** (see VICE
+    gotchas), so that was never ours to fix. **Still to do: Jim tries it on his real 1351**
+    (the feel at rest and on slow moves should be as before).
   **Merged into `main` and pushed (2026-10-03), still v0.1** (Jim: no GitHub release was made yet,
   so the version stays). Work goes on on branch `phase12`.
   **Jim, 2026-10-07:**
@@ -388,6 +417,9 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   Claude polls. Give injected key events time: read the mailbox again rather than assuming they are done.
 - **Watchpoints:** since 1.0.1, checkpoints honor the exact load/store/exec mask requested, so a
   store-only watchpoint on a state variable works.
+- **VICE's 1351 moves up to 63 counts between two POT reads** (`src/joyport/mouse.c`,
+  `MOUSE_MAX_DIFF`; one count per host mouse unit, so ~30–60 counts per reading of ours at a
+  normal hand speed). Read by `pot_delta` since 2026-10-11 (see the phase 12 status).
 - **VICE's 1351 (from its source, phase 7):** POTX/POTY = `(counter AND $7F) + $40`, plus a random 0/1;
   the counter only moves when the program reads a POT register (`mouse_poll()` is called then, at most
   once per 512 cycles), walking toward the host mouse position. A read within 512 cycles of a change of
@@ -396,6 +428,13 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   real direction (seen in recordings of the paddle values; the Windows "high DPI" compatibility setting
   did not help). **VICE 2.4 works** (Jim still likes 2.4's menus). Test the mouse in 2.4, on his desktop
   PC, or on real hardware.
+  **2026-10-11, same laptop (the PC Claude runs on):** VICE 3.8 (`G:\My Drive\retro computers
+  2\VICE 3.8`, Jim's Start menu VICE) does it too — a recording of every raw paddle reading
+  (a throwaway release build logging them to $CB00, polled through the binary monitor) showed X
+  only ever counting up and Y only down, ~3:1, whatever way Jim moved: the pointer sticks in the
+  bottom right corner (F5 badge lit). **VICE 3.7 works** (same folder, `VICE 3.7`); VICE 3.3's
+  mouse doesn't grab at all; 2.4 works. Our automated tests use VICE 3.9 and never the host
+  mouse (the mailbox), so they can't see this.
 - **Checkpoints were unreliable in phase 1:** after `create_checkpoint` the CPU stayed stopped in the
   monitor (`wait_for_state` timed out), and after a hit the Binary Monitor connection dropped and
   `nuclear_reset` left the old `x64sc` holding port 6502 (had to stop that process by hand). Memory reads
@@ -503,9 +542,12 @@ each gives back exactly the text before; "NOTHING TO UNDO" twice and after CLEAR
 UNDO" after a 2 KB cut). `python tools/test_freeze.py ntsc` (see Mouse/IRQ notes: the CPU held up).
 `python tools/test_mouse_delta.py` (no VICE: the assembled `mouse_sample`/`pot_delta` run in a
 small 6502 emulator, checked against a Python model; then made-up 1351 readings like Jim's — a
-count of wobble either way, resting on even and odd counts, slow and fast to-and-fro, 3% of
-readings way off — through the real code, beside models of the two older methods: no drift,
-no twitching at rest, no jumps).
+count of wobble either way, resting on even and odd counts, slow and fast to-and-fro, 3% and
+10% of readings way off — and like VICE's (up to 31 steps a reading, speeding up and slowing
+down) through the real code, beside models of the three older methods: no drift, no
+twitching at rest, no jumps, never the wrong way without readings way off; then 30 runs each
+at 1–6 steps a reading with 1% and 3% way off: no more wrong-way moves than the third fix,
+none bigger).
 **Mouse timing:** `MB_BOT_END` (mailbox +62) and `late_irqs`/`missed_irqs` on all four systems
 after any change to the mouse reading (a scratch script did it: sample the mailbox while typing).
 `python tools/test_phase12.py [c64|ntsc]` (the Format values without SpeedScript, the CTRL keys
@@ -615,7 +657,7 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 | Address | What |
 |---|---|
 | $02–$1B | zero page (list in `src/main.asm`); BASIC's too (Quit resets the C64, v0.2) |
-| $0200–$0237 | BASIC's input buffer, used for work bytes that need no starting value (so they take no room in the program): `pot_k`/`pot_p1`/`pot_p2` and pot_delta's temporaries ($0200–$0209), `status_raw` ($0210–$0237), `name_buf` ($0238–$024F) and `num_text` ($0250–$0258) (v0.2). Neither we nor the KERNAL's disk and tape routines use it otherwise; BASIC only after Quit. All in use |
+| $0200–$0237 | BASIC's input buffer, used for work bytes that need no starting value (so they take no room in the program): the mouse's `pot_c`/`pot_p1`/`pot_p2`, `.dnew`, `mouse_acc_x/y`, `mouse_dx`, `pot_rest`, `mouse_dy`, `click_row/col/icon` ($0200–$020F; 2026-10-11), `status_raw` ($0210–$0237), `name_buf` ($0238–$024F) and `num_text` ($0250–$0258) (v0.2). Neither we nor the KERNAL's disk and tape routines use it otherwise; BASIC only after Quit. All in use |
 | $02C0–$02FE | debug test mailbox (debug builds only) |
 | $0400–$07FF | screen |
 | $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, undo, data; then the stored copies of the editor and of reudoc.asm, then startup.asm (with the four copies of the border code) |
@@ -642,8 +684,10 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (v0.2, 2026-10-10): debug tables end $3E7B, so **only 5 bytes free below the sprite
-  blocks in debug builds** (release: ~580); the editor + find end $FFF3 (**7 bytes free under the
+- Space (v0.2, 2026-10-10; mouse fix 2026-10-11): debug tables end $3E7E, so **only 2 bytes
+  free below the sprite blocks in debug builds** (release: ~580). Debug builds with
+  `-DMOUSE_SHOW=1` or `-DMOUSE_TRACE=1` no longer fit (they didn't before the mouse fix
+  either); for a MOUSETEST disk use a release build with `-DMOUSE_SHOW=1` (fits, ends $3C95); the editor + find end $FFF3 (**7 bytes free under the
   KERNAL**); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. BASIC's
   input buffer $0200-$0258 is all in use now. **The next feature needs room first** — ideas: the
   63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF must stay 0), $02A7-$02B3 (unused by the
