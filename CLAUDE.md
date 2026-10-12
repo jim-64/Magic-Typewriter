@@ -173,8 +173,19 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     step, nothing lost, nothing the wrong way; readings up to 44 counts apart, past the 30 the
     third fix could take). **But VICE 3.8 still sticks in the bottom right corner — with the
     old build too: 3.8 (and 3.9) on Jim's laptop only ever count right/down** (see VICE
-    gotchas), so that was never ours to fix. **Still to do: Jim tries it on his real 1351**
-    (the feel at rest and on slow moves should be as before).
+    gotchas), so that was never ours to fix. **Jim, real 1351 on his NTSC C64 (v0.2 disk,
+    2026-10-11): "The mouse movement works great and no drift."**
+  - **Ghost keys from a mouse click (found then, on real hardware):** clicking the F3/F5
+    badges over and over now and then typed "mbcz" or "bcz" and opened the menu. The left
+    button is the fire line, $DC01 bit 4: the column of M, B, C, Z and F1 (and ".", SPACE,
+    right SHIFT). Pressed *during* the keyboard scan, after port 1 had been read for the mask,
+    it showed in every row read after it as that row's column-4 key (rows 4 to 0: M B C Z F1).
+    **Fix: `scan_keyboard` reads port 1 again after the rows and scans again if it changed**
+    (13 bytes; made room by moving the scanner's work bytes `key_now`, `key_port1`,
+    `key_row`, `key_bits`, `key_code` to $02A7–$02B2). `tools/test_scan_race.py` runs the
+    real scan in the 6502 emulator with a fake CIA 1, a button or the joystick going down and
+    up at every cycle of the scan: no key events; with the check patched out it types F1 Z C
+    B M . SPACE, as Jim saw. Timing unchanged (the scan is 701 cycles).
   **Merged into `main` and pushed (2026-10-03), still v0.1** (Jim: no GitHub release was made yet,
   so the version stays). Work goes on on branch `phase12`.
   **Jim, 2026-10-07:**
@@ -540,6 +551,11 @@ $BA and BASIC's zero page alone).
 marked text, a recolor, a run of DELs, two runs of typing, a color key, overwrite mode, a paste —
 each gives back exactly the text before; "NOTHING TO UNDO" twice and after CLEAR ALL; "TOO BIG TO
 UNDO" after a 2 KB cut). `python tools/test_freeze.py ntsc` (see Mouse/IRQ notes: the CPU held up).
+`python tools/test_scan_race.py` (no VICE: the assembled `scan_keyboard` against a fake CIA 1;
+a mouse button, both, or the joystick going down or up at every cycle of a scan must make
+no key events; a key held meanwhile types once; and without the rescan the old ghost keys
+must show). The 6502 emulator for these two tests is `tools/cpu6502.py` (the documented
+instructions, a cycle count, memory with room for fake I/O).
 `python tools/test_mouse_delta.py` (no VICE: the assembled `mouse_sample`/`pot_delta` run in a
 small 6502 emulator, checked against a Python model; then made-up 1351 readings like Jim's — a
 count of wobble either way, resting on even and odd counts, slow and fast to-and-fro, 3% and
@@ -658,6 +674,7 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 |---|---|
 | $02–$1B | zero page (list in `src/main.asm`); BASIC's too (Quit resets the C64, v0.2) |
 | $0200–$0237 | BASIC's input buffer, used for work bytes that need no starting value (so they take no room in the program): the mouse's `pot_c`/`pot_p1`/`pot_p2`, `.dnew`, `mouse_acc_x/y`, `mouse_dx`, `pot_rest`, `mouse_dy`, `click_row/col/icon` ($0200–$020F; 2026-10-11), `status_raw` ($0210–$0237), `name_buf` ($0238–$024F) and `num_text` ($0250–$0258) (v0.2). Neither we nor the KERNAL's disk and tape routines use it otherwise; BASIC only after Quit. All in use |
+| $02A7–$02B2 | the keyboard scanner's work bytes: `key_now` (8), `key_port1`, `key_row`, `key_bits`, `key_code` (2026-10-11; free RAM, written before read every frame) |
 | $02C0–$02FE | debug test mailbox (debug builds only) |
 | $0400–$07FF | screen |
 | $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, undo, data; then the stored copies of the editor and of reudoc.asm, then startup.asm (with the four copies of the border code) |
@@ -684,14 +701,16 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   raster timing did not change (re-checked on all four systems). RESTORE goes straight to `nmi_handler`
   (through the KERNAL's $FE43 and $0318 while the ROM is in).
 - The build stops with an error if the lower part plus its tables reach $3E80, or the editor reaches $FFFA.
-- Space (v0.2, 2026-10-10; mouse fix 2026-10-11): debug tables end $3E7E, so **only 2 bytes
+- Space (v0.2, 2026-10-10; mouse fixes 2026-10-11): debug tables end $3E7F, so **only 1 byte
   free below the sprite blocks in debug builds** (release: ~580). Debug builds with
   `-DMOUSE_SHOW=1` or `-DMOUSE_TRACE=1` no longer fit (they didn't before the mouse fix
   either); for a MOUSETEST disk use a release build with `-DMOUSE_SHOW=1` (fits, ends $3C95); the editor + find end $FFF3 (**7 bytes free under the
   KERNAL**); reudoc.asm ends $CC93 (~620 free before RD_PAGE). undo.asm is ~1.2 KB. BASIC's
   input buffer $0200-$0258 is all in use now. **The next feature needs room first** — ideas: the
-  63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF must stay 0), $02A7-$02B3 (unused by the
-  KERNAL; the debug mailbox starts at $02B4), or (ask Jim) moving BUF_START up. **Watch the
+  63 free bytes of sprite block 255 ($3FC0–$3FFE; $3FFF must stay 0), $02B3 (the last free
+  byte before the debug mailbox at $02B4; $02A7–$02B2 hold the scanner's work bytes since
+  2026-10-11), more `!byte` variables that need no starting value moved into such RAM, or
+  (ask Jim) moving BUF_START up. **Watch the
   border code's padding:** it starts at `high_load` + 512, so if the lower part's end moves past
   ~$xx26 in its page, its loops may need same_page padding again (up to ~20 bytes).
   Earlier: debug build, phase 11b: lower part $0801–$377A, tables to $3B15 (a `-DMOUSE_TRACE=1`
@@ -1082,6 +1101,8 @@ movement keys** — C= + digit still selects a color.
   needs ~512 cycles to take a fresh sample).
 - **Gotcha 2 — port 1 shares keyboard lines:** mouse buttons pull $DC01 lines low and look like key
   presses. Read the port with $DC00=$FF first and mask those bits out of the keyboard scan.
+  **And read it again after the scan:** a button pressed during the scan shows as keys in the
+  rows read after it (found 2026-10-11, see the phase 12 status); if port 1 changed, scan again.
 
 **As built (phase 7, "The 1351 mouse" in `src/input.asm`; read its header comment first):**
 - **Where the pointer goes (Jim, 2026-09-28): over the text area only.** A sprite's fetches steal CPU

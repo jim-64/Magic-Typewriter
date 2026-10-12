@@ -1,6 +1,6 @@
 """The 1351 reading (mouse_sample and pot_delta in src/input.asm), without
-VICE: the assembled code runs in a small 6502 emulator (just the
-instructions it uses), checked against a Python model; then long runs of
+VICE: the assembled code runs in a small 6502 emulator (the documented
+instructions, tools/cpu6502.py), checked against a Python model; then long runs of
 made-up 1351 readings go through the real code: like those of Jim's real
 mouse - a count of wobble either way, and now and then, while it moves, one
 reading way off - looking for what he saw: drift, a pointer that twitches
@@ -37,81 +37,8 @@ STILL = int(re.search(r"^MOUSE_STILL\s*=\s*(\d+)", src, re.M).group(1))
 MAX = 28                # the older methods' MOUSE_MAX_STEP
 POTX, POTY = 0xd419, 0xd41a
 
-# A 6502 with just what the mouse reading needs (no decimal mode)
-class CPU:
-    def __init__(self, mem):
-        self.m = mem
-    def nz(self, v):
-        self.n = v >> 7
-        self.z = int(v == 0)
-        return v
-    def adc(self, v):
-        r = self.a + v + self.c
-        self.c = int(r > 0xff)
-        self.a = self.nz(r & 0xff)
-    def cmp(self, reg, v):
-        self.c = int(reg >= v)
-        self.nz((reg - v) & 0xff)
-    def run(self, pc, a=0, x=0, y=0, limit=2000):
-        self.a, self.x, self.y, self.c, self.n, self.z = a, x, y, 0, 0, 0
-        m, stack = self.m, []
-        for _ in range(limit):
-            op = m[pc]
-            b1 = m[(pc + 1) & 0xffff]
-            ab = b1 | m[(pc + 2) & 0xffff] << 8
-            abx = (ab + self.x) & 0xffff
-            if op == 0x60:                                                   # RTS
-                if not stack:
-                    return self.a, self.x, self.y
-                pc = stack.pop()
-            elif op == 0x20: stack.append(pc + 3); pc = ab                   # JSR
-            elif op == 0x29: self.a = self.nz(self.a & b1); pc += 2          # AND #
-            elif op == 0x09: self.a = self.nz(self.a | b1); pc += 2          # ORA #
-            elif op == 0x49: self.a = self.nz(self.a ^ b1); pc += 2          # EOR #
-            elif op == 0xa9: self.a = self.nz(b1); pc += 2                   # LDA #
-            elif op == 0xa2: self.x = self.nz(b1); pc += 2                   # LDX #
-            elif op == 0xad: self.a = self.nz(m[ab]); pc += 3                # LDA abs
-            elif op == 0xbd: self.a = self.nz(m[abx]); pc += 3               # LDA abs,X
-            elif op == 0xac: self.y = self.nz(m[ab]); pc += 3                # LDY abs
-            elif op == 0xbc: self.y = self.nz(m[abx]); pc += 3               # LDY abs,X
-            elif op == 0x8d: m[ab] = self.a; pc += 3                         # STA abs
-            elif op == 0x9d: m[abx] = self.a; pc += 3                        # STA abs,X
-            elif op == 0x8c: m[ab] = self.y; pc += 3                         # STY abs
-            elif op == 0xee: m[ab] = self.nz((m[ab] + 1) & 0xff); pc += 3    # INC abs
-            elif op == 0xa8: self.y = self.nz(self.a); pc += 1               # TAY
-            elif op == 0x98: self.a = self.nz(self.y); pc += 1               # TYA
-            elif op == 0xca: self.x = self.nz((self.x - 1) & 0xff); pc += 1  # DEX
-            elif op == 0x48: stack.append(self.a); pc += 1                   # PHA
-            elif op == 0x68: self.a = self.nz(stack.pop()); pc += 1          # PLA
-            elif op == 0x38: self.c = 1; pc += 1                             # SEC
-            elif op == 0x18: self.c = 0; pc += 1                             # CLC
-            elif op == 0x69: self.adc(b1); pc += 2                           # ADC #
-            elif op == 0x7d: self.adc(m[abx]); pc += 3                       # ADC abs,X
-            elif op == 0xe9: self.adc(b1 ^ 0xff); pc += 2                    # SBC #
-            elif op == 0xed: self.adc(m[ab] ^ 0xff); pc += 3                 # SBC abs
-            elif op == 0xfd: self.adc(m[abx] ^ 0xff); pc += 3                # SBC abs,X
-            elif op == 0xc9: self.cmp(self.a, b1); pc += 2                   # CMP #
-            elif op == 0xcd: self.cmp(self.a, m[ab]); pc += 3                # CMP abs
-            elif op == 0x0a:                                                 # ASL A
-                self.c = self.a >> 7
-                self.a = self.nz((self.a << 1) & 0xff); pc += 1
-            elif op == 0x2a:                                                 # ROL A
-                c = self.a >> 7
-                self.a = self.nz(((self.a << 1) & 0xff) | self.c)
-                self.c = c; pc += 1
-            elif op == 0x6a:                                                 # ROR A
-                c = self.a & 1
-                self.a = self.nz((self.a >> 1) | (self.c << 7))
-                self.c = c; pc += 1
-            elif op in (0x90, 0xb0, 0x30, 0x10, 0xf0, 0xd0):                 # branches
-                take = {0x90: not self.c, 0xb0: self.c, 0x30: self.n, 0x10: not self.n,
-                        0xf0: self.z, 0xd0: not self.z}[op]
-                pc += 2
-                if take:
-                    pc += b1 - 256 if b1 > 127 else b1
-            else:
-                raise RuntimeError("opcode $%02x at $%04x not in the emulator" % (op, pc))
-        raise RuntimeError("no RTS")
+# The 6502 (tools/cpu6502.py)
+from cpu6502 import CPU
 
 cpu = CPU(mem)
 

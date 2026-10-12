@@ -92,8 +92,6 @@ REPEAT_RATE     = 4 * 5         ; 4 ticks
 ;----------------------------------------------------------------------------
 ; Keyboard variables
 ;----------------------------------------------------------------------------
-key_now         !fill 8, 0      ; matrix this frame, one byte per row,
-                                ; 1 = key down (the opposite of $DC01)
 key_before      !fill 8, 0      ; matrix last frame
 key_mods        !byte 0         ; modifier keys held now (MOD_... bits)
 key_last        !byte $ff       ; key that repeats if held ($ff = none)
@@ -103,10 +101,16 @@ key_charset     !byte 0         ; C= + SHIFT toggle: 0 = idle, 1 = both held,
                                 ; 2 = another key was pressed meanwhile
 key_restores    !byte 0         ; counts RESTORE presses (NMI handler)
 key_restores_seen !byte 0
-key_port1       !byte 0         ; lines held low by port 1 this frame
-key_row         !byte 0         ; scratch for the scanner
-key_bits        !byte 0
-key_code        !byte 0
+; The scanner's working bytes, in RAM the KERNAL leaves unused
+; ($02A7-$02B3; the debug mailbox starts at $02B4). Each frame writes them
+; before reading them, so they need no starting value and take no room in
+; the program.
+key_now         = $02a7         ; 8: matrix this frame, one byte per row,
+                                ; 1 = key down (the opposite of $DC01)
+key_port1       = $02af         ; lines held low by port 1 this frame
+key_row         = $02b0         ; scratch for the scanner
+key_bits        = $02b1
+key_code        = $02b2
 
 key_q_code      !fill KEY_QUEUE_SIZE, 0 ; event queue: key codes ...
 key_q_mods      !fill KEY_QUEUE_SIZE, 0 ; ... and modifiers
@@ -138,7 +142,7 @@ scan_keyboard
         ; port 1: ignore those lines this frame.
         lda #$ff
         sta CIA1_PRA
-        lda CIA1_PRB            ; 1 = line free
+.port1  lda CIA1_PRB            ; 1 = line free
         sta key_port1
 
         ldx #7                  ; read rows 7 down to 0
@@ -152,6 +156,17 @@ scan_keyboard
         sta key_now,x
         dex
         bpl .row
+
+        ; A mouse button (or the joystick) that went down during the scan
+        ; shows in every row read after it, as a key on each: the left
+        ; button as M, B, C, Z and F1 (Jim saw "mbcz" typed and the menu
+        ; open, now and then, clicking the F3/F5 badges). So port 1 is read
+        ; again: if it changed, the rows can't be trusted - scan again.
+        lda #$ff
+        sta CIA1_PRA
+        lda CIA1_PRB
+        cmp key_port1
+        bne .port1
 
         lda #$7f                ; leave row 7 selected, like the KERNAL
         sta CIA1_PRA            ; (this also points the SID's paddle
