@@ -171,9 +171,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     while it moves; `late_irqs`/`missed_irqs` 0 on all four. **Recorded in VICE 3.7 (Jim's
     hand, every reading logged): it follows left, up, right and down exactly** (2 counts a
     step, nothing lost, nothing the wrong way; readings up to 44 counts apart, past the 30 the
-    third fix could take). **But VICE 3.8 still sticks in the bottom right corner — with the
-    old build too: 3.8 (and 3.9) on Jim's laptop only ever count right/down** (see VICE
-    gotchas), so that was never ours to fix. **Jim, real 1351 on his NTSC C64 (v0.2 disk,
+    third fix could take). VICE 3.8 still stuck in the bottom right corner, with the old
+    build too: that was Windows' 200% display scaling upsetting GTK3 VICE, cured with a
+    compatibility setting (see VICE gotchas) — never ours to fix. **Jim, real 1351 on his NTSC C64 (v0.2 disk,
     2026-10-11): "The mouse movement works great and no drift."**
   - **Ghost keys from a mouse click (found then, on real hardware):** clicking the F3/F5
     badges over and over now and then typed "mbcz" or "bcz" and opened the menu. The left
@@ -439,13 +439,20 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   real direction (seen in recordings of the paddle values; the Windows "high DPI" compatibility setting
   did not help). **VICE 2.4 works** (Jim still likes 2.4's menus). Test the mouse in 2.4, on his desktop
   PC, or on real hardware.
-  **2026-10-11, same laptop (the PC Claude runs on):** VICE 3.8 (`G:\My Drive\retro computers
-  2\VICE 3.8`, Jim's Start menu VICE) does it too — a recording of every raw paddle reading
-  (a throwaway release build logging them to $CB00, polled through the binary monitor) showed X
-  only ever counting up and Y only down, ~3:1, whatever way Jim moved: the pointer sticks in the
-  bottom right corner (F5 badge lit). **VICE 3.7 works** (same folder, `VICE 3.7`); VICE 3.3's
-  mouse doesn't grab at all; 2.4 works. Our automated tests use VICE 3.9 and never the host
-  mouse (the mailbox), so they can't see this.
+  **Solved 2026-10-12 — it is Windows display scaling.** The laptop (the PC Claude runs on)
+  is 2880×1800 at **200% scaling** (1440×900 for programs; docked, a second screen with
+  another scaling step). GTK3 VICE mixes scaled and real pixels when it holds the grabbed
+  pointer in its window, so every reading carries the same push towards the bottom right: the
+  emulated 1351 then only ever counts X up and Y down (recorded: ~3:1, whatever way Jim
+  moved; the pointer sticks in the bottom right corner, F5 badge lit). Which version suffered
+  (3.7, 3.8, 3.9) changed from run to run. **Cure (Jim, works): right-click that VICE's
+  `x64sc.exe` → Properties → Compatibility → Change high DPI settings → tick *Override high
+  DPI scaling behavior*, choose *System*.** (The 3.9 in `C:in` has the *Application* choice
+  set, which didn't help.) Note: **all GTK3 VICEs share one settings file**,
+  `%APPDATA%iceice.ini` (`ConfigVersion` = whichever saved last). Recording method, if
+  needed again: a throwaway release build logging every raw paddle reading to $CB00, polled
+  through the binary monitor while Jim moves the mouse. Our automated tests never use the host
+  mouse (the mailbox), so they can't see such problems.
 - **Checkpoints were unreliable in phase 1:** after `create_checkpoint` the CPU stayed stopped in the
   monitor (`wait_for_state` timed out), and after a hit the Binary Monitor connection dropped and
   `nuclear_reset` left the old `x64sc` holding port 6502 (had to stop that process by hand). Memory reads
