@@ -307,6 +307,15 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     display scaling cure. **Next:** Jim makes the v0.2 release on GitHub with that disk
     (`build\magictypewriter-release.d64` is the same file). (v0.1 was never released on
     GitHub; Jim sent it to friends.) New work: a new branch from `main`.
+  - **License and AI statement (Jim, 2026-10-13, branch `license`):** `LICENSE.md` = the
+    **PolyForm Noncommercial License 1.0.0** (word for word from polyformproject.org's
+    repository), headed by **`Required Notice: Copyright 2026 jim-64`**. Free for any
+    noncommercial use; Jim keeps the right to sell it himself. Its terms say every copy must
+    come with the license or its URL plus the Required Notice line, so **the manual on the disk
+    has an ABOUT section** with both (and the AI note) — keep it there, and keep the notice
+    the same in both places. README: "How it was made: with AI" near the top (Jim designed and
+    tested it, Claude wrote the code — Jim wants that clear, so nobody feels misled) and
+    "License" at the end (pull requests: Jim may use them under any license).
 
 ## Working with Jim
 

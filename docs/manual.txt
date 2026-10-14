@@ -113,4 +113,12 @@ In VICE, {lred}Tab is the C= key{lgrey}: Tab with the arrow keys marks in every 
 
 {rvs}SHIFT LOCK{off} holds left SHIFT down: with left SHIFT as the mark key, every cursor move then marks.
 
+{cyan}{rvs} ABOUT {off}{lgrey}
+
+Magic Typewriter was made with AI. Jim designed it and tested it, in VICE and on real Commodores; {yellow}Claude, Anthropic's AI, wrote the code{lgrey}. More about it: github.com/jim-64/Magic-Typewriter
+
+Free to use, copy, share and change for any noncommercial purpose; {lred}not for sale{lgrey}. The terms: the PolyForm Noncommercial License 1.0.0, polyformproject.org/licenses/noncommercial/1.0.0
+
+Required Notice: Copyright 2026 jim-64
+
 @banner yellow HAPPY  TYPEWRITING

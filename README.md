@@ -10,6 +10,21 @@ large REU it edits documents far bigger than the C64's memory.
 It runs on PAL, NTSC, old NTSC and Drean (PAL-N) machines, works with any drive that the KERNAL
 can talk to (1541, 1571, 1581, SD2IEC, Pi1541, Ultimate…), and also with tape and printers.
 
+## How it was made: with AI
+
+I want to be upfront about this: **I didn't write the code of Magic Typewriter myself. Claude,
+Anthropic's AI, wrote it**, working in Claude Code. That covers the 6502 assembly, the test tools
+and most of this documentation.
+
+My part was the rest. I decided what the editor should be and do, drew the screen and the border
+icons, chose how every key, menu and setting should work, and asked for changes until it felt
+right. I tested every step in VICE, and the finished program on my real Commodore hardware
+(C64, 1702 monitor, 1351 mouse, SD2IEC, printer), and reported what was wrong. Claude also wrote automated tests that
+drive the editor in VICE; they run after every change.
+
+So: my design, my testing, the AI's code. If you came here to read hand-written 6502 by a
+human, this isn't that, and I'd rather you knew from the start.
+
 ## Getting started
 
 Download **`magictypewriter.d64`** from the [Releases](../../releases) page — no need to build
@@ -216,3 +231,16 @@ in `tools/` use (Python 3 and VICE 3.9).
 
 The source is in `src/`, one master file (`main.asm`) and one file per part; `CLAUDE.md` describes
 the design and memory layout in detail.
+
+## License
+
+Magic Typewriter is free to use, copy, share and change for any **noncommercial** purpose:
+personal use, hobby projects, clubs, schools and other non-profits. Selling it, or using it
+commercially, is not allowed. The terms are the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md); in short, keep the license and the
+`Required Notice` line with any copy you pass on.
+
+I keep the right to sell Magic Typewriter, or to license it differently, myself.
+
+**Changes and pull requests are welcome.** By sending one, you agree that I may use your change
+under any license, including commercially.
