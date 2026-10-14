@@ -300,13 +300,13 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     the lower part ends in its page, so its page-bound loops need no padding (240 -> 218
     bytes). The tables after it are defined below `!source "src/startup.asm"` in main.asm,
     where BORDER_SIZE is known (the size check `!if` needs it in ACME's first pass).
-  - **Where it stands (2026-10-11):** v0.2 is committed on branch `v0.2` (which has `fastload`
-    under it); the whole test suite passes. **Waiting for Jim's real-hardware test** of
-    `build\magic-typewriter-v0.2.d64` (packed release disk; also the file for the GitHub
-    release): the menu with the key list, BYTES FREE, the Load format MAGIC loading a plain SEQ
-    file whole (SD2IEC, and a 1541/1581 if at hand), Quit resetting. **Then:** merge `v0.2` into
-    `main`, push, and Jim makes the v0.2 release on GitHub with that disk. (v0.1 was never
-    released on GitHub; Jim sent it to friends.)
+  - **Where it stands (2026-10-13):** v0.2, with the two mouse fixes of 2026-10-11 (VICE's
+    fast 1351; ghost keys from a click during the keyboard scan), is merged into `main` and
+    pushed. **Jim, real C64 with the release disk `build\magic-typewriter-v0.2.d64`: "it
+    works great!"** (mouse, clicks on the badges); VICE 3.7 and 3.8 work too, after the
+    display scaling cure. **Next:** Jim makes the v0.2 release on GitHub with that disk
+    (`build\magictypewriter-release.d64` is the same file). (v0.1 was never released on
+    GitHub; Jim sent it to friends.) New work: a new branch from `main`.
 
 ## Working with Jim
 
