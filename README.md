@@ -237,8 +237,9 @@ the design and memory layout in detail.
 Magic Typewriter is free to use, copy, share and change for any **noncommercial** purpose:
 personal use, hobby projects, clubs, schools and other non-profits. Selling it, or using it
 commercially, is not allowed. The terms are the
-[PolyForm Noncommercial License 1.0.0](LICENSE.md); in short, keep the license and the
-`Required Notice` line with any copy you pass on.
+[PolyForm Noncommercial License 1.0.0](LICENSE.md); in short, pass the license (or its web
+address, polyformproject.org/licenses/noncommercial/1.0.0) and the `Required Notice` line on
+with any copy. The manual on the disk has both, so a copy of the whole disk already does.
 
 I keep the right to sell Magic Typewriter, or to license it differently, myself.
 
