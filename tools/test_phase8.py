@@ -185,8 +185,8 @@ try:
     exp = stats_model(doc)
     gap = int.from_bytes(e.peek(0x0a, 2), "little") - int.from_bytes(e.peek(0x08, 2), "little")
     check("Stats: characters, words, sentences as counted here", tuple(nums) == exp, (nums, exp))
-    check("Stats: free = the gap, with its share of the 35 KB buffer",
-          free and int(free[0][0]) == gap and int(free[0][1]) == gap * 100 // 0x8c00, (r[ITEM_ROW + 3], gap))
+    check("Stats: free = the gap, with its share of the 34 KB buffer",
+          free and int(free[0][0]) == gap and int(free[0][1]) == gap * 100 // 0x8800, (r[ITEM_ROW + 3], gap))
     check("Stats: no 'any key' line", not any("ANY KEY" in x for x in r), r[ITEM_ROW + 4:ITEM_ROW + 10])
     key(e, "SPACE")
     check("any key: back to the menu", "MAGIC TYPEWRITER" in rows(e)[TITLE_ROW])

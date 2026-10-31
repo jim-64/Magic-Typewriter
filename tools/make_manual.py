@@ -37,7 +37,8 @@ SETTINGS = [0,      # background: black
             1,      # mark key: C=
             0, 8,   # Load format magic (v0.2), device 8
             0, 0, 8,  # Save format magic, File type SEQ, device 8
-            0, 4]   # Print: no ASCII, device 4
+            0, 4,   # Print: no ASCII, device 4
+            0]      # Word wrap to return: no (v0.3)
 HEADER = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + len(SETTINGS)]) + \
          bytes(0x40 + v for v in SETTINGS) + b"\r"
 
@@ -82,6 +83,6 @@ for n, line in enumerate(open(SRC, encoding="utf-8").read().split("\n"), 1):
 while text.endswith(b"\r\r"):                       # (no empty lines at the end)
     text = text[:-1]
 
-doc = bytes([0x00, 0x40]) + HEADER + b"\x0e" + bytes(text)   # load address $4000,
-open(OUT, "wb").write(doc)                                   # header, case code
+doc = bytes([0x00, 0x40]) + HEADER + b"\x0e\x9b" + bytes(text)   # load address
+open(OUT, "wb").write(doc)        # $4000, header, case code, light grey (v0.3)
 print("%s: %d bytes of text, %d bytes in all" % (os.path.relpath(OUT, PROJ), len(text), len(doc)))

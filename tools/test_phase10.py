@@ -94,7 +94,8 @@ def clear_all(e):
 
 doc = (b"PLAIN " + bytes([RED]) + b"RED" + CR + bytes([0x12]) + b"REV" + bytes([0x92])
        + b" Mixed" + CR + b"END")
-HEAD = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + 13])
+HEAD = bytes([0x00, 0x4d, 0x54, 0x57, 0x31, 0x40 + 14])
+LGREY = b"\x9b"                     # (v0.3: the Text color's code)
 
 vice = start_vice(os.path.join(PROJ, "build/magictypewriter.prg"), disk=disk, model=model)
 try:
@@ -142,7 +143,7 @@ try:
     t = e.text()[0]
     check("a 40 KB PRG: not with KERNAL LOAD", v(e, "load_fast") == 0)
     check("... 'TOO LONG: ONLY PART LOADED'", "TOO LONG" in rows(e)[12], rows(e)[12])
-    check("... the part that fits, from the start", t == BIG[:len(t)] and len(t) > 35000, len(t))   # (35 KB: 1 KB is CTRL-Z's)
+    check("... the part that fits, from the start", t == BIG[:len(t)] and len(t) > 34000, len(t))   # (34 KB: CTRL-Z and the work area take 2)
     key(e, "SPACE")
 
     # A PRG from elsewhere (load address $0801): read byte by byte, never
@@ -201,16 +202,17 @@ finally:
 m = read_file("magic1", "p")
 check("MAGIC1 is a PRG ($4000): magic files always are", m[:2] == b"\x00\x40", m[:4])
 m = m[2:]
-settings = m[6:19]
-check("MAGIC1: the header ($00 MTW1, 13 settings, RETURN), then $0e, then the text",
-      m[:6] == HEAD and m[19:21] == CR + b"\x0e" and m[21:] == doc and settings[0] == 0x46
+settings = m[6:20]
+check("MAGIC1: the header ($00 MTW1, 14 settings, RETURN), then $0e, the color, then the text",
+      m[:6] == HEAD and m[20:23] == CR + b"\x0e" + LGREY and m[23:] == doc and settings[0] == 0x46
       and settings[3] == 0x40, m[:24])
 p = read_file("prg1", "p")
 check("PRG1: the load address $4000, then the header, $0e and the text",
-      p[:2] == b"\x00\x40" and p[2:8] == HEAD and p[21:23] == CR + b"\x0e" and p[23:] == doc, p[:24])
+      p[:2] == b"\x00\x40" and p[2:8] == HEAD and p[22:25] == CR + b"\x0e" + LGREY and p[25:] == doc, p[:26])
 a = read_file("ascii1")
 check("ASCII1: no codes, CR LF, small letters and capitals as ASCII",
       a == b"plain red" + CR + LF + b"rev mIXED" + CR + LF + b"end", a)
 q = read_file("pet1")
-check("PET1: $0e (or $8e) then the text as it is", q[1:] == doc and q[:1] in (b"\x0e", b"\x8e"), q[:10])
+check("PET1: $0e (or $8e), the color, then the text as it is",
+      q[2:] == doc and q[:1] in (b"\x0e", b"\x8e") and q[1:2] == LGREY, q[:10])
 print("ALL PASS" if ok else "SOME FAILED")

@@ -316,6 +316,32 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     the same in both places. README: "How it was made: with AI" near the top (Jim designed and
     tested it, Claude wrote the code — Jim wants that clear, so nobody feels misled) and
     "License" at the end (pull requests: Jim may use them under any license).
+- **Version 0.3 (2026-10-30, branch `seq-save`; Jim: compatibility with v0.2 doesn't matter, few
+  saw it).** Jim found old BBS art works well. After his PETSCII art session:
+  - **Release builds are always packed:** `build.bat release` / `build.sh release` stop if
+    Exomizer isn't found (PATH, or `C:\bin\exomizer.exe`), and also write
+    `build\magictypewriter-release.d64` (the file for a GitHub release; a debug build leaves it
+    alone). Jim's "unpacked" builds were VS64's: VS64 only ever makes the debug .prg.
+  - **Room: the 1 KB work area** at $CC00 (see Memory Map): the text buffer is 34 KB (30 KB
+    window with long documents); 752 bytes came free in the lower part.
+  - **SEQ (and magic) files carry the Text color:** its color code right after the case code
+    (`.color_code` in save_file; the tape magic header too). Loading takes a color code there -
+    after the case code, or first if there is none - as the Text color, not as text (in
+    `convert_start`), so round trips add nothing. A file starting with other codes
+    (`[CLR][WHITE]`) keeps them and gets the Text color in front on its first save (harmless:
+    nothing prints before WHITE). Loading a file whose first code is a color looks the same as
+    before - that code colored exactly the text before the next code, which the Text color now
+    does.
+  - **Save menu G: WORD WRAP TO RETURN: NO / YES** (`save_wrap`, the 14th setting in MAGIC T
+    DEFAULTS and the magic header; not one a document brings; `[NO]` for magic files via
+    `set_locked`). Only with word wrap on. `.wrap` in fileio.asm, streaming in `write_doc`: a
+    third copy of the wrap rule (after `redraw_from` and `row_next` - keep all three the same):
+    a RETURN in place of the space a row ends at, RVS ON after it if reverse was on; bytes from
+    the row's last space wait in `line_buf`. `tools/test_seq_save.py` checks the saved bytes
+    against a Python model, ASCII too, and that the file loaded back looks as the document did.
+  - **DEL: unchanged** (Jim tried overwrite mode and prefers the present logic).
+  - Version: `t_main` "MAGIC TYPEWRITER V0.3" and the manual's version line. md2mt's limits:
+    137 blocks (120 for the REU window), branch `v0.3` in its repository.
 
 ## Working with Jim
 
@@ -591,6 +617,12 @@ VICE's file system drive, which answers 62; v0.2: the CTRL and function keys at 
 foot, the Load format starting as MAGIC, the manual by KERNAL LOAD with it, a SEQ file loading
 with it (Save format PETSCII), another program's PRG keeping its 2 address bytes as text (dropped
 with PETSCII), and a 2-byte PRG).
+`python tools/test_seq_save.py [c64|ntsc]` (v0.3: the Text color's code after the case code,
+PETSCII and magic, read back as the Text color, round trips, a `[CLR][WHITE]` file and one starting
+with a color; WORD WRAP TO RETURN in the Save menu, `[NO]` for magic, the saved bytes against a
+Python model of the wrap rule (reverse across rows, a 50-letter word, a row ending at its 40th
+character, codes by spaces), ASCII, nothing with word wrap off or for magic, and the file loaded
+back looking as the document did).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -694,11 +726,12 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 | $02C0–$02FE | debug test mailbox (debug builds only) |
 | $0400–$07FF | screen |
 | $0801– | the lower part of the program: IRQs, keyboard, boxes, menus, disk, undo, data; then the stored copies of the editor and of reudoc.asm, then startup.asm (with the four copies of the border code) |
-| after the lower part | run-time tables (ctype, scrcode, `border_code`: this system's strip code, the per-row arrays, prompt save area), **over the stored copy** once it is copied |
+| after the lower part | run-time tables (`border_code`: this system's strip code, the per-row arrays, `dummy_row`), **over the stored copy** once it is copied |
 | $3E80–$3FFF | sprite blocks 250–255 (**$3FFF must be $00**: the idle-graphics byte drawn in the opened borders) |
-| $4000–$CBFF | text buffer (35 KB), clipboard at its top (none with an REU: it is in the REU). `startup.asm` runs from here once (the PRG file carries it there), before the document takes the room |
-| $CC00–$CFFF | **the undo log** (1 KB, phase 12: `undo_base`, taken from the top of the buffer at start-up; `buf_top` = $CC00) |
-| ($C000–$CEFF) | **with an REU of 192 KB or more:** `reudoc.asm` (long documents), copied there at start-up; the text buffer is then $4000–$BBFF (a 31 KB window) and the undo log $BC00–$BFFF. `RD_PAGE` $CF00: a page for reading the REU's text |
+| $4000–$C7FF | text buffer (34 KB since v0.3; 35 KB before), clipboard at its top (none with an REU: it is in the REU). `startup.asm` runs from here once (the PRG file carries it there), before the document takes the room |
+| $C800–$CBFF | **the undo log** (1 KB, phase 12: `undo_base`, taken from the top of the buffer at start-up; `buf_top` = $C800; `BUF_END` = $CC00) |
+| ($BC00–$CBFF) | **with an REU of 192 KB or more:** `reudoc.asm` (long documents, `REUDOC` $BC00, to ~$C8A0), copied there at start-up; the text buffer is then $4000–$B7FF (a 30 KB window) and the undo log $B800–$BBFF. `RD_PAGE` $CB00: a page for reading the REU's text |
+| $CC00–$CFFF | **the work area** (v0.3, `WORK_AREA` in main.asm): `ctype` $CC00, `scrcode` $CD00 (built by `init_ctype` at start-up), `prompt_save` $CE00 (240), `line_buf` $CF00 (Word wrap to return). Taken from the text buffer for room in the lower part (Jim agreed to give up 1 KB, 2026-10-30). A tape program that runs past `buf_top` (not guarded: KERNAL LOAD) is cut there and the tables are built again (`.cut`, `.show` in load_file) |
 | $D000–$DFFF | I/O (the RAM under it is unused) |
 | $E000–$FFF9 | **the editor** (`src/editor.asm`, assembled with `!pseudopc $e000`; `copy_high` puts it there at start-up) |
 | $FFFA–$FFFF | NMI → `nmi_handler`, IRQ → `irq_entry`, used while the KERNAL ROM is out |

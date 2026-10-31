@@ -47,7 +47,7 @@ try:
     e = Editor(Mon())
     e.wait_ready()
     check("the text buffer ends 1 KB lower (the undo log above it)",
-          v(e, "text_end", 2) == 0xcc00 and v(e, "undo_base", 2) == 0xcc00, hex(v(e, "text_end", 2)))
+          v(e, "text_end", 2) == 0xc800 and v(e, "undo_base", 2) == 0xc800, hex(v(e, "text_end", 2)))
     undo(e)
     check("nothing done yet: 'NOTHING TO UNDO'", "NOTHING TO UNDO" in box(e), box(e))
     e.keys([(KEY["SPACE"], 0)])

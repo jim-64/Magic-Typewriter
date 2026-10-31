@@ -59,7 +59,7 @@ def load(e, name):
     time.sleep(1)
 
 manual = open(os.path.join(PROJ, "test", "manual.prg"), "rb").read()
-manual_text = manual[2 + 20 + 1:]               # (load address, header, case code)
+manual_text = manual[2 + 21 + 2:]               # (load address, header, case code, color code: v0.3)
 
 # A disk with the manual's bytes as a SEQ file: what an SD2IEC hands over
 # when a PRG is opened as SEQ

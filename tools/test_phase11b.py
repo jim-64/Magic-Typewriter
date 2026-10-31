@@ -150,7 +150,7 @@ try:
     e = Editor(Mon())
     e.wait_ready()
     check("REU of 512 KB: long documents on, the text buffer to $bc00 (then CTRL-Z's 1 KB)",
-          v(e, "reu_docs") == 1 and v(e, "buf_top", 2) == 0xbc00 and v(e, "text_end", 2) == 0xbc00,
+          v(e, "reu_docs") == 1 and v(e, "buf_top", 2) == 0xb800 and v(e, "text_end", 2) == 0xb800,
           (v(e, "reu_docs"), hex(v(e, "buf_top", 2)), hex(v(e, "text_end", 2))))
 
     # Load: 90 KB, the rest of it in the REU
@@ -291,7 +291,8 @@ try:
     key(e, "SPACE")
 
     # Stats: the characters of all of it, free room in the REU too
-    key(e, "F1"); key(e, "I", settle=3)
+    key(e, "F1"); key(e, "I", settle=1)
+    wait_for(lambda: any("FREE" in x for x in rows(e)), 60)  # (counting 140 KB takes a while)
     r = rows(e)
     chars = next((x for x in r if "CHARACTERS" in x), "")
     free = next((x for x in r if "FREE" in x), "")

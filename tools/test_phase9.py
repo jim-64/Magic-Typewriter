@@ -63,7 +63,7 @@ def detect(e):
 for kb, banks in ((0, 0), (128, 2), (512, 8), (16384, 255)):
     got, row, docs = session(kb, detect)
     check("REU of %d KB: reu_banks = %d" % (kb, banks), got == banks, got)
-    want = (1, 0xbc00) if banks >= 3 else (0, 0xcc00)   # (then CTRL-Z's 1 KB)
+    want = (1, 0xb800) if banks >= 3 else (0, 0xc800)   # (then CTRL-Z's 1 KB)
     check("... long documents %s (the text buffer to $%04x)" % ("on" if want[0] else "off", want[1]),
           docs == want, docs)
     if banks:
@@ -120,10 +120,10 @@ print("   with an REU:    to the top %d frames, CTRL-A %d" % (b["home frames"], 
 check("the same text with and without an REU (%d bytes)" % len(a["text"]),
       a["text"] == b["text"] and len(a["text"]) > len(doc), (len(a["text"]), len(b["text"])))
 check("marked text copied (without: the clipboard at the top of the buffer)",
-      a["marked"] == 1 and a["text_end"] < 0xcc00, hex(a["text_end"]))
+      a["marked"] == 1 and a["text_end"] < 0xc800, hex(a["text_end"]))
 check("with an REU: the clipboard is in it (none in the buffer)",
-      b["text_end"] == 0xcc00 and b["clip_size"] == 0xcc00 - a["text_end"] and b["clip_size"] > 1000,
-      (hex(b["text_end"]), b["clip_size"], 0xcc00 - a["text_end"]))
+      b["text_end"] == 0xc800 and b["clip_size"] == 0xc800 - a["text_end"] and b["clip_size"] > 1000,
+      (hex(b["text_end"]), b["clip_size"], 0xc800 - a["text_end"]))
 check("the jump to the top is quicker with the REU",
       b["home frames"] * 3 < a["home frames"] * 2, (a["home frames"], b["home frames"]))
 check("no line 25/247 IRQ ever late, without an REU", a["late"] == 0, a["late"])

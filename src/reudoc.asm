@@ -36,9 +36,9 @@ CHUNK_SIZE      = 12288         ; about the size of a window move
 MARGIN          = 4096          ; text kept on each side of the cursor
 MIN_GAP         = 8192          ; room kept in the window for typing
 HDR             = 6             ; a head chunk's header
-RD_PAGE         = $cf00         ; a page for reading the REU's text (the
-                                ; last page before $d000; the code stays
-                                ; below it)
+RD_PAGE         = $cb00         ; a page for reading the REU's text (the
+                                ; last page before the work area at
+                                ; $cc00; the code stays below it)
 
 head_top        !byte 0, 0, DOC_BANK ; REU: where the next head chunk goes
 last_chunk      !byte 0, 0, 0   ; REU: the last head chunk's header

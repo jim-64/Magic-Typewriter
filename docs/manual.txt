@@ -1,7 +1,7 @@
 @banner yellow MAGIC TYPEWRITER
 {lgrey}
 {lgreen}A text editor for the Commodore 64.{lgrey}
-Version 0.2, an early version for review.
+Version 0.3, an early version for review.
 
 This manual is itself a Magic Typewriter document. Read it with {rvs}F5{off} (page down) and {rvs}F3{off} (page up), or the cursor keys. Press {rvs}HOME{off} twice to come back to the top.
 
@@ -79,13 +79,15 @@ Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or
 
 The foot of the main menu lists the {rvs}CTRL{off} keys and the function keys.
 
-The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the disk directory and a disk command. The {yellow}Save{lgrey} menu has the format, the file type and the device too. A setting that other settings decide for you shows in [brackets].
+The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the disk directory and a disk command. The {yellow}Save{lgrey} menu has the format, the file type and the device too, and {yellow}Word wrap to return{lgrey} (see below). A setting that other settings decide for you shows in [brackets].
 
 {cyan}{rvs} FILES {off}{lgrey}
 
 {yellow}Magic{lgrey} is the {yellow}project{lgrey} format: the PETSCII text plus a short header with the document's settings (word wrap, background, text color, formats), so it comes back just as you left it. A new document saves as magic. Magic files are always PRG files, which fast loader cartridges such as Epyx FastLoad speed up a lot.
 
-{yellow}PETSCII{lgrey} is the {yellow}finished{lgrey} text, for BBSes, other programs and {rvs}PRINT#{off}: the text exactly as on the C64, with its colors and reverse. Its first byte tells the character set, as BBS files do.
+{yellow}PETSCII{lgrey} is the {yellow}finished{lgrey} text, for BBSes, other programs and {rvs}PRINT#{off}: the text exactly as on the C64, with its colors and reverse. Its first byte tells the character set, as BBS files do, and the next one the text color, so all of the text shows in its own color wherever the file is printed. Loading takes that color back as the Text color.
+
+{yellow}Word wrap to return{lgrey} (Save menu): with word wrap on, a PETSCII or ASCII file gets a RETURN wherever word wrap ends a row on the screen, so the file PRINTs in BASIC with its lines just as you see them. Your document itself stays as it is. Magic files keep word wrap as it is, so for them it shows [NO].
 
 {yellow}ASCII{lgrey} is for files from or for a PC. Colors and reverse can't be kept; it asks first.
 
@@ -101,10 +103,10 @@ The Load format starts as {yellow}MAGIC{lgrey}: magic files load the way fast lo
 
 With an REU, Magic Typewriter uses it by itself: big moves get faster, and the clipboard lives in the REU.
 
-With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 31 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
+With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 30 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
 
 - Marked text can be up to about 20 KB.
-- {rvs}CTRL{off}+{rvs}A{off}, and saving a magic document to tape, need all of it in the C64 (up to 31 KB).
+- {rvs}CTRL{off}+{rvs}A{off}, and saving a magic document to tape, need all of it in the C64 (up to 30 KB).
 - A document bigger than the REU loads as far as it fits.
 
 {cyan}{rvs} EMULATORS {off}{lgrey}

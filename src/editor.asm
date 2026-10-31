@@ -47,11 +47,13 @@
 ; - Word wrap off: the row is cut after 40 characters, even in the middle
 ;   of a word, like the BASIC screen.
 ; redraw_from and row_next both follow these rules, and must stay the
-; same. The text itself never changes: wrapping is only how it is shown.
+; same (and so must fileio.asm's .wrap, which saves with WORD WRAP TO
+; RETURN). The text itself never changes: wrapping is only how it is shown.
 ;============================================================================
 
 BUF_START       = $4000         ; the text buffer ...
-BUF_END         = $d000         ; ... up to here (BASIC ROM banked out)
+BUF_END         = $cc00         ; ... up to here (BASIC ROM banked out;
+                                ; the work area follows, see main.asm)
 ROWS            = 25            ; screen rows
 MROWS           = 26            ; rows we keep track of: the screen + 1
 
@@ -97,13 +99,7 @@ off             !word 0         ; an offset (argument / result)
 ; editor_init - an empty document and a clean screen.
 !zone editor_init
 editor_init
-        jsr init_ctype
-        ldx #0                  ; scrcode: each byte's screen code, so
--       txa                     ; drawing needs only a table look-up
-        jsr petscii_to_screen
-        sta scrcode,x
-        inx
-        bne -
+        jsr init_ctype          ; (and scrcode)
         lda buf_top             ; no clipboard yet: the text may use all
         sta text_end            ; of the buffer (to $c000 with long
         lda buf_top+1           ; documents in an REU)
@@ -180,12 +176,19 @@ gap_to_start
         sta gap_start+1
         rts
 
-; init_ctype - fill in the ctype table (256 bytes, one per byte value).
+; init_ctype - fill in the ctype table (256 bytes, one per byte value),
+; and scrcode. (Also after a tape program long enough to run over them in
+; the work area: fileio.asm, load_file.)
 !zone init_ctype
 init_ctype
-        ldx #0
+        ldx #0                  ; scrcode: each byte's screen code, so
+-       txa                     ; drawing needs only a table look-up
+        jsr petscii_to_screen
+        sta scrcode,x
+        inx
+        bne -                   ; (X = 0 again)
 -       txa
-        and #$7f                ; $00-$1f and $80-$9f are control codes
+        and #$7f               ; $00-$1f and $80-$9f are control codes
         cmp #$20
         lda #CT_CHAR
         bcs +

@@ -892,16 +892,28 @@ set_name
 
 ; set_locked - ptr2 = a setting: carry set if other settings fix its
 ; value now, with A/X = the name to show (in [ ], and choosing it does
-; nothing; the setting itself is kept for when it is free again). Only the
+; nothing; the setting itself is kept for when it is free again). The
 ; File type: a magic document is always a PRG file, and on tape PETSCII
 ; and ASCII documents are always SEQ (data) files (Jim, 2026-09-30).
+; WORD WRAP TO RETURN: never for a magic document, which keeps word wrap
+; as it is (v0.3).
 !zone set_locked
 set_locked
         lda ptr2
-        cmp #<set_save_type
+        ldx ptr2+1
+        cmp #<set_save_wrap
+        bne +
+        cpx #>set_save_wrap
+        bne +
+        lda save_format
+        bne .free               ; (FORMAT_MAGIC is 0)
+        lda #<n_no
+        ldx #>n_no
+        sec
+        rts
++       cmp #<set_save_type
         bne .free
-        lda ptr2+1
-        cmp #>set_save_type
+        cpx #>set_save_type
         bne .free
         lda save_format
         bne +                   ; (FORMAT_MAGIC is 0)
@@ -1299,6 +1311,7 @@ menu_save
         !byte 4,  MI_SET  : !word n_device, set_save_dev
         !byte 5,  MI_RUN  : !word n_directory, dir_save
         !byte 6,  MI_RUN  : !word n_command, cmd_save
+        !byte 7,  MI_SET  : !word n_wraprtn, set_save_wrap
         !byte 24, MI_EXIT : !word n_exit, 0
         !byte 0
 
@@ -1321,6 +1334,7 @@ set_load_dev    !word load_dev : !byte 8 : !word v_devices, names_devices
 set_save_format !word save_format : !byte 3 : !word v_colors, names_formats
 set_save_type   !word save_type : !byte 2 : !word v_0_1, names_types
 set_save_dev    !word save_dev : !byte 8 : !word v_devices, names_devices
+set_save_wrap   !word save_wrap : !byte 2 : !word v_0_1, names_no_yes
 set_print_ascii !word print_ascii : !byte 2 : !word v_0_1, names_no_yes
 set_print_dev   !word print_dev : !byte 4 : !word v_printers, names_printers
 
@@ -1350,7 +1364,7 @@ letter_keys
 
 ; Titles and names (screen codes; letters as small letters show as
 ; capitals in either character set)
-t_main          !scr "magic typewriter v0.2", 0 ; (the version: also in
+t_main          !scr "magic typewriter v0.3", 0 ; (the version: also in
                                 ; docs/manual.txt)
 t_load          !scr "load", 0
 t_save          !scr "save", 0
@@ -1373,6 +1387,7 @@ n_directory     !scr "disk directory", 0
 n_command       !scr "disk command", 0
 n_filetype      !scr "file type", 0
 n_toascii       !scr "convert to ascii", 0
+n_wraprtn       !scr "word wrap to return", 0
 n_ascii         !scr "ascii", 0
 n_on            !scr "on", 0
 n_off           !scr "off", 0

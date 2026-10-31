@@ -21,10 +21,12 @@
 ;                reudoc.asm, and the start-up code (startup.asm)
 ;   after that   run-time tables, over the stored copy once it is copied
 ;   $3e80-$3fff  sprite blocks ($3fff must be 0: the open borders show it)
-;   $4000-$cfff  the text buffer (36 KB, with the clipboard at its top); the
+;   $4000-$c7ff  the text buffer (34 KB, with the clipboard at its top); the
 ;                start-up code runs from here once, before the document
-;                takes the room. With an REU of 192 KB or more: $4000-$bfff,
-;                and reudoc.asm at $c000 (long documents)
+;                takes the room. With an REU of 192 KB or more: $4000-$b7ff,
+;                and reudoc.asm at $bc00 (long documents)
+;   $c800-$cbff  CTRL-Z's log ($b800-$bbff with long documents)
+;   $cc00-$cfff  the work area: tables that need no starting values (v0.3)
 ;   $d000-$dfff  I/O
 ;   $e000-$fff9  the editor, in the RAM under the KERNAL ROM
 ;   $fffa-$ffff  NMI and IRQ vectors for while the KERNAL ROM is out
@@ -252,7 +254,7 @@ high_end                                ; (an address under the KERNAL ROM)
 ; ... and the code for long documents held in an REU, assembled to run at
 ; $c000; reudoc_install puts it there only when there is such an REU.
 ;----------------------------------------------------------------------------
-REUDOC          = $c000
+REUDOC          = $bc00
 reudoc_load                             ; where the PRG file has it
 !pseudopc REUDOC {
 !source "src/reudoc.asm"
@@ -269,18 +271,28 @@ REUDOC_SIZE     = reudoc_end - REUDOC
 ; not carry them. They are set up at start-up.
 ;----------------------------------------------------------------------------
 tables          = high_load
-ctype           = tables                ; 256: what each byte of text is
-scrcode         = ctype + 256           ; 256: the screen code of each byte
-border_code     = scrcode + 256         ; the border code for this video
+border_code     = tables                ; the border code for this video
                                         ; system (startup.asm puts it here).
-                                        ; Right after the two 256-byte
-                                        ; tables it starts where the lower
-                                        ; part ends in its page, so its loops
-                                        ; (kept within a page: same_page)
-                                        ; seldom need padding (v0.2).
+                                        ; It starts where the lower part
+                                        ; ends, in the same page, so its
+                                        ; loops (kept within a page:
+                                        ; same_page) seldom need padding.
                                         ; The rest of the tables come after
                                         ; it: see below startup.asm, where
                                         ; its size (BORDER_SIZE) is known.
+
+; The work area (v0.3): 1 KB above the text buffer and CTRL-Z's log, for
+; tables that need no starting values. It was taken from the text buffer
+; to make room in the lower part (Jim, 2026-10-30).
+WORK_AREA       = $cc00
+ctype           = WORK_AREA             ; 256: what each byte of text is
+scrcode         = WORK_AREA + $100      ; 256: the screen code of each byte
+prompt_save     = WORK_AREA + $200      ; 240: what is under a prompt box
+line_buf        = WORK_AREA + $300      ; 256: a row waiting to be saved
+                                        ; (fileio.asm, .wrap)
+!if WORK_AREA != BUF_END {
+        !error "The work area must follow the text buffer"
+}
 
 ;----------------------------------------------------------------------------
 ; ... and last the start-up code, which runs once from where the PRG file
@@ -305,13 +317,12 @@ row_color       = row_off_hi + MROWS    ;   the color there,
 row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
 row_len         = row_rvs + MROWS       ;   how many cursor places it has
 dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
-prompt_save     = dummy_row + 40        ; 240: what is under a prompt box
 
 !ifdef MOUSE_TRACE {
-mouse_trace     = prompt_save + 240     ; 256: mouse trace (input.asm)
+mouse_trace     = dummy_row + 40        ; 256: mouse trace (input.asm)
 tables_end      = mouse_trace + 256
 } else {
-tables_end      = prompt_save + 240
+tables_end      = dummy_row + 40
 }
 
 ; The lower part and the tables must end before the sprite blocks at $3e80.

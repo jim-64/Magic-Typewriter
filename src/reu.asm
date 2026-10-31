@@ -229,10 +229,10 @@ reu_copy
 .back   !byte 0
 
 ;----------------------------------------------------------------------------
-; reudoc_copy - long documents only: reudoc.asm ($c000-$cfff) to REU bank 0
+; reudoc_copy - long documents only: reudoc.asm ($bc00-$cbff) to REU bank 0
 ; at $f000 (A = REU_STASH) or back (A = REU_FETCH). A tape program is
-; loaded with the KERNAL's LOAD, which doesn't stop at $c000; one saved
-; without an REU may be longer (fileio.asm, load_file).
+; loaded with the KERNAL's LOAD, which doesn't stop at the window's end;
+; one saved without an REU may be longer (fileio.asm, load_file).
 ;----------------------------------------------------------------------------
 reudoc_copy
         ldx reu_docs

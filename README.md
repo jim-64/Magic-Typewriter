@@ -141,7 +141,8 @@ also lists the CTRL keys and the function keys at its foot.
 | Q Quit Magic Typewriter | Resets the C64, back to BASIC's start-up screen (asks first if there are unsaved changes) |
 
 **Load:** A Load, B Format, C Device (8–14 or TAPE), D Disk directory, E Disk command.
-**Save:** A Save (asks for the name), B Format, C File type, D Device, E Disk directory, F Disk command.
+**Save:** A Save (asks for the name), B Format, C File type, D Device, E Disk directory, F Disk command,
+G Word wrap to return (see Files).
 **Print:** A Print, B Convert to ASCII, C Device (4–7).
 
 A setting that other settings decide for you is shown in [brackets] — e.g. the File type of a
@@ -159,11 +160,19 @@ magic document, which is always PRG.
   SEQ files included, so with JiffyDOS the difference is smaller.
 - **PETSCII** — the *finished* text, for BBSes, other programs and `PRINT#`: exactly as on the
   C64, colors and reverse included. The first byte says which character set the text uses ($0E
-  upper/lower, $8E upper case/graphics), as BBS files do.
+  upper/lower, $8E upper case/graphics), as BBS files do, and the next one is the text color's
+  code, so no text is left to the color of the program that prints the file. Loading takes that
+  color back as the Text color. (Magic files carry it the same way.)
 - **ASCII** — for files from or for a PC: capitals and small letters swapped, line ends written as
   CR+LF (CR, LF or CR+LF are all read). Colors and reverse can't be kept; it warns you first.
 
 A good habit: work in magic, and save a PETSCII copy when the text is done.
+
+**Word wrap to return** (Save menu, G): with word wrap on, a PETSCII or ASCII file gets a RETURN
+wherever word wrap ends a row on the screen (in place of the space it ends at; reversed text gets
+an RVS ON after it). Every line is then at most 39 characters, so the file `PRINT`s in BASIC with
+its lines just as you see them. The document itself stays as it is. Magic files keep word wrap as
+it is: for them it shows [NO].
 
 **The Load format starts as MAGIC**, and that is the one to use for everything except PC files:
 a magic file loads the way fast loader cartridges speed up (Epyx FastLoad and the like, on any
@@ -189,18 +198,19 @@ With an REU (1700/1764/1750, or the Ultimate's, VICE's, the MEGA65's) Magic Type
 itself:
 
 - **Any size:** faster big moves, and the clipboard lives in the REU.
-- **192 KB or more: long documents.** Only a 31 KB stretch around the cursor is in the C64's
+- **192 KB or more: long documents.** Only a 30 KB stretch around the cursor is in the C64's
   memory; the rest stays in the REU, so a document can be as long as the REU allows. Loading,
   saving, printing, Find, Stats and the page marker all work on the whole document. When the
   cursor gets near the end of that stretch the next part comes in — a short pause (about
   1½ seconds) now and then while you page through.
   - Marked text can be up to about 20 KB.
   - CTRL-A (mark everything) and saving a magic document **to tape** need the whole document in
-    memory (up to 31 KB); longer ones get a message (save to tape as PETSCII instead).
+    memory (up to 30 KB); longer ones get a message (save to tape as PETSCII instead).
   - A document bigger than the REU can hold loads as far as it fits: "TOO LONG: ONLY PART
     LOADED".
 
-Without an REU, 35 KB of the C64's memory holds the text (1 KB is kept for undo).
+Without an REU, 34 KB of the C64's memory holds the text (1 KB is kept for undo, 1 KB for the
+program's tables).
 
 ## Emulators
 

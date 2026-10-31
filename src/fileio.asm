@@ -53,6 +53,8 @@ default_save_format !byte 0     ; the Save format for a new document: as
                                 ; set at start-up (built in, or Save
                                 ; defaults); CLEAR ALL goes back to it
 save_type       !byte 0         ; 0 = SEQ, 1 = PRG
+save_wrap       !byte 0         ; 1 = WORD WRAP TO RETURN (v0.3): RETURNs
+                                ; where word wrap ends the rows (.wrap)
 print_ascii     !byte 0         ; 1 = convert to ASCII
 print_dev       !byte 4
 
@@ -702,18 +704,16 @@ load_file
         beq .tape_break
 +       lda #0
         sta .cut
-        lda reu_docs            ; long documents: past $c000 (a file saved
-        beq .tape_fits          ; without an REU)? reudoc.asm back, and the
-        lda #<REUDOC            ; text cut there
-        cmp EAL
-        lda #>REUDOC
-        sbc EAL+1
-        bcs .tape_fits
-        lda #REU_FETCH
+        lda buf_top             ; past the text buffer (a file saved by an
+        cmp EAL                 ; older version, or without an REU)? Then
+        lda buf_top+1           ; it ran over CTRL-Z's log, reudoc.asm and
+        sbc EAL+1               ; maybe the work area: reudoc.asm back (if
+        bcs .tape_fits          ; any), the text cut there, and .show
+        lda #REU_FETCH          ; makes the tables again
         jsr reudoc_copy
-        lda #<REUDOC
+        lda buf_top
         sta EAL
-        lda #>REUDOC
+        lda buf_top+1
         sta EAL+1
         inc .cut
 .tape_fits
@@ -766,7 +766,10 @@ load_file
 
 ; .show - make the file into text and show it from the top, cursor at the
 ; start (after io_end: this uses the editor)
-.show   lda #0                  ; nothing marked
+.show   lda .cut                ; (a tape program that ran on past the
+        beq +                   ; buffer: ctype and scrcode again)
+        jsr init_ctype
++       lda #0                  ; nothing marked
         sta sel_on
         lda #1                  ; (and nothing to undo)
         jsr undo_reset
@@ -797,7 +800,7 @@ load_fast       !byte 0         ; 1: it came with KERNAL LOAD (the tests
 .too_big        !byte 0         ; 1: it doesn't fit (prg_fits)
 .kept           !byte 0         ; 2: .addr is the text's first 2 bytes
 .ended          !byte 0         ; READST after those 2 bytes
-.cut            !byte 0         ; 1: a tape program cut short at $c000
+.cut            !byte 0         ; 1: a tape program cut short at buf_top
 zp_keep         !fill ZP_END-ZP_START, 0 ; our zero page during LOAD
 
 ;----------------------------------------------------------------------------
@@ -917,8 +920,14 @@ convert_start
         cmp #$0e
         beq +
         cmp #$8e
-        bne .keep
+        bne .color              ; (none: maybe a color code)
 +       sta load_charset
+        jsr .get                ; then a color code is the Text color
+        bcs .done               ; (save_file writes one, v0.3), not text
+.color  tax
+        ldy ctype,x             ; (ctype 0-15: a color code, that color)
+        bmi .keep
+        sty text_color
 
 .copy   jsr .get                ; then the rest, byte by byte
         bcs .done
@@ -1200,6 +1209,12 @@ save_file
         rts
 +       jsr defaults_make       ; (the magic header: made now, while the
                                 ; editor's settings can be read)
+        lda #0                  ; WORD WRAP TO RETURN: with word wrap on,
+        ldx save_format         ; and not for magic files (which keep word
+        beq +                   ; wrap as it is) - also worked out now
+        lda save_wrap
+        and wrap_on
++       sta .wrap_now
         lda save_dev
         sta cur_dev
         cmp #1
@@ -1262,6 +1277,11 @@ save_file
         jsr .out                ; setting, and other programs that print
                                 ; the file switch to the right set with it.
         bcs .bus_error
+        jsr .color_code         ; Then the Text color, as its color code
+        jsr .out                ; (v0.3, Jim): so all of the text has a
+        bcs .bus_error          ; color in the file, none is left to the
+                                ; program that prints it. load_file takes
+                                ; it back as the Text color.
 
 .text   lda #OUT_ASIS           ; then the text, as the Save format says
         ldx save_format
@@ -1269,6 +1289,8 @@ save_file
         bne +
         lda #OUT_ASCII
 +       sta out_mode
+        lda .wrap_now
+        sta wrap_out
         jsr write_doc
         bcs .stopped
 
@@ -1340,8 +1362,9 @@ save_file
 
 .tape_prg
         ; KERNAL SAVE writes one piece of memory: so the gap goes to the
-        ; start (the text all after it), and the header and the case code
-        ; go just below the text. The cursor goes back afterwards.
+        ; start (the text all after it), and the header, the case code
+        ; and the color code go just below the text. The cursor goes back
+        ; afterwards.
         lda reu_docs            ; (a long document: all of it must be in
         beq +                   ; the text buffer)
         lda #<msg_tape_long
@@ -1349,11 +1372,11 @@ save_file
         jsr reu_all_in
         bcc +
         rts
-+       jsr gap_size            ; room for those 21 bytes?
++       jsr gap_size            ; room for those bytes?
         lda work+1
         bne +
         lda work
-        cmp #DEFAULTS_LEN+1
+        cmp #DEFAULTS_LEN+2
         bcs +
         jmp no_room
 +       jsr get_cursor_off
@@ -1365,9 +1388,9 @@ save_file
         sta off
         sta off+1
         jsr move_gap_to
-        sec                     ; ptr = gap_end - 21
+        sec                     ; ptr = gap_end - those bytes
         lda gap_end
-        sbc #DEFAULTS_LEN+1
+        sbc #DEFAULTS_LEN+2
         sta ptr
         lda gap_end+1
         sbc #0
@@ -1377,8 +1400,11 @@ save_file
         sta (ptr),y
         dey
         bpl -
-        jsr .case_code          ; ... and the case code
+        jsr .case_code          ; ... the case code ...
         ldy #DEFAULTS_LEN
+        sta (ptr),y
+        jsr .color_code         ; ... and the color code
+        ldy #DEFAULTS_LEN+1
         sta (ptr),y
         lda #<msg_press_record
         ldx #>msg_press_record
@@ -1416,6 +1442,12 @@ save_file
         ldx #1
         rts
 
+; .color_code - A = the Text color's PETSCII color code
+.color_code
+        ldx text_color
+        lda color_codes,x
+        rts
+
 ; .case_code - A = the character set as the PETSCII case code: $0e for
 ; upper/lower case, $8e for upper case/graphics
 .case_code
@@ -1435,17 +1467,29 @@ save_file
 
 ; write_doc - send the whole text to the current output (a file or the
 ; printer, after CHKOUT) as out_mode says: as it is, as ASCII, or for a
-; Commodore printer. Carry set if it stopped early: A = 0 for RUN/STOP,
-; else a bus error. (Also used by print_doc.)
+; Commodore printer; with wrap_out = 1 (a save with WORD WRAP TO RETURN)
+; through .wrap. Carry set if it stopped early: A = 0 for RUN/STOP, else a
+; bus error. (Also used by print_doc.) wrap_out is 0 again afterwards.
 OUT_ASIS        = 0             ; out_mode: every byte as it is
 OUT_ASCII       = 1             ;   ASCII (.ascii)
 OUT_PRINTER     = 2             ;   for a Commodore printer (.printer)
 write_doc
+        lda #0                  ; (.wrap: the text starts a row)
+        sta .w_chars
+        sta .w_len
+        sta .w_rvs
         lda #<write_range       ; (each piece of it in turn)
         sta range_call
         lda #>write_range
         sta range_call+1
-        jmp each_range
+        jsr each_range
+        bcs +                   ; (stopped early: A says why)
+        jsr .w_flush            ; what still waits (.wrap)
+        jsr READST
+        cmp #1                  ; (carry set: an error, A not 0)
++       ldx #0                  ; (wrap_out: for this save only)
+        stx wrap_out
+        rts
 
 ; write_range - send the text from ptr up to range_end, as out_mode says
 write_range
@@ -1459,15 +1503,11 @@ write_range
         beq .break
         ldy #0
         lda (ptr),y
-        ldx out_mode
+        ldx wrap_out
         bne +
-        jsr CHROUT              ; (as it is)
+        jsr .emit               ; (as out_mode says)
         jmp ++
-+       dex
-        bne +
-        jsr .ascii              ; (as ASCII)
-        jmp ++
-+       jsr .printer            ; (for the printer)
++       jsr .wrap               ; (WORD WRAP TO RETURN)
 ++      jsr READST
         bne .error
         inc ptr
@@ -1482,6 +1522,132 @@ write_range
 .error  lda #1
         sec
         rts
+
+; .emit - A = a byte of the text: send it as out_mode says
+.emit   ldx out_mode
+        bne +
+        jmp CHROUT              ; (as it is)
++       dex
+        bne +
+        jmp .ascii              ; (as ASCII)
++       jmp .printer            ; (for the printer)
+
+; .wrap - WORD WRAP TO RETURN (v0.3, Jim): A = a byte of the text. The rows
+; are split as the screen splits them with word wrap on - the same rule as
+; row_next and redraw_from in editor.asm, which must stay the same: a row
+; takes up to 40 characters (codes take no place); full, it ends after its
+; last space, or is cut at 40 if it has none; a line end ends it too.
+; Where a row ends after a space, a RETURN goes out in the space's place
+; (then RVS ON, if reverse was on there: a RETURN ends it), so every row
+; is at most 39 characters and a RETURN, and the file PRINTs in BASIC with
+; its lines as on the screen. A row cut at 40 gets nothing: the screen goes
+; on to the next line by itself.
+; From a row's last space on, the bytes wait in line_buf (.w_len of them,
+; the space first) until it is known whether that space ends the row. More
+; than 255 waiting (a run of codes): they go out, and that break is lost.
+.wrap   sta .w_b
+        tax
+        ldy ctype,x
+        cpy #CT_CHAR
+        beq .w_char
+        cpy #CT_EOL
+        bne .w_code
+        jsr .w_flush            ; a line end: the row ends as it is
+        lda #0
+        sta .w_chars
+        beq .w_out              ; (always)
+.w_code lda .w_len              ; a code: it waits if a space waits
+        bne .w_add
+.w_out  lda .w_b
+        jmp .w_send
+
+.w_char inc .w_chars            ; a character
+        cpx #$20
+        bne +
+        jsr .w_flush            ; a space: the one before it ends no row;
+        lda .w_chars            ; this one may
+        sta .w_brk
+        jsr .w_add
+        jmp .w_full
++       lda .w_len              ; another character: it waits if a space
+        beq +                   ; waits
+        jsr .w_add
+        jmp .w_full
++       lda .w_b
+        jsr .w_send
+
+.w_full lda .w_chars            ; the row full?
+        cmp #40
+        bcc .w_done
+        lda .w_len              ; no space waits: cut at 40, nothing to add
+        beq .w_new
+        lda .w_rvs              ; a space: a RETURN in its place, ...
+        pha
+        lda #$0d
+        jsr .w_send
+        pla                     ; ... RVS ON if reverse was on there ...
+        beq +
+        lda #$12
+        jsr .w_send
++       ldy #1                  ; ... and what came after the space starts
+        jsr .w_from             ; the next row
+        sec
+        lda .w_chars
+        sbc .w_brk
+.w_new  sta .w_chars            ; (A = 0 from beq: a new row)
+.w_done rts
+
+; .w_add - line_buf gets .w_b (if it is full, what waits goes out first,
+; and .w_b too: that break is lost)
+.w_add  ldy .w_len
+        cpy #255
+        bcs +
+        lda .w_b
+        sta line_buf,y
+        inc .w_len
+        rts
++       jsr .w_flush
+        jmp .w_out
+
+; .w_flush - send what waits in line_buf; .w_from: from its byte Y on
+.w_flush
+        ldy #0
+.w_from cpy .w_len
+        bcs +
+        lda line_buf,y
+        sty .w_i
+        jsr .w_send
+        ldy .w_i
+        iny
+        bne .w_from             ; (always)
++       lda #0
+        sta .w_len
+        rts
+
+; .w_send - send A (.emit), keeping track of reverse in what has gone out
+.w_send pha
+        tax
+        lda ctype,x
+        ldx #1
+        cmp #CT_RVSON
+        beq +
+        dex
+        cmp #CT_RVSOFF
+        beq +
+        cmp #CT_EOL
+        bne ++
++       stx .w_rvs
+++      pla
+        jmp .emit
+
+.w_b    !byte 0                 ; the byte .wrap was given
+.w_chars !byte 0                ; characters in the row so far
+.w_brk  !byte 0                 ; ... up to its last space (the one waiting)
+.w_len  !byte 0                 ; bytes waiting in line_buf
+.w_rvs  !byte 0                 ; 1: reverse on in what has gone out
+.w_i    !byte 0
+.wrap_now !byte 0               ; (save_file: wrap_out for this save)
+wrap_out !byte 0                ; 1: write_doc sends through .wrap
 
 ; .ascii - A = a byte of the text: send it as ASCII (or nothing)
 .ascii  tax
@@ -1937,7 +2103,7 @@ disk_command
 ; A reader skips settings it does not know and keeps its own for those
 ; missing, so later versions can add some.
 ;============================================================================
-DEFAULTS_COUNT  = 13            ; settings in version 1
+DEFAULTS_COUNT  = 14            ; settings (13 up to v0.2)
 DEFAULTS_LEN    = 6 + DEFAULTS_COUNT + 1
 defaults_buf    !fill DEFAULTS_LEN, 0
 
@@ -1946,7 +2112,7 @@ defaults_buf    !fill DEFAULTS_LEN, 0
 defaults_vars
         !word text_bg, text_color, 0, wrap_on, edit_mode, mark_key
         !word load_format, load_dev, save_format, save_type, save_dev
-        !word print_ascii, print_dev
+        !word print_ascii, print_dev, save_wrap
 
 defaults_name   !pet "magic t defaults"
 DEFAULTS_NAME_LEN = * - defaults_name
@@ -2052,10 +2218,10 @@ doc_apply
 ; The settings a Magic Typewriter document brings with it (1), in the
 ; order of defaults_vars: background, text color, wordwrap, Load format,
 ; Save format, File type. (Its character set comes with the case code at
-; the start of its text, as with PETSCII files.) The header holds all 13,
+; the start of its text, as with PETSCII files.) The header holds all 14,
 ; like MAGIC T DEFAULTS; the others are left as they are.
 doc_settings
-        !byte 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0
+        !byte 1, 1, 0, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0
 
 ; defaults_file - input_buf = "MAGIC T DEFAULTS" (for name_plus)
 !zone defaults_file
