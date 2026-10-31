@@ -375,6 +375,6 @@ finally:
     time.sleep(1)
 
 got = read_file("big2", "s")
-check("BIG2 on the disk: the case code, then the whole text", got == b"\x0e" + model_doc,
-      (len(got), len(model_doc) + 1))
+check("BIG2 on the disk: the case code, light grey, then the whole text", got == b"\x0e\x9b" + model_doc,
+      (len(got), len(model_doc) + 2))
 print("ALL PASS" if ok else "SOME FAILED")

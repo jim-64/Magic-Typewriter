@@ -13,7 +13,7 @@ shot = os.path.join(WORK, "manual.png")
 if os.path.exists(shot):
     os.remove(shot)
 prg = open(os.path.join(PROJ, "test", "manual.prg"), "rb").read()
-want = prg[2 + 20 + 1:]                     # (load address, header, case code)
+want = prg[2 + 21 + 2:]                     # (load address, header, case code, color: v0.3)
 ok = True
 def check(name, cond, info=""):
     global ok

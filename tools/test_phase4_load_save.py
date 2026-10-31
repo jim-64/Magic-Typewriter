@@ -144,8 +144,8 @@ c1541 = r"C:/bin/GTK3VICE-3.9-win64/GTK3VICE-3.9-win64/bin/c1541.exe"
 print(subprocess.run([c1541, "-attach", "p4.d64", "-read", "sample,s", out], capture_output=True, text=True, cwd=S).stdout[-200:])
 out = os.path.join(S, out)
 saved = open(out, "rb").read() if os.path.exists(out) else b""
-check("saved file = $0e (upper/lower set) + 'x' typed at the cursor + the rest",
-      saved == b"" + b"X" + sample[1:], saved[:8])
+check("saved file = $0e (upper/lower set), the Text color (v0.3), 'x' typed at the cursor, the rest",
+      saved == b"\x0e\x9b" + b"X" + sample[1:], saved[:8])
 listing = subprocess.run([c1541, "-attach", disk, "-list"], capture_output=True, text=True).stdout
 print(listing)
 print("ALL PASS" if ok else "SOME FAILED")

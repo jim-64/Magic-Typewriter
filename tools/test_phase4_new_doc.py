@@ -127,16 +127,16 @@ if not readonly:
     subprocess.run([c1541, "-attach", "p4b.d64", "-read", "note,p", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
     if saved[2:6] == b"\x00MTW":                # (a new document saves in
-        saved = saved[22:]                      # the magic format, a PRG:
+        saved = saved[23:]                      # the magic format, a PRG:
                                                 # after its load address and
                                                 # header, as PETSCII)
-    check("NOTE on disk = $0e (upper/lower) + 'HELLO DISK' + RETURN", saved == b"\x0eHELLO DISK\r", saved)
+    check("NOTE on disk = $0e (upper/lower) + light grey + 'HELLO DISK' + RETURN", saved == b"\x0e\x9bHELLO DISK\r", saved)
     out = "other_saved.seq"
     if os.path.exists(os.path.join(S, out)):
         os.remove(os.path.join(S, out))
     subprocess.run([c1541, "-attach", "p4b.d64", "-read", "other,p", out], capture_output=True, cwd=S)
     saved = open(os.path.join(S, out), "rb").read() if os.path.exists(os.path.join(S, out)) else b""
     if saved[2:6] == b"\x00MTW":
-        saved = saved[22:]
-    check("OTHER on disk = $8e (upper case/graphics) + 'OTHER'", saved == b"\x8eOTHER", saved)
+        saved = saved[23:]
+    check("OTHER on disk = $8e (upper case/graphics) + light grey + 'OTHER'", saved == b"\x8e\x9bOTHER", saved)
 print("ALL PASS" if ok else "SOME FAILED")
