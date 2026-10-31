@@ -754,7 +754,7 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   blocks** (the work area freed 752; the SEQ color and Word wrap to return took ~360). The
   editor + find end $FFF1 (8 free under the KERNAL); reudoc.asm $BC00-$C893 (~620 free before
   RD_PAGE $CB00). `border_code` now starts at the lower part's end itself (offset $76 in its
-  page; the build checks its loops stay within pages).
+  page; `same_page` pads its exact-timed loops so none crosses a page).
   Before v0.3: Space (v0.2, 2026-10-10; mouse fixes 2026-10-11): debug tables end $3E7F, so **only 1 byte
   free below the sprite blocks in debug builds** (release: ~580). Debug builds with
   `-DMOUSE_SHOW=1` or `-DMOUSE_TRACE=1` no longer fit (they didn't before the mouse fix
