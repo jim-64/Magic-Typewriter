@@ -11,11 +11,15 @@ rem   magictypewriter.d64   disk image: debug build - the program and all the
 rem                         test files; release build - the program packed
 rem                         with Exomizer (loads faster) and the manual
 rem   magictypewriter-packed.prg   (release) the packed program
+rem   magictypewriter-release.d64  (release) a copy of the release disk, for
+rem                         the GitHub release: a debug build later
+rem                         overwrites magictypewriter.d64, not this one
 rem   main.vs               labels for VICE's monitor
 rem   main.lbl, main.lst    label list and assembly listing, for reading
 rem
-rem Exomizer (exomizer.exe) must be on the PATH for the packed program;
-rem without it the release disk gets the program as it is.
+rem A release build needs Exomizer (exomizer.exe), on the PATH or in C:\bin;
+rem without it the release build stops: a release is always packed.
+rem (VS64's build is a debug build: it makes only the .prg.)
 rem
 rem build.sh does the same steps on Linux. Keep the two in step.
 rem ======================================================================
@@ -25,6 +29,8 @@ cd /d "%~dp0"
 set ACME=C:\bin\acme0.97win\acme\acme.exe
 set C1541=C:\bin\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\c1541.exe
 set EXOMIZER=exomizer
+where %EXOMIZER% >nul 2>nul
+if errorlevel 1 if exist C:\bin\exomizer.exe set EXOMIZER=C:\bin\exomizer.exe
 
 set DEBUG=1
 if /i "%~1"=="release" set DEBUG=0
@@ -60,24 +66,24 @@ rem The release disk: the program packed by Exomizer into a program that
 rem unpacks itself (a BASIC SYS line, so LOAD and RUN as usual, from disk or
 rem tape; -x1: the border flashes while it unpacks), and the manual.
 :release_disk
-set PROGRAM=build\magictypewriter.prg
-where %EXOMIZER% >nul 2>nul
+"%EXOMIZER%" -v >nul 2>nul
 if errorlevel 1 goto no_exomizer
 echo Packing with Exomizer...
 "%EXOMIZER%" sfx sys -x1 -q -o build\magictypewriter-packed.prg build\magictypewriter.prg
 if errorlevel 1 goto failed
-set PROGRAM=build\magictypewriter-packed.prg
-goto release_write
-:no_exomizer
-echo Exomizer is not on the PATH: the disk gets the program unpacked.
-:release_write
-echo Making disk image (the program and the manual)...
-"%C1541%" -format "magic typewriter,mt" d64 build\magictypewriter.d64 -write %PROGRAM% "magic typewriter" >nul
+echo Making disk image (the packed program and the manual)...
+"%C1541%" -format "magic typewriter,mt" d64 build\magictypewriter.d64 -write build\magictypewriter-packed.prg "magic typewriter" >nul
 if errorlevel 1 goto failed
 "%C1541%" -attach build\magictypewriter.d64 -write test\manual.prg "manual,p" >nul
 if errorlevel 1 goto failed
-echo Done: build\magictypewriter.prg and build\magictypewriter.d64 (release)
+copy /y build\magictypewriter.d64 build\magictypewriter-release.d64 >nul
+if errorlevel 1 goto failed
+echo Done: build\magictypewriter-release.d64 (release: packed program + manual)
 exit /b 0
+:no_exomizer
+echo Exomizer was not found (on the PATH or as C:\bin\exomizer.exe).
+echo A release must be packed: install Exomizer, then build again.
+goto failed
 
 :failed
 echo BUILD FAILED
