@@ -6,7 +6,7 @@
 ; nothing typed: the matches just go), and finds the matches one after
 ; another, as Find does, asking at each: REPLACE Y/N/A=ALL. Y replaces
 ; this one, N leaves it, A replaces it and all the rest without asking;
-; RUN/STOP stops. It goes through the document once, from the top to the
+; any other key stops. It goes through the document once, from the top to the
 ; end. Then a box says how many it replaced.
 ;
 ; A match is replaced as typing over marked text replaces it: the match
@@ -105,17 +105,15 @@ replace_key
         ldy #0
         jsr box_open
 -       jsr wait_key
+        cpy #MOD_REPEAT         ; a key held down repeating doesn't count
+        bcs -                   ; (RETURN still held from WITH: would stop)
         cmp #KEY_Y
         beq .yes
         cmp #KEY_N
         beq .no
         cmp #KEY_A
         beq .yes_all
-        cmp #KEY_STOP
-        beq .stop
-        cmp #KEY_RESTORE
-        bne -
-.stop   jsr box_close
+        jsr box_close           ; any other key stops (Jim, 2026-10-31)
         jmp .done
 .no     jsr box_close
         jmp .next

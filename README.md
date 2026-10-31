@@ -118,7 +118,7 @@ the way. The match is marked; **CTRL-F, RETURN** finds the next one.
 **CTRL-R** asks for a word (FIND:) and then for what goes in its place (WITH:; nothing typed
 means the matches are just taken out). It goes through the document once, from the top to the end,
 marking each match and asking **REPLACE Y/N/A=ALL**: Y replaces it, N leaves it, A replaces it and
-all the rest without asking, RUN/STOP stops. A box then says how many were replaced. The new text
+all the rest without asking, any other key stops. A box then says how many were replaced. The new text
 gets the color the match had, as when typing over marked text. CTRL-Z undoes the last one replaced,
 or, after A, everything A replaced (if what was taken out fits in the 1 KB undo log).
 

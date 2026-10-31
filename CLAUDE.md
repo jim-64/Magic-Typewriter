@@ -360,7 +360,9 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     (above the box). Y: replaced (`delete_selection` + `insert_byte`s, so the new text takes
     the color where the match began), its own CTRL-Z action; N: left; A: this and the rest,
     one CTRL-Z action, nothing drawn until the end (`replace_all`: `show_cursor_at`,
-    `leave_cursor`'s redraw and Find's `.found` drawing skip); RUN/STOP stops. Then "n
+    `leave_cursor`'s redraw and Find's `.found` drawing skip); any other key stops (Jim: RUN/STOP
+    wasn't obvious; a held key's repeats are ignored there, so a RETURN still held from WITH:
+    can't stop it). Then "n
     REPLACED". How Find is told: `find_cont` (start at the cursor, keep `find_from`/
     `find_wrapped`, no "NOT FOUND"), `find_wrapped` = 1 and `find_from` (and `rd_from` with a
     long document) = $FF..: the search ends at the document's end. With a long document the

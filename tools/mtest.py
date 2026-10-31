@@ -75,7 +75,10 @@ class Editor:
             if time.time() - t0 > timeout:
                 raise TimeoutError("keys not taken")
         want = (start + len(events)) % 256
-        while self.count() != want:
+        # (a key held long enough to repeat counts more than once: then at
+        # least as many)
+        held = any(mods & 0xF0 for code, mods in events)
+        while (self.count() - start) % 256 < len(events) if held else self.count() != want:
             time.sleep(0.1)
             if time.time() - t0 > timeout:
                 raise TimeoutError("keys not handled: count %d, wanted %d (started at %d); "

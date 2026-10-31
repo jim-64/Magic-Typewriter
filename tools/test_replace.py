@@ -5,7 +5,8 @@
 - capitals and small letters the same; a match over a color code; the new
   text in the color where the match began
 - CTRL-Z after Y: that one back; after A: all that A replaced
-- a replacement holding the search text; an empty replacement; RUN/STOP;
+- a replacement holding the search text; an empty replacement; RUN/STOP
+  or any other key stops (a held key's repeats don't count);
   no match at all; CTRL-F still as before, the last search text filled in
 - with an REU of 512 KB (MT_REU=512): Replace all through a 60 KB document
   held in the REU
@@ -156,6 +157,23 @@ try:
           (n, t[:30]))
     key(e, "Z", CTRL, settle=0.8)
     check("... CTRL-Z: back", e.text()[0] == DOC)
+
+    # Any other key stops too (Jim, 2026-10-31); a key held down (repeating)
+    # counts once: N held for 2 s skips one match only, Y then the next
+    replace(e, "cat", "lion")
+    e.keys([(KEY["N"], 0xF0)], settle=3)
+    key(e, "Y", settle=0.6)
+    key(e, "SPACE", settle=0.3)
+    n = replaced(e)
+    t, cur = e.text()
+    check("N held, Y, SPACE: the 2nd replaced", n == 1 and t.startswith(b"THE CAT SAT")
+          and t.count(b"LION") == 1, (n, t[:60]))
+    key(e, "Z", CTRL, settle=0.8)
+    check("... CTRL-Z: back", e.text()[0] == DOC)
+    replace(e, "cat", "lion")
+    key(e, "Q", settle=0.3)
+    n = replaced(e)
+    check("Q at the first: 0 replaced, nothing changed", n == 0 and e.text()[0] == DOC, n)
 
     # RUN/STOP at once: nothing
     replace(e, "mat", "rug")
