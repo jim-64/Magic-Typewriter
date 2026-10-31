@@ -1963,3 +1963,35 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
   stays a menu choice for real keyboards, with a note in the user instructions that it can't mark
   up/left in VICE. Still check TheC64, MEGA65 and the BlingBox in phase 12.
 - SHIFT LOCK engages left SHIFT, so it forces marking. Document this in the user notes.
+- **Parked (Jim, 2026-10-29): the default text color as the file's first color code.** Now the
+  menu's Text color is only the color of text before the first color code, and a PETSCII file
+  saves no trace of it (a reader shows that text in its own color, e.g. light blue in BASIC). Jim:
+  people write for a known screen, so the file should carry it — **the default = the first color
+  in the text; a color chosen at the very start replaces it**, never adding another code.
+  Simplest fit (to weigh then): treat it like the case code — saving PETSCII writes the default's
+  color code right after the case code (unless the text starts with one already), loading takes a
+  color code there as the default and drops it from the text, so round trips add nothing and the
+  editor's model stays as it is. Open: a loaded file with no leading code (keep the setting? mark
+  it so a save adds one?); the background still can't go in a PETSCII file (only magic has it);
+  room (debug lower part: 1 byte free).
+  **Jim, 2026-10-30: SEQ files always carry the color of all their text** (nothing left to the
+  reader's color or the default); magic files may rely on the header or carry it too.
+  **DEL: decided against** (Jim, 2026-10-30, after trying overwrite mode: the present DEL logic
+  stays; don't propose keeping the color and reverse after DEL again).
+- **Parked (Jim, 2026-10-29): word wrap to RETURNs for a PETSCII save**, so the file PRINTs in
+  BASIC with the lines as on screen. Not in the writer: the save runs with the KERNAL in, so it
+  can't use the editor's `row_next`, and a second copy of the wrap rule in the lower part (gap,
+  REU pieces) would be ~150+ bytes. **Instead, a byte swap with `row_next`:** a soft break ends
+  its row with a space; a RETURN in its place keeps the length (offsets and redraw stay valid),
+  the layout identical, and every row ≤ 39 characters + RETURN (no blank line after a full
+  40-character row in BASIC). Two ways: **(a)** a menu item that changes the document (save the
+  magic one first; too big to undo), ~50–80 bytes; **(b)** a Save option (LINE ENDS: AS TYPED /
+  AS SHOWN): break spaces → $8D before saving (the editor treats $8D as a line end, so the layout
+  holds), the writer turns $8D into CR, then back to spaces — a $8D already in a loaded file
+  would come back as a space (rare); ~80–110 bytes. Claude suggested (b). Catches: reversed text
+  across a break needs an RVS ON after the new RETURN (an insert, not a swap); a word longer
+  than 40 has no space — write nothing there (the screen wraps by itself); long REU documents
+  need the window walked through (or "TOO LONG", as CTRL-A). Mostly editor code: 7 bytes free
+  under the KERNAL. **Room for these three ideas:** e.g. code in sprite block 255 (63 bytes) or
+  BUF_START a page up (ask Jim). **Jim, 2026-10-30: wanted as a SEQ save option; giving up
+  1 KB of document memory is acceptable.**
