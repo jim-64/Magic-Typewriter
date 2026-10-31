@@ -62,6 +62,7 @@ KEY_N           = 39
 KEY_W           = 9
 KEY_F           = 21
 KEY_Z           = 12
+KEY_R           = 17
 
 ; Events that are not a single key
 KEY_CHARSET     = $40           ; C= and SHIFT pressed and let go alone
@@ -1158,9 +1159,8 @@ pot_delta
 ;  +4      2    program     frame counter (lo/hi), +1 every frame
 ;  +6      1    program     system type: 0 PAL, 1 NTSC, 2 old NTSC, 3 Drean
 ;  +7      1    program     load device ($BA at start-up)
-;  +8      2    harness     marker test: first visible line (lo/hi)
-;  +10     2    harness     marker test: total lines (lo/hi)
-;  +12     1    harness     write 1 to apply +8/+10; program sets it to 0
+;  +8      5    -           (unused: the phase 1 marker test, taken out for
+;                           room in v0.3; the editor sets the marker)
 ;  +13     1    program     marker result: first grey raster line
 ;  +14     1    program     marker result: first dark grey line after it
 ;  +15     1    program     raster line where housekeeping started
@@ -1215,9 +1215,6 @@ MB_SIG          = MB_BASE+0
 MB_FRAMES       = MB_BASE+4
 MB_SYSTEM       = MB_BASE+6
 MB_LOADDEV      = MB_BASE+7
-MB_MK_FIRST     = MB_BASE+8
-MB_MK_TOTAL     = MB_BASE+10
-MB_MK_GO        = MB_BASE+12
 MB_MK_TOP       = MB_BASE+13
 MB_MK_BOT       = MB_BASE+14
 MB_HK_START     = MB_BASE+15
@@ -1262,7 +1259,7 @@ mailbox_ready
         !byte $4d, $54, $44, $42        ; "MTDB" in ASCII
 
 ;----------------------------------------------------------------------------
-; mailbox_poll - called from the main loop. Handles the marker test.
+; mailbox_poll - called from the main loop: a test document, an REU copy.
 ;----------------------------------------------------------------------------
 !zone mailbox_poll
 mailbox_poll
@@ -1299,26 +1296,6 @@ mailbox_poll
         jsr reu_move
         lda #0
         sta MB_DMA+7
-+       lda MB_MK_GO            ; the harness moves the marker: first line
-        beq +                   ; and total lines, 25 lines on the screen
-        lda MB_MK_FIRST
-        sta mk_first
-        clc
-        adc #25
-        sta mk_last
-        lda MB_MK_FIRST+1
-        sta mk_first+1
-        adc #0
-        sta mk_last+1
-        lda MB_MK_TOTAL
-        sta mk_total
-        lda MB_MK_TOTAL+1
-        sta mk_total+1
-        ora mk_total            ; total of 0 would divide by zero:
-        beq .done               ; ignore it
-        jsr marker_set
-.done   lda #0
-        sta MB_MK_GO
 +       rts
 
 !ifdef SPLIT_TEST {

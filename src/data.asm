@@ -116,6 +116,12 @@ msg_find
         !scr "find:", 0
 msg_not_found
         !scr "not found", 0
+msg_with
+        !scr "with:", 0                 ; (after FIND: - longer would not fit)
+msg_replace
+        !scr "replace y/n/a=all", 0
+m_replaced
+        !scr " replaced", 0
 msg_command
         !scr "command:", 0
 msg_need_disk

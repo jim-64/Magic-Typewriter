@@ -2184,6 +2184,8 @@ leave_cursor
         jsr begin_edit
         jsr cleanup
         bcc +
+        lda replace_all         ; (CTRL-R replacing all: drawn at the end)
+        bne +
         jmp after_edit          ; codes were removed: redraw
 +       rts
 
@@ -3771,6 +3773,9 @@ editor_key
 +       cmp #KEY_F              ; CTRL-F: find
         bne +
         jmp find_key
++       cmp #KEY_R              ; CTRL-R: find and replace
+        bne +
+        jmp replace_key
 +       cmp #KEY_A              ; CTRL-A: mark everything
         bne .keys
         jmp select_all

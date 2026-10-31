@@ -210,6 +210,8 @@ toggle_charset
 ;----------------------------------------------------------------------------
 !zone show_cursor_at
 show_cursor_at
+        lda replace_all         ; (CTRL-R replacing all: drawn at the end)
+        bne .ret
         stx .n
         lda gap_start
         sta limit
@@ -223,6 +225,7 @@ show_cursor_at
 +       jsr redraw_all
         jsr locate_cursor
         jmp set_want_col        ; (aim for this column moving up/down)
+.ret    rts
 .n      !byte 0
 
 ;----------------------------------------------------------------------------
@@ -257,6 +260,7 @@ text_color      !byte LIGHT_GREY ; default text color (setting)
 !source "src/menu.asm"
 !source "src/fileio.asm"
 !source "src/undo.asm"
+!source "src/replace.asm"
 !source "src/data.asm"
 
 ;----------------------------------------------------------------------------
@@ -338,13 +342,17 @@ row_off_hi      = row_off_lo + MROWS    ;   where it starts in the text,
 row_color       = row_off_hi + MROWS    ;   the color there,
 row_rvs         = row_color + MROWS     ;   reverse there ($80 = on),
 row_len         = row_rvs + MROWS       ;   how many cursor places it has
-dummy_row       = row_len + MROWS       ; 40: row 25 is "drawn" here
+dummy_row       = $033c                 ; 40: row 25 is "drawn" here - in the
+                                        ; tape buffer, for room (it is only
+                                        ; scratch while drawing, and the
+                                        ; KERNAL only needs the buffer
+                                        ; during tape work)
 
 !ifdef MOUSE_TRACE {
-mouse_trace     = dummy_row + 40        ; 256: mouse trace (input.asm)
+mouse_trace     = row_len + MROWS       ; 256: mouse trace (input.asm)
 tables_end      = mouse_trace + 256
 } else {
-tables_end      = dummy_row + 40
+tables_end      = row_len + MROWS
 }
 
 ; The lower part and the tables must end before the sprite blocks at $3e80.

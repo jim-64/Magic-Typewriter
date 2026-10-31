@@ -14,66 +14,98 @@
 ;
 ; Runs with the KERNAL ROM switched out (it uses the editor), and lives
 ; with the editor under the KERNAL ROM (moved there in phase 11 to make
-; room in the lower part: it never runs during disk work).
+; room in the lower part: it never runs during disk work). CTRL-R (Find
+; and Replace, replace.asm) uses this search too, and find_key is there.
 ;============================================================================
-FIND_MAX        = 26            ; longest search text (the box fills the
-                                ; screen's width)
-find_buf        !fill FIND_MAX, 0 ; the last search text (PETSCII)
-find_len        !byte 0
+; (find_key, find_buf, find_len, find_from, find_wrapped and FIND_MAX are
+; in replace.asm)
 
-; find_key - CTRL-F
-!zone find_key
-find_key
-        ldx find_len            ; the last search text, to start with
-        stx input_len
-        dex
-        bmi +
--       lda find_buf,x
+; ask_text - a box asking for the search text (Y = 0) or the replacement
+; (Y = 1), with the last one filled in. A/X = the question. Carry set if
+; cancelled.
+!zone ask_text
+ask_text
+        sty .which
+        pha
+        txa
+        pha
+        lda find_len,y
+        sta input_len
+        lda .offs,y             ; Y = where its text is (after find_buf)
+        tay
+        ldx #0
+-       lda find_buf,y
         sta input_buf,x
-        dex
-        bpl -
-+       lda #FIND_MAX
-        sta input_max
-        lda #<msg_find
-        ldx #>msg_find
+        iny
+        inx
+        cpx #FIND_MAX
+        bcc -
+        stx input_max
+        pla
+        tax
+        pla
         jsr prompt_input
-        bcc +
-        rts                     ; cancelled
-+       ldx input_len           ; keep it for next time
-        stx find_len
-        dex
+        bcs .ret
+        ldy .which              ; keep it for next time
+        lda input_len
+        sta find_len,y
+        lda .offs,y
+        tay
+        ldx #0
 -       lda input_buf,x
-        sta find_buf,x
-        dex
-        bpl -
+        sta find_buf,y
+        iny
+        inx
+        cpx #FIND_MAX
+        bcc -
+        clc
+.ret    rts
+.offs   !byte 0, FIND_MAX
+.which  !byte 0
 
+; find_start - search from the cursor - or just past the start of the
+; marked text, which is usually the last match - and go round once. While
+; CTRL-R goes on (find_cont): from the cursor, round to where it began.
+!zone find_start
+find_start
         jsr leave_cursor        ; (tidy the codes here before offsets count)
         jsr get_cursor_off      ; where to start: the cursor ...
         lda work
-        sta .from
+        sta off
         lda work+1
-        sta .from+1
+        sta off+1
+        lda find_cont
+        bne .go
         lda sel_on              ; ... or just past the start of the marked
         beq +                   ; text (the last match, usually)
         jsr sel_range
         clc
         lda sel_s
         adc #1
-        sta .from
+        sta off
         lda sel_s+1
         adc #0
-        sta .from+1
-+       lda .from               ; the candidate: the first place to try
-        sta off
-        lda .from+1
         sta off+1
++       lda off                 ; this is where it began
+        sta find_from
+        lda off+1
+        sta find_from+1
         lda reu_docs            ; (a long document: where that is in all
         beq +                   ; of it)
         jsr rd_find_start
-+       jsr set_ptr
-        lda #0
-        sta .wrapped
++       lda #0
+        sta find_wrapped
+; find_at - search from offset off (CTRL-R: from the top)
+find_at
+.go     jsr set_ptr
+        jmp find_search
 
+; find_search - search from ptr (set_ptr done). find_start (replace.asm)
+; asks nothing: it sets find_from, find_wrapped (and rd_from with a long
+; document) and ptr, then comes here. Finds the next match and marks it, or
+; says "NOT FOUND" (not while CTRL-R goes on: find_cont).
+!zone find_search
+find_search
 .try    ; Does the text match at ptr? First step over codes to the next
         ; visible byte: a match starts there.
         ldx #ptr
@@ -84,7 +116,7 @@ find_key
         sta .start              ; where the search began
         lda ptr+1
         sta .start+1
-        lda .wrapped
+        lda find_wrapped
         beq +
         jsr ptr_to_off
         jsr .past
@@ -134,9 +166,9 @@ find_key
         jmp .no_match
 .at_end jsr .more               ; (a long document: more may come)
         bcc .try_off
-        lda .wrapped            ; the end of the text: once round from the
+        lda find_wrapped        ; the end of the text: once round from the
         bne .none               ; top
-        inc .wrapped
+        inc find_wrapped
         lda reu_docs            ; (a long document: its start)
         beq +
         jsr reu_to_start
@@ -152,7 +184,9 @@ find_key
 .none   jsr .slid               ; (a long document's window moved: the
         beq +                   ; cursor back)
         jsr rd_find_back
-+       lda #<msg_not_found
++       lda find_cont           ; (CTRL-R going on: it counts instead)
+        bne .ret
+        lda #<msg_not_found
         ldx #>msg_not_found
         jmp message_box
 
@@ -167,16 +201,16 @@ find_key
         php
         jsr set_ptr
         plp
-        rts
+.ret    rts
 
 ; .past - carry set if off is at or past where the search began
 .past   lda reu_docs
         beq +
         jmp rd_past_from
 +       lda off
-        cmp .from
+        cmp find_from
         lda off+1
-        sbc .from+1
+        sbc find_from+1
         rts
 
 ; .slid - Z clear if a long document's window moved during the search
@@ -206,6 +240,8 @@ find_key
         jsr move_gap_to
         lda #1
         sta sel_on
+        lda replace_all         ; (CTRL-R replacing all: drawn at the end)
+        bne .ret
         jsr .slid               ; (the window moved: all of it again)
         bne +
         jsr locate_cursor       ; on the screen: just draw it marked
@@ -216,9 +252,7 @@ find_key
 +       ldx #ROWS/2             ; elsewhere: it goes in the middle
         jmp show_cursor_at
 
-.from   !word 0
 .start  !word 0
-.wrapped !byte 0
 .i      !byte 0
 .t      !byte 0
 

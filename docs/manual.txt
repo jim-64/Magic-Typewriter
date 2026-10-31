@@ -30,6 +30,7 @@ The cursor shows the typing mode: a thick underline in {yellow}insert{lgrey} mod
 {rvs}CTRL{off}+{rvs}X{off} {rvs}C{off} {rvs}V{off}  cut, copy, paste
 {rvs}CTRL{off}+{rvs}Z{off}  undo the last change
 {rvs}CTRL{off}+{rvs}F{off}  find
+{rvs}CTRL{off}+{rvs}R{off}  find and replace
 {rvs}CTRL{off}+{rvs}S{off}  save
 
 {rvs}RESTORE{off} opens the menu too, so {rvs}RUN/STOP{off}+{rvs}RESTORE{off} can't lose your work.
@@ -56,9 +57,11 @@ Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass ov
 
 {rvs}CTRL{off}+{rvs}Z{off} undoes the last change: a cut, typing over or deleting marked text, a recolor, a paste, or the last run of typing or deleting. It undoes one change. A change that removed more than about 1000 characters can't be undone, and neither can CLEAR ALL.
 
-{cyan}{rvs} FIND {off}{lgrey}
+{cyan}{rvs} FIND AND REPLACE {off}{lgrey}
 
 {rvs}CTRL{off}+{rvs}F{off} asks for a word (up to 26 characters) and finds it from the cursor on, then once round from the top. Capitals and small letters count as the same, and a color change inside a word doesn't get in the way. The match is marked. {rvs}CTRL{off}+{rvs}F{off} then {rvs}RETURN{off} finds the next one.
+
+{rvs}CTRL{off}+{rvs}R{off} asks for a word (FIND:), then for what goes in its place (WITH:; nothing typed: the word just goes). It goes through the document from the top, marks each match and asks {rvs}REPLACE Y/N/A=ALL{off}: {rvs}Y{off} replaces it, {rvs}N{off} leaves it, {rvs}A{off} replaces it and all the rest without asking, {rvs}RUN/STOP{off} stops. Then it says how many it replaced. The new text gets the color the match had. {rvs}CTRL{off}+{rvs}Z{off} undoes the last one replaced, or after {rvs}A{off} all of those.
 
 {cyan}{rvs} THE MOUSE {off}{lgrey}
 

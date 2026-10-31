@@ -752,7 +752,7 @@ KEYS_LINES      = 8             ; (at most 27 characters a line)
 t_keys          !scr "ctrl+ x cut   a mark all", 0
                 !scr "      c copy  f find", 0
                 !scr "      v paste s save", 0
-                !scr "      z undo", 0
+                !scr "      z undo  r replace", 0
                 !scr "f1 menu       f2 text color", 0
                 !scr "f3 page up    f4 top", 0
                 !scr "f5 page down  f6 bottom", 0

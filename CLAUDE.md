@@ -351,13 +351,28 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     (the top row if above the screen), so the text above stays and the text after moves up
     (it used the row the cursor was on). `show_cursor_at` moved to main.asm for room: the
     editor + find end $FFD6 (35 free), debug tables $3D43 (~317 free).
-  - **Find and Replace: assessed (2026-10-31), waiting for Jim's choice.** Suggested: CTRL-R
-    with a match marked replaces it (as typing over marked text: `delete_selection` + the
-    bytes) and finds the next; CTRL-R with nothing marked asks "REPLACE WITH:"; skip with
-    CTRL-F RETURN; Replace all in the menu (top to end once, no wrap - a replacement holding
-    the search text could loop; one undo action, ~1 KB of replaced text; redraw once at the
-    end). ~200 bytes in the lower part. The alternative, a Y/N/ALL box per match, sits on
-    row 12 where Find shows a match.
+  - **CTRL-R: Find and Replace (Jim's design, 2026-10-31; `src/replace.asm`,
+    `tools/test_replace.py`).** CTRL-F is unchanged. CTRL-R asks FIND: (the last search text)
+    and **WITH:** (the last replacement; empty = delete; "REPLACE WITH:" made a 44-column box),
+    then goes **from the top of the document to its end once** (simpler than round to the
+    cursor: no stop point to move as the text changes length; Jim was told "from the cursor,
+    round" first) and asks **REPLACE Y/N/A=ALL** at each match, the match shown on row 4
+    (above the box). Y: replaced (`delete_selection` + `insert_byte`s, so the new text takes
+    the color where the match began), its own CTRL-Z action; N: left; A: this and the rest,
+    one CTRL-Z action, nothing drawn until the end (`replace_all`: `show_cursor_at`,
+    `leave_cursor`'s redraw and Find's `.found` drawing skip); RUN/STOP stops. Then "n
+    REPLACED". How Find is told: `find_cont` (start at the cursor, keep `find_from`/
+    `find_wrapped`, no "NOT FOUND"), `find_wrapped` = 1 and `find_from` (and `rd_from` with a
+    long document) = $FF..: the search ends at the document's end. With a long document the
+    cursor ends at the document's end (`rd_find_back` with that `rd_from`). Find was split:
+    `find_search` (the search), `find_start`/`find_at`/`ask_text` in find.asm, `find_key` in
+    replace.asm.
+    **Room for it:** Find's and Replace's bytes (the two 26-byte texts, lengths, flags,
+    counters) are in **sprite block 255** ($3FC0-$3FFE: unused, cleared by init_sprites; $3FFF
+    stays 0) - it is full now; **`dummy_row` is in the tape buffer** ($033C, 40 bytes: scratch
+    while drawing only); the debug mailbox's **marker test (+8..+12) was taken out** (no test
+    used it). Now: debug tables end $3E4B (~50 free), release ~$3C39; editor + find end
+    $FFEE (12 free).
 
 ## Working with Jim
 
@@ -402,9 +417,8 @@ events that the scanner and mouse driver read before the hardware. Claude writes
 `c64_memory` → `write`. The mailbox is also the only way to test the mouse, since the MCP can't move
 VICE's emulated 1351. Release builds leave the mailbox out entirely.
 The mailbox lives at **$02C0–$02FE** (unused KERNAL RAM); its layout is documented in
-`src/input.asm`. It also reports the frame counter, detected system, and page-marker results, and lets
-Claude move the page marker (write first/total lines, then 1 to `+12`; the band shows 25 lines). Since
-phase 6 the editor sets the marker after every redraw, so a harness setting lasts until the next key.
+`src/input.asm`. It also reports the frame counter, detected system, and page-marker results. (It
+could also move the page marker, `+8`..`+12`, until v0.3: taken out for room, unused since phase 6.)
 
 ### Test builds
 
@@ -639,6 +653,11 @@ with a color; WORD WRAP TO RETURN in the Save menu, `[NO]` for magic, the saved 
 Python model of the wrap rule (reverse across rows, a 50-letter word, a row ending at its 40th
 character, codes by spaces), ASCII, nothing with word wrap off or for magic, and the file loaded
 back looking as the document did).
+`python tools/test_fixes03.py [c64|ntsc]` (v0.3 fixes: the name box after DEL, the screen cleared
+under it and the document back, cuts keeping the text above in place). `python tools/test_replace.py
+[c64|ntsc]` (CTRL-R: Y, N, A, RUN/STOP, colors, CTRL-Z, an empty replacement, one holding the
+search text, no match, CTRL-F after it; with `MT_REU=512` also Replace all through a 60 KB long
+document).
 (Rare unexplained failures: once test_phase4_load_save in ~12 runs during phase 5 and once more in
 phase 7 (a monitor time-out; three reruns passed), once "keys not handled" right after start-up in
 phase 6; none repeated. `mtest.keys` now reports the key
@@ -796,7 +815,8 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
   called later** — the document overwrites it. The build stops if it would start below $4000.
 - **Quit resets the C64** (v0.2; before: a BASIC NEW and warm start). Restarting means loading the
   program again.
-- Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O.
+- Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O. (Only scratch that never needs
+  to last across tape work may use it: `dummy_row`, $033C–$0363, since v0.3.)
 - Zero page: we use $02–$1B (`ZP_END` in main.asm; move it up when adding zero page). Leave the KERNAL's
   area alone.
 
