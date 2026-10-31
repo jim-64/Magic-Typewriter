@@ -119,7 +119,9 @@ the way. The match is marked; **CTRL-F, RETURN** finds the next one.
 means the matches are just taken out). It goes through the document once, from the top to the end,
 marking each match and asking **REPLACE Y/N/A=ALL**: Y replaces it, N leaves it, A replaces it and
 all the rest without asking, any other key stops. A box then says how many were replaced. The new text
-gets the color the match had, as when typing over marked text. CTRL-Z undoes the last one replaced,
+gets the color the match had, as when typing over marked text, and its capitals: replacing
+"device" with "mechanism" turns "Device" into "Mechanism" and "DEVICE" into "MECHANISM" (a match
+starting with two capitals counts as all capitals). Capitals typed in the new text stay. CTRL-Z undoes the last one replaced,
 or, after A, everything A replaced (if what was taken out fits in the 1 KB undo log).
 
 ## The mouse

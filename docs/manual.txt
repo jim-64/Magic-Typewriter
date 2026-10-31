@@ -61,7 +61,7 @@ Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass ov
 
 {rvs}CTRL{off}+{rvs}F{off} asks for a word (up to 26 characters) and finds it from the cursor on, then once round from the top. Capitals and small letters count as the same, and a color change inside a word doesn't get in the way. The match is marked. {rvs}CTRL{off}+{rvs}F{off} then {rvs}RETURN{off} finds the next one.
 
-{rvs}CTRL{off}+{rvs}R{off} asks for a word (FIND:), then for what goes in its place (WITH:; nothing typed: the word just goes). It goes through the document from the top, marks each match and asks {rvs}REPLACE Y/N/A=ALL{off}: {rvs}Y{off} replaces it, {rvs}N{off} leaves it, {rvs}A{off} replaces it and all the rest without asking, any other key stops. Then it says how many it replaced. The new text gets the color the match had. {rvs}CTRL{off}+{rvs}Z{off} undoes the last one replaced, or after {rvs}A{off} all of those.
+{rvs}CTRL{off}+{rvs}R{off} asks for a word (FIND:), then for what goes in its place (WITH:; nothing typed: the word just goes). It goes through the document from the top, marks each match and asks {rvs}REPLACE Y/N/A=ALL{off}: {rvs}Y{off} replaces it, {rvs}N{off} leaves it, {rvs}A{off} replaces it and all the rest without asking, any other key stops. Then it says how many it replaced. The new text gets the color the match had, and its capitals: replacing "device" with "mechanism" turns "Device" into "Mechanism" and "DEVICE" into "MECHANISM". Capitals you type in the new text stay. {rvs}CTRL{off}+{rvs}Z{off} undoes the last one replaced, or after {rvs}A{off} all of those.
 
 {cyan}{rvs} THE MOUSE {off}{lgrey}
 

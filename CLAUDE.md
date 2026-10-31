@@ -375,6 +375,14 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     while drawing only); the debug mailbox's **marker test (+8..+12) was taken out** (no test
     used it). Now: debug tables end $3E4B (~50 free), release ~$3C39; editor + find end
     $FFEE (12 free).
+    **Replace keeps the match's case (Jim, 2026-10-31; ~58 bytes, Jim OK'd using the room):**
+    a capital ($C1-$DA) first: the new text's first letter a capital; two capitals first (only
+    the first two bytes are looked at; not for a one-letter search): all its letters; typed
+    capitals stay (only ever more capitals). `.replace` calls `sel_to_gap` itself and reads
+    the match after the gap, then `delete_at_gap` (delete_selection without its sel_to_gap: a
+    second one would see an empty range, the cursor being at the start). `r_all` = `replace_all`
+    now, `r_case` in its byte. **Room left: debug tables end $3E79 (7 bytes free)**; editor +
+    find $FFEE (12).
 
 ## Working with Jim
 

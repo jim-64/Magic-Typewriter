@@ -11,7 +11,8 @@
 ;
 ; A match is replaced as typing over marked text replaces it: the match
 ; goes, codes and all (delete_selection), and the new text takes the color
-; in effect where the match began. Each Y can be undone with CTRL-Z; after
+; in effect where the match began, and the match's case: "Device" ->
+; "Mechanism", "DEVICE" -> "MECHANISM" (only ever more capitals). Each Y can be undone with CTRL-Z; after
 ; A, CTRL-Z undoes all that A replaced (as one action, if the text taken
 ; out fits the undo log). While replacing all, nothing is drawn until the
 ; end (replace_all: show_cursor_at, leave_cursor and Find skip it).
@@ -39,8 +40,9 @@ replace_all     = find_cont + 1 ; 1 while CTRL-R replaces all: no drawing
 find_from       = replace_all + 1 ; 2: where the search began
 find_wrapped    = find_from + 2 ; 1 once it has gone round from the top
 r_count         = find_wrapped + 1 ; 2: CTRL-R: how many it replaced
-r_all           = r_count + 2   ; 1 after A (all the rest)
-r_i             = r_all + 1     ; (counts the new text's bytes)
+r_all           = replace_all   ; (after A, all the rest: the same moment)
+r_case          = r_count + 2   ; letters of the new text to make capitals
+r_i             = r_case + 1    ; (counts the new text's bytes)
 !if r_i >= $3fff { !error "Find's bytes must end before $3fff" }
 
 ; find_key - CTRL-F
@@ -74,7 +76,6 @@ replace_key
 +       lda #0
         sta r_count
         sta r_count+1
-        sta r_all
         sta sel_on              ; (nothing marked)
         lda #1                  ; from the top to the end (see above)
         sta find_cont
@@ -118,19 +119,43 @@ replace_key
 .no     jsr box_close
         jmp .next
 .yes_all
-        inc r_all
-        inc replace_all
+        inc r_all               ; (= replace_all)
 .yes    jsr box_close
         lda #UK_OTHER           ; (one action for CTRL-Z - with A, all the
         jsr undo_start          ; rest)
 .replace
-        jsr delete_selection    ; the match goes ...
+        jsr sel_to_gap          ; the match's case (it lies after the gap
+        ldy #0                  ; now): a capital first, the first letter
+        sty r_case              ; of the new text a capital too; two
+        jsr .capital            ; capitals first, all of them (Jim,
+        bcs +                   ; 2026-10-31). Letters typed as capitals
+        inc r_case              ; stay so.
+        lda find_len            ; (a one-letter search: no second letter
+        cmp #2                  ; to go by)
+        bcc +
+        iny
+        jsr .capital
+        bcs +
+        dec r_case              ; ($ff: every letter)
+        dec r_case
++       jsr delete_at_gap       ; the match goes ...
         ldx #0
 -       cpx repl_len            ; ... and the new text goes in
         bcs +
         stx r_i
         lda repl_buf,x
-        jsr insert_byte
+        ldy r_case              ; a letter to make a capital?
+        beq .put
+        pha
+        and #$7f                ; (a letter: $41-$5a, or its capital
+        sec                     ; $c1-$da)
+        sbc #$41
+        cmp #26
+        pla
+        bcs .put
+        ora #$80                ; the capital
+        dec r_case
+.put    jsr insert_byte
         bcs .done               ; (no room)
         ldx r_i
         inx
@@ -178,4 +203,11 @@ replace_key
         lda #<status_buf
         ldx #>status_buf
         jmp message_box
+
+.capital ; C = 0 if the match's byte Y is a capital letter ($c1-$da)
+        lda (gap_end),y
+        sec
+        sbc #$c1
+        cmp #26
+        rts
 

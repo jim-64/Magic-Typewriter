@@ -17,7 +17,7 @@ os.makedirs(WORK, exist_ok=True)
 
 
 class Mon:
-    def __init__(self, port=6510, host="127.0.0.1", timeout=20):
+    def __init__(self, port=6510, host="127.0.0.1", timeout=60):
         t0 = time.time()
         while True:
             try:

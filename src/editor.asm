@@ -2919,7 +2919,8 @@ gap_size
 !zone delete_selection
 delete_selection
         jsr sel_to_gap
-        jsr locate_cursor       ; its start's row (the top row if it starts
+delete_at_gap                   ; (Replace: sel_to_gap done already)
+        jsr locate_cursor      ; its start's row (the top row if it starts
         bcc +                   ; above the screen): the text above stays
         lda #0                  ; put and the text after it moves up (Jim,
         sta cur_row             ; 2026-10-31)

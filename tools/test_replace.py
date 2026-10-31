@@ -53,11 +53,17 @@ def load_doc(e, doc):
     time.sleep(0.5)
 
 def answer(e, text):
-    """a box's answer: what was there rubbed out, then the text, RETURN"""
+    """a box's answer: what was there rubbed out, then the text (capitals
+    typed with SHIFT), RETURN"""
     e.keys([(KEY["DEL"], 0)] * 26)
     if text:
-        e.type_text(text)
+        e.keys([(KEY["SPACE"] if ch == " " else KEY[ch.upper()], LS if ch.isupper() else 0)
+                for ch in text])
     key(e, "RETURN", settle=0.6)
+
+def cap(s):
+    """PETSCII capitals (upper/lower set): the letters shifted"""
+    return bytes(c | 0x80 if 0x41 <= c <= 0x5a else c for c in s.encode())
 
 def asked(e):
     return "REPLACE Y/N/A=ALL" in rows(e)[12]
@@ -125,7 +131,7 @@ try:
     n = replaced(e)
     check("A: 4 more, 5 in all", n == 5, n)
     t, cur = e.text()
-    want = before_a.replace(T + b"HE DOG AND " + T + b"HE ", b"A DOG AND A ").replace(
+    want = before_a.replace(T + b"HE DOG AND " + T + b"HE ", cap("A") + b" DOG AND " + cap("A") + b" ").replace(
         b"THE END, THE CAT", b"A END, A CAT")
     check("... the text as expected", t == want, t[20:80])
     check("... nothing marked", v(e, "sel_on") == 0)
@@ -180,6 +186,37 @@ try:
     key(e, "STOP", settle=0.3)
     n = replaced(e)
     check("RUN/STOP at the first: 0 replaced, nothing changed", n == 0 and e.text()[0] == DOC, n)
+
+    # The match's case (Jim, 2026-10-31): a capital first -> the first letter
+    # a capital; two capitals first -> all; small -> as typed; capitals typed
+    # stay
+    CASE = (cap("D") + b"EVICE ONE.\r" + cap("DEVICE") + b" TWO.\r" + b"DEVICE THREE.\r" +
+            cap("D") + RED + b"EVICE FOUR.\r" + b"D" + cap("EVICE") + b" FIVE.\r")
+    load_doc(e, CASE)
+    replace(e, "device", "mechanism")
+    key(e, "A", settle=0.3)
+    n = replaced(e)
+    t, cur = e.text()
+    want = (cap("M") + b"ECHANISM ONE.\r" + cap("MECHANISM") + b" TWO.\r" + b"MECHANISM THREE.\r" +
+            cap("M") + b"ECHANISM FOUR.\r" + b"MECHANISM FIVE.\r")
+    check("case: Device/DEVICE/device -> Mechanism/MECHANISM/mechanism (5)",
+          n == 5 and visible(t) == want, (n, visible(t)))
+    replace(e, "mechanism", "McIntosh")
+    key(e, "A", settle=0.3)
+    n = replaced(e)
+    t, cur = e.text()
+    mc = cap("M") + b"C" + cap("I") + b"NTOSH"
+    want = (mc + b" ONE.\r" + cap("MCINTOSH") + b" TWO.\r" + mc + b" THREE.\r" +
+            mc + b" FOUR.\r" + mc + b" FIVE.\r")
+    check("... capitals typed stay: McIntosh, MCINTOSH", n == 5 and visible(t) == want, (n, visible(t)))
+    load_doc(e, cap("I") + b" SAW " + cap("IT") + b".\r")
+    replace(e, "i", "we")
+    key(e, "A", settle=0.3)
+    n = replaced(e)
+    t, cur = e.text()
+    want = cap("W") + b"E SAW " + cap("W") + b"E" + cap("T") + b".\r"
+    check("... a one-letter search: only the first letter (We, WeT)", n == 2 and t == want, (n, t))
+    load_doc(e, DOC)
 
     # The replacement holds the search text: it goes on past it
     replace(e, "a", "aa")
