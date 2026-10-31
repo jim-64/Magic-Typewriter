@@ -342,6 +342,22 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   - **DEL: unchanged** (Jim tried overwrite mode and prefers the present logic).
   - Version: `t_main` "MAGIC TYPEWRITER V0.3" and the manual's version line. md2mt's limits:
     137 blocks (120 for the REU window), branch `v0.3` in its repository.
+  - **Fixes after Jim's v0.3 test (2026-10-31, branch `fixes-0.3` from `seq-save`;
+    `tools/test_fixes03.py`):** the name box's blanking now covers the cursor's place in a
+    full answer (DEL left a second block); the disk directory switches to upper
+    case/graphics only after clearing the screen; `prompt_name` clears the screen
+    (`clear_screen`, menu.asm) before its box and draws the document again after it;
+    **a cut (any `delete_selection`) puts the cursor on the row the marked text started on**
+    (the top row if above the screen), so the text above stays and the text after moves up
+    (it used the row the cursor was on). `show_cursor_at` moved to main.asm for room: the
+    editor + find end $FFD6 (35 free), debug tables $3D43 (~317 free).
+  - **Find and Replace: assessed (2026-10-31), waiting for Jim's choice.** Suggested: CTRL-R
+    with a match marked replaces it (as typing over marked text: `delete_selection` + the
+    bytes) and finds the next; CTRL-R with nothing marked asks "REPLACE WITH:"; skip with
+    CTRL-F RETURN; Replace all in the menu (top to end once, no wrap - a replacement holding
+    the search text could loop; one undo action, ~1 KB of replaced text; redraw once at the
+    end). ~200 bytes in the lower part. The alternative, a Y/N/ALL box per match, sits on
+    row 12 where Find shows a match.
 
 ## Working with Jim
 

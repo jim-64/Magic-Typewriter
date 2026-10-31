@@ -204,7 +204,29 @@ toggle_charset
         rts
 
 ;----------------------------------------------------------------------------
-; quit - back to BASIC by resetting the C64, as the reset button would
+; show_cursor_at - redraw with the cursor on screen row X (or as near as the
+; start of the text allows). (Editor code, kept here in the lower part for
+; room under the KERNAL; never used during disk work.)
+;----------------------------------------------------------------------------
+!zone show_cursor_at
+show_cursor_at
+        stx .n
+        lda gap_start
+        sta limit
+        lda gap_start+1
+        sta limit+1
+        jsr find_row_start      ; the row the cursor is in goes on top ...
+        jsr set_top_ptr
+        lda .n                  ; ... then back up X rows
+        beq +
+        jsr rows_back
++       jsr redraw_all
+        jsr locate_cursor
+        jmp set_want_col        ; (aim for this column moving up/down)
+.n      !byte 0
+
+;----------------------------------------------------------------------------
+; quit -back to BASIC by resetting the C64, as the reset button would
 ; (Jim, v0.2: it frees the room a step-by-step restore took). The reset
 ; puts everything back - VIC, CIAs, SID, vectors, BASIC - and ends at the
 ; power-up screen with READY. The document and the program are gone (Quit

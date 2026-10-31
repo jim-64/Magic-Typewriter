@@ -1893,9 +1893,6 @@ disk_directory
         lda #1
         sta name_len
         jsr io_begin
-        lda #MEMPTR_UPPER       ; in upper case/graphics, as file names are
-        sta VIC_MEMPTR          ; meant to look (io_end puts the document's
-                                ; set back; C= + SHIFT still switches)
         ldy #0                  ; the command channel, to hear from the drive
         jsr open_cmd
         lda name_len            ; "$" with secondary address 0, as LOAD"$"
@@ -1923,6 +1920,11 @@ disk_directory
         lda #40
         sta box_width
         jsr .clear
+        lda #MEMPTR_UPPER       ; in upper case/graphics, as file names are
+        sta VIC_MEMPTR          ; meant to look - once the screen is clear,
+                                ; so the menu isn't seen in it (io_end puts
+                                ; the document's set back; C= + SHIFT still
+                                ; switches)
         jsr CHRIN               ; (the load address)
         jsr CHRIN
 
@@ -1995,18 +1997,7 @@ disk_directory
 ; .clear - a blank screen; the next line goes on row 0
 .clear  ldx #0
         stx .row
--       stx .x
-        jsr box_row_ptrs
-        ldy #0
---      lda #$20
-        jsr box_put
-        cpy #40
-        bcc --
-        ldx .x
-        inx
-        cpx #25
-        bcc -
-        rts
+        jmp clear_screen
 
 ; .bottom - A/X = a line for the bottom row
 .bottom pha
@@ -2049,7 +2040,6 @@ disk_directory
 .link   !byte 0
 .row    !byte 0
 .rvs    !byte 0
-.x      !byte 0
 
 ; cmd_load, cmd_save - Disk command: send a command to the Load or the
 ; Save menu's device on channel 15 and show its answer. An empty command

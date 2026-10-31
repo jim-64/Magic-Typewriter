@@ -2896,24 +2896,7 @@ restore_after
 .c      !byte 0
 .r      !byte 0
 
-; show_cursor_at - redraw with the cursor on screen row X (or as near as the
-; start of the text allows).
-!zone show_cursor_at
-show_cursor_at
-        stx .n
-        lda gap_start
-        sta limit
-        lda gap_start+1
-        sta limit+1
-        jsr find_row_start      ; the row the cursor is in goes on top ...
-        jsr set_top_ptr
-        lda .n                  ; ... then back up X rows
-        beq +
-        jsr rows_back
-+       jsr redraw_all
-        jsr locate_cursor
-        jmp set_want_col        ; (aim for this column moving up/down)
-.n      !byte 0
+; (show_cursor_at is in main.asm, for room under the KERNAL)
 
 ; gap_size - work = the free space (the gap)
 gap_size
@@ -2934,7 +2917,11 @@ gap_size
 !zone delete_selection
 delete_selection
         jsr sel_to_gap
-        lda st_color            ; walk through it for the state at its end
+        jsr locate_cursor       ; its start's row (the top row if it starts
+        bcc +                   ; above the screen): the text above stays
+        lda #0                  ; put and the text after it moves up (Jim,
+        sta cur_row             ; 2026-10-31)
++       lda st_color            ; walk through it for the state at its end
         sta .c
         lda st_rvs
         sta .r
@@ -2966,7 +2953,7 @@ delete_selection
         sta sel_on
         lda #1
         sta modified
-        ldx sel_old_row
+        ldx cur_row
         jmp show_cursor_at
 .c      !byte 0
 .r      !byte 0

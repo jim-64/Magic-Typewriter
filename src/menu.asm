@@ -312,12 +312,11 @@ prompt_input
 .cursor lda #$a0                ; a reversed space marks where typing goes
         jsr box_put
         inx
--       cpx input_max           ; blank the rest
-        bcs .key
-        lda #$20
-        jsr box_put
-        inx
-        bne -
+-       lda #$20                ; blank the rest, up to and with the
+        jsr box_put             ; cursor's place in a full answer (one
+        cpx input_max           ; more, with the answer full: the box's
+        inx                     ; own space)
+        bcc -
 
 .key    jsr wait_key
         cmp #KEY_RETURN
@@ -367,21 +366,49 @@ prompt_input
 
 ; prompt_name - prompt_input for a file name (Load, Save): in upper case/
 ; graphics while the box is up, so the name looks as it will in the
-; directory (Jim, 2026-09-30). The character set is put back afterwards.
+; directory (Jim, 2026-09-30). The screen is cleared first, so the document
+; isn't seen in the other character set (Jim, 2026-10-31); afterwards the
+; character set is put back and the document drawn again.
+!zone prompt_name
 prompt_name
-        pha
+        sta .text
+        stx .text+1
+        lda cursor_shown        ; (shown again afterwards, as box_close
+        sta .cursor             ; would)
+        jsr cursor_hide
+        jsr clear_screen
         lda VIC_MEMPTR
         sta .memptr
         lda #MEMPTR_UPPER
         sta VIC_MEMPTR
-        pla
+        lda .text
+        ldx .text+1
         jsr prompt_input
         php
         lda .memptr
         sta VIC_MEMPTR
-        plp
+        jsr redraw_all
+        lda .cursor
+        beq +
+        jsr cursor_show
++       plp
         rts
+.text   !word 0
+.cursor !byte 0
 .memptr !byte 0
+
+; clear_screen - spaces all over the screen
+!zone clear_screen
+clear_screen
+        lda #$20
+        ldx #0
+-       sta SCREEN,x
+        sta SCREEN+$100,x
+        sta SCREEN+$200,x
+        sta SCREEN+$2e8,x
+        inx
+        bne -
+        rts
 
 input_buf       !fill INPUT_SIZE, 0
 input_len       !byte 0
