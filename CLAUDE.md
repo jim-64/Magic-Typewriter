@@ -1963,35 +1963,53 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
   stays a menu choice for real keyboards, with a note in the user instructions that it can't mark
   up/left in VICE. Still check TheC64, MEGA65 and the BlingBox in phase 12.
 - SHIFT LOCK engages left SHIFT, so it forces marking. Document this in the user notes.
-- **Parked (Jim, 2026-10-29): the default text color as the file's first color code.** Now the
-  menu's Text color is only the color of text before the first color code, and a PETSCII file
-  saves no trace of it (a reader shows that text in its own color, e.g. light blue in BASIC). Jim:
-  people write for a known screen, so the file should carry it — **the default = the first color
-  in the text; a color chosen at the very start replaces it**, never adding another code.
-  Simplest fit (to weigh then): treat it like the case code — saving PETSCII writes the default's
-  color code right after the case code (unless the text starts with one already), loading takes a
-  color code there as the default and drops it from the text, so round trips add nothing and the
-  editor's model stays as it is. Open: a loaded file with no leading code (keep the setting? mark
-  it so a save adds one?); the background still can't go in a PETSCII file (only magic has it);
-  room (debug lower part: 1 byte free).
-  **Jim, 2026-10-30: SEQ files always carry the color of all their text** (nothing left to the
-  reader's color or the default); magic files may rely on the header or carry it too.
-  **DEL: decided against** (Jim, 2026-10-30, after trying overwrite mode: the present DEL logic
-  stays; don't propose keeping the color and reverse after DEL again).
-- **Parked (Jim, 2026-10-29): word wrap to RETURNs for a PETSCII save**, so the file PRINTs in
-  BASIC with the lines as on screen. Not in the writer: the save runs with the KERNAL in, so it
-  can't use the editor's `row_next`, and a second copy of the wrap rule in the lower part (gap,
-  REU pieces) would be ~150+ bytes. **Instead, a byte swap with `row_next`:** a soft break ends
-  its row with a space; a RETURN in its place keeps the length (offsets and redraw stay valid),
-  the layout identical, and every row ≤ 39 characters + RETURN (no blank line after a full
-  40-character row in BASIC). Two ways: **(a)** a menu item that changes the document (save the
-  magic one first; too big to undo), ~50–80 bytes; **(b)** a Save option (LINE ENDS: AS TYPED /
-  AS SHOWN): break spaces → $8D before saving (the editor treats $8D as a line end, so the layout
-  holds), the writer turns $8D into CR, then back to spaces — a $8D already in a loaded file
-  would come back as a space (rare); ~80–110 bytes. Claude suggested (b). Catches: reversed text
-  across a break needs an RVS ON after the new RETURN (an insert, not a swap); a word longer
-  than 40 has no space — write nothing there (the screen wraps by itself); long REU documents
-  need the window walked through (or "TOO LONG", as CTRL-A). Mostly editor code: 7 bytes free
-  under the KERNAL. **Room for these three ideas:** e.g. code in sprite block 255 (63 bytes) or
-  BUF_START a page up (ask Jim). **Jim, 2026-10-30: wanted as a SEQ save option; giving up
-  1 KB of document memory is acceptable.**
+- **DEL keeps the color and reverse: decided against** (Jim, 2026-10-30, after trying overwrite
+  mode: the present DEL logic stays; don't propose it again).
+- **Planned (Claude, 2026-10-30; waiting for Jim's OK): SEQ files carry their color, and word
+  wrap to RETURNs as a Save option.** Work branch `seq-save` (from `main` after 1e78df6; its
+  first commit: release builds always packed). Jim's wishes: SEQ files always carry the color of
+  all their text, nothing left to the reader's color or the default (magic files may rely on
+  the header or carry it too); word wrap to RETURNs as a SEQ save option; 1 KB of document
+  memory may go for it.
+  1. **Room: a fixed 1 KB work area at $CC00-$CFFF.** Lower part: 1 byte free (debug), editor:
+     7. Into the work area go `ctype` and `scrcode` (built at start-up, 512), `prompt_save`
+     (240) and the new line buffer (256): 752 bytes freed in the lower part (`border_code` keeps
+     its page offset: the two tables were 2 whole pages). No REU / small REU: text $4000-$C7FF
+     (34 KB, was 35), undo $C800-$CBFF (`BUF_END` $CC00). REU of 192 KB+: `REUDOC` $BC00
+     (reudoc.asm to ~$C893), `RD_PAGE` $CB00, undo $B800-$BBFF, window $4000-$B7FF (30 KB, was
+     31). Largest document that fast-loads: 137 blocks (was 141); 120 in the REU window (was
+     124). Jim's md2mt books are fine: their largest document is 127 blocks (checked 719
+     documents in its output); md2mt's default and limit become 137 (`--max-blocks` 120 for the
+     REU window). Catch: a tape program (KERNAL LOAD, not guarded) of over 34 KB, e.g. a magic
+     file saved to tape by v0.2, would run over the undo log and the work area: keep the table
+     builder in the lower part and build ctype/scrcode again after such a load (~40 bytes).
+  2. **The color in SEQ (and magic) files**, done like the case code: saving writes the Text
+     color's code (`color_codes[text_color]`) right after the case code, PETSCII and magic,
+     disk and tape (the tape magic header gets one more byte); loading takes a color code there
+     (after the case code, or first if there is none) as the Text color and drops it from the
+     text, so load/save round trips add nothing and the editor's model stays the same. A file
+     that starts with other codes (`[CLR][WHITE]...`) keeps them; the save adds the Text color in
+     front (one byte more, once). Loading a PETSCII file can now change the Text color setting,
+     as a magic one does. Not ASCII, not printing. The background can't go in a PETSCII file
+     (no code for it); only magic files keep it. ~35 bytes.
+  3. **Save menu G: `WRAP TO RETURN: NO / YES`** (default NO; `[NO]` with Format MAGIC, via
+     `set_locked`; does nothing with word wrap off: rows cut at 40 need no RETURN, the screen
+     wraps by itself). For PETSCII and ASCII, disk and tape. A 14th setting in MAGIC T DEFAULTS
+     and the magic header (v0.2 reads such files: it takes the settings it knows); not one a
+     document brings (`doc_settings` 0).
+     **How: in the writer, streaming** (`write_range`, lower part, so it works with the KERNAL
+     in and for long REU documents through `each_range`), an exact copy of `row_next`'s rule
+     (a third copy, after `redraw_from`: the test checks it against test_phase6's model). Bytes
+     before a row's first space go out at once; from the last space on they wait in the line
+     buffer. Row full at 40 visible characters: with a space in it, a RETURN goes out in the
+     space's place (ASCII: RETURN + LF), plus RVS ON after it if reverse was on there (a RETURN
+     ends reverse), and the waiting bytes after the space start the next row; without one (a
+     word of 40 or more) nothing extra. Every row then has at most 39 characters + RETURN, so it
+     PRINTs in BASIC with no blank lines. A buffer overflow (over 256 bytes of codes from the
+     last space on) sends what waits and drops that break. `wrap_on` is copied to the lower part
+     before `io_begin`. ~180 bytes + ~40 for the menu item.
+  4. Tests: test_phase10/12 additions (the color byte saved, loaded back as the Text color, round
+     trips, a file with `[CLR][WHITE]`; WRAP TO RETURN against the Python wrap model, reverse
+     across a break, ASCII, a word over 40, a long REU document), the full suite (also
+     `MT_REU=128`), test_release, the manual and README (Save menu, SEQ colors), md2mt's limits.
+     Version: ask Jim (v0.3?).
