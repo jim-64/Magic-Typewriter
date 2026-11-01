@@ -207,23 +207,27 @@ toggle_charset
 ; show_cursor_at - redraw with the cursor on screen row X (or as near as the
 ; start of the text allows). (Editor code, kept here in the lower part for
 ; room under the KERNAL; never used during disk work.)
+; show_row_at - the same for the place at address A/Y (at or before the
+; cursor): its row goes on row X. If the cursor is then below the screen,
+; it scrolls just far enough (CTRL-Z keeps the top row so).
 ;----------------------------------------------------------------------------
 !zone show_cursor_at
 show_cursor_at
         lda replace_all         ; (CTRL-R replacing all: drawn at the end)
         bne .ret
-        stx .n
         lda gap_start
+        ldy gap_start+1
+show_row_at
+        stx .n
         sta limit
-        lda gap_start+1
-        sta limit+1
-        jsr find_row_start      ; the row the cursor is in goes on top ...
+        sty limit+1
+        jsr find_row_start      ; the row the place is in goes on top ...
         jsr set_top_ptr
         lda .n                  ; ... then back up X rows
         beq +
         jsr rows_back
 +       jsr redraw_all
-        jsr locate_cursor
+        jsr ensure_visible
         jmp set_want_col        ; (aim for this column moving up/down)
 .ret    rts
 .n      !byte 0
@@ -347,6 +351,9 @@ dummy_row       = $033c                 ; 40: row 25 is "drawn" here - in the
                                         ; scratch while drawing, and the
                                         ; KERNAL only needs the buffer
                                         ; during tape work)
+!if u_hdr < dummy_row + 40 | u_rp + 2 > $03fc {   ; (undo's work bytes)
+        !error "undo's work bytes must follow dummy_row in the tape buffer"
+}
 
 !ifdef MOUSE_TRACE {
 mouse_trace     = row_len + MROWS       ; 256: mouse trace (input.asm)

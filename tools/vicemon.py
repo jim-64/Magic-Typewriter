@@ -119,4 +119,23 @@ def start_vice(prg, disk=None, model="c64", port=6510, warp=True, extra=()):
         args += ["-reu", "-reusize", reu]         # test run
     args += list(extra)
     args += ["-autostartprgmode", "1", "-autostart", prg]
-    return subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Now and then (seen since 2026-10-31, between sessions of one test) a
+    # new VICE never opens its monitor port: if it hasn't within 15 s, it is
+    # started again (up to 3 tries).
+    for attempt in range(3):
+        vice = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        t0 = time.time()
+        while time.time() - t0 < 15:
+            if vice.poll() is not None:
+                break
+            try:
+                socket.create_connection(("127.0.0.1", port), timeout=2).close()
+                return vice
+            except OSError:
+                time.sleep(0.3)
+        print("(VICE didn't open its monitor port: %s; starting it again)"
+              % ("it ended, code %s" % vice.poll() if vice.poll() is not None else "it still ran"))
+        vice.kill()
+        vice.wait()
+        time.sleep(2)
+    return vice

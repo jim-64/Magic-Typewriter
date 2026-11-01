@@ -51,7 +51,8 @@
 ; RETURN). The text itself never changes: wrapping is only how it is shown.
 ;============================================================================
 
-BUF_START       = $4000         ; the text buffer ...
+BUF_START       = $4000         ; the text buffer (starting a page: undo_key
+                                ; counts on it) ...
 BUF_END         = $cc00         ; ... up to here (BASIC ROM banked out;
                                 ; the work area follows, see main.asm)
 ROWS            = 25            ; screen rows

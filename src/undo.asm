@@ -44,19 +44,22 @@ undo_ok         !byte 1         ; 0: the action didn't fit ("too big")
 undo_on         !byte 1         ; 0 while CTRL-Z itself changes the text
 undo_kind       !byte 0         ; what this key does (UK_...; 0: nothing)
 undo_prev       !byte 0         ; ... and what the last key did
-u_hdr                           ; an entry's header:
-u_q             !byte 0, 0, 0   ;   P
-u_a             !word 0         ;   A
-u_b             !word 0         ;   B
-u_p             !byte 0, 0, 0   ; an offset (a change at it)
-u_t             !byte 0, 0, 0   ; P - u_q
-u_n             !word 0         ; a number of bytes
-u_x             !word 0
-u_byte          !byte 0
-u_run_p         !byte 0, 0, 0   ; cleanup's run: where it starts,
-u_run_a         !word 0         ;   how long it was,
-u_run_ok        !byte 0         ;   kept in the log for now (1)
-u_rp            !word 0         ; CTRL-Z: the log is read back from here
+; Work bytes, set before each use, so they live in the tape buffer after
+; dummy_row (for room; nothing here runs during tape work, and none of
+; them has to last across it):
+u_hdr           = $0364         ; an entry's header (checked in main.asm):
+u_q             = u_hdr         ;   3: P
+u_a             = u_q + 3       ;   2: A
+u_b             = u_a + 2       ;   2: B
+u_p             = u_b + 2       ; 3: an offset (a change at it)
+u_t             = u_p + 3       ; 3: P - u_q
+u_n             = u_t + 3       ; 2: a number of bytes
+u_x             = u_n + 2       ; 2
+u_byte          = u_x + 2
+u_run_p         = u_byte + 1    ; 3: cleanup's run: where it starts,
+u_run_a         = u_run_p + 3   ; 2:   how long it was,
+u_run_ok        = u_run_a + 2   ;      kept in the log for now (1)
+u_rp            = u_run_ok + 1  ; 2: CTRL-Z: the log is read back from here
 
 ;----------------------------------------------------------------------------
 ; Actions
@@ -619,8 +622,20 @@ undo_key
         jsr count_colors
         lda #0
         sta top_known
-        ldx cur_row
+        tax                     ; the screen's top row stays where it was
+        jsr get_cursor_off      ; (Jim, 2026-11-01: what changed is easier
+        lda work                ; to see), unless the cursor is now above
+        cmp row_off_lo          ; it: then its row goes on top. Below the
+        lda work+1              ; screen: it scrolls just far enough.
+        sbc row_off_hi
+        bcs +
         jmp show_cursor_at
++       clc                     ; (the old top's address: it is before the
+        lda row_off_hi          ; cursor, so before the gap)
+        adc #>BUF_START
+        tay
+        lda row_off_lo
+        jmp show_row_at         ; (BUF_START starts a page: editor.asm)
 
 ; u_window - off = the window offset of P (u_q). A long document: the
 ; window goes there first, with P's B bytes in it too (reu_goto).

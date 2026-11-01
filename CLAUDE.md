@@ -383,6 +383,10 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     second one would see an empty range, the cursor being at the start). `r_all` = `replace_all`
     now, `r_case` in its byte. **Room left: debug tables end $3E79 (7 bytes free)**; editor +
     find $FFEE (12).
+  - **CTRL-Z keeps the screen's top row** (Jim, 2026-11-01; see Undo under Text Model). Room
+    for it: undo's 26 work bytes moved into the tape buffer ($0364-$037D). Still 7 bytes free
+    in the debug lower part afterwards. More such work bytes (set before each use, never used
+    during tape work) could follow there: the tape buffer has $037E-$03FB free.
 
 ## Working with Jim
 
@@ -528,6 +532,11 @@ Check `c64://platform/status` if a tool reports `unsupported_platform`.
   needed again: a throwaway release build logging every raw paddle reading to $CB00, polled
   through the binary monitor while Jim moves the mouse. Our automated tests never use the host
   mouse (the mailbox), so they can't see such problems.
+- **VICE 3.9 sometimes crashes while starting** (seen from 2026-10-31 on Jim's laptop; Windows
+  exit codes 0xE0464645 and 0xC000070A; mostly between sessions of one test, e.g. test_phase9
+  on NTSC): no monitor port, "connection refused". Before our program even loads, so not ours.
+  `start_vice` (vicemon.py) now waits up to 15 s for the port and starts VICE again (3 tries),
+  printing "(VICE didn't open its monitor port ...)". Mon waits up to 60 s.
 - **Checkpoints were unreliable in phase 1:** after `create_checkpoint` the CPU stayed stopped in the
   monitor (`wait_for_state` timed out), and after a hit the Binary Monitor connection dropped and
   `nuclear_reset` left the old `x64sc` holding port 6502 (had to stop that process by hand). Memory reads
@@ -826,7 +835,9 @@ ROM, so the text buffer keeps the full 36 KB on a stock C64.
 - **Quit resets the C64** (v0.2; before: a BASIC NEW and warm start). Restarting means loading the
   program again.
 - Leave the **tape buffer $033C–$03FB** free for KERNAL tape I/O. (Only scratch that never needs
-  to last across tape work may use it: `dummy_row`, $033C–$0363, since v0.3.)
+  to last across tape work may use it: `dummy_row`, $033C–$0363, since v0.3; undo's work bytes
+  `u_hdr`…`u_rp`, $0364–$037D, since 2026-11-01 — set before every use, never in use during
+  tape work; main.asm checks they follow dummy_row.)
 - Zero page: we use $02–$1B (`ZP_END` in main.asm; move it up when adding zero page). Leave the KERNAL's
   area alone.
 
@@ -1359,7 +1370,14 @@ Editing rules:
 - **CTRL-Z** (`undo_key`): the entries put back, last first — for each, the cursor to P
   (`move_gap_to`; a long document's window there first: `reu_goto`), the B bytes dropped, the A
   bytes inserted with `insert_byte` (recording off: `undo_on`). Then the log is empty: one undo,
-  no redo. Nothing marked afterwards; the screen drawn with the cursor on its row.
+  no redo. Nothing marked afterwards. **The screen's top row stays where it was** (Jim,
+  2026-11-01: it scrolled, which hid what changed): `show_row_at` (main.asm, an entry of
+  show_cursor_at) draws from the old top row's place (`row_off_lo/hi`, untouched while undoing),
+  then `ensure_visible` scrolls just far enough if the cursor ends below the screen (a big cut
+  undone: the cursor on the bottom row); if the cursor ends above the old top, its row goes
+  on top. With a long document whose window moved, the top may land elsewhere (window offsets).
+  show_cursor_at now ends with `ensure_visible` instead of `locate_cursor` (same thing when the
+  cursor is on the screen). test_undo checks all three cases.
 - **Limits:** the log is 1 KB (`UNDO_SIZE`, taken from the top of the text buffer at start-up:
   `undo_base`/`undo_end`; `buf_top` lower by that much). An action that takes out more → "TOO BIG
   TO UNDO" (`undo_ok` = 0); inserting costs nothing, so a big paste can be undone. CLEAR ALL and

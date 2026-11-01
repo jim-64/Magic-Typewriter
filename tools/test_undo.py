@@ -157,6 +157,42 @@ try:
           "TOO BIG TO UNDO" in box(e) and e.text()[0] == b"", box(e))
     e.keys([(KEY["SPACE"], 0)])
 
+    # The screen's top row stays put after CTRL-Z (Jim, 2026-11-01); if the
+    # cursor ends below the screen, just far enough to show it; above: its
+    # row on top
+    lines = b"".join(b"LINE %02d OF THE TEST\r" % i for i in range(80))
+    load_doc(e, lines)
+    e.keys([(KEY["F5"], 0), (KEY["F5"], 0)], settle=0.5)
+    top = e.screen_rows()[0][1:]              # (column 0: maybe the cursor)
+    e.keys([(KEY["DOWN"], 0)] * 5)
+    e.keys([(KEY["DOWN"], CBM)] * 3 + [(KEY["X"], CTRL)], settle=0.5)
+    check("a 3-line cut on the screen: the top row the same", e.screen_rows()[0][1:] == top,
+          (top, e.screen_rows()[0]))
+    undo(e)
+    check("... CTRL-Z: the text back, the top row still the same, the cursor 3 rows down",
+          e.text()[0] == lines and e.screen_rows()[0][1:] == top and v(e, "cur_row") == 8,
+          (e.screen_rows()[0], top, v(e, "cur_row")))
+    e.type_text("hello")
+    undo(e)
+    check("typing, CTRL-Z: the top row the same", e.text()[0] == lines and e.screen_rows()[0][1:] == top
+          and v(e, "cur_row") == 8, (e.screen_rows()[0], v(e, "cur_row")))
+    home(e)
+    e.keys([(KEY["DOWN"], 0)] * 5)
+    e.keys([(KEY["DOWN"], CBM)] * 40 + [(KEY["X"], CTRL)], settle=0.5)
+    undo(e)
+    rows = e.screen_rows()
+    check("lines 5-44 cut, CTRL-Z: the cursor (at line 45) on the bottom row",
+          e.text()[0] == lines and v(e, "cur_row") == 24 and "INE 45" in rows[24].upper(),
+          (rows[0], rows[24], v(e, "cur_row")))
+    home(e)
+    e.keys([(KEY["DOWN"], 0)] * 5)
+    e.type_text("abc")
+    e.keys([(KEY["F5"], 0), (KEY["F5"], 0)], settle=0.5)
+    undo(e)
+    check("typing far above the screen, CTRL-Z: its row on top",
+          e.text()[0] == lines and v(e, "cur_row") == 0 and e.screen_rows()[0].upper()[1:].startswith("INE 05"),
+          (e.screen_rows()[0], v(e, "cur_row")))
+
     # CLEAR ALL can't be undone
     load_doc(e, DOC)
     e.type_text("x")
