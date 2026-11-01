@@ -387,6 +387,43 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     for it: undo's 26 work bytes moved into the tape buffer ($0364-$037D). Still 7 bytes free
     in the debug lower part afterwards. More such work bytes (set before each use, never used
     during tape work) could follow there: the tape buffer has $037E-$03FB free.
+  - **Also after Jim's test:** at REPLACE Y/N/A=ALL **any other key stops** (RUN/STOP wasn't
+    obvious to him); a held key's repeats are ignored there (`MOD_REPEAT`), so RETURN still held
+    from WITH: can't stop it at once.
+  - **Where it stands (2026-11-01): v0.3 is done. Jim: "all looks good."** `fixes-0.3`
+    (with `seq-save`) is **merged into `main` and pushed**. Release disk:
+    `build\magic-typewriter-v0.3.d64` (= `build\magictypewriter-release.d64`, not in git; MAGIC
+    TYPEWRITER 67 blocks packed, plus MANUAL). **Next:** Jim makes the v0.3 GitHub release with
+    that disk, and merges md2mt's branch `v0.3` (its limits: 137 blocks, 120 for the REU
+    window). New work: a new branch from `main`. README, the disk's manual and
+    `docs/hardware-tests.md` were checked against the program on 2026-11-01.
+  - **Room is the limit now:** 7 bytes free in the debug lower part, 12 under the KERNAL. Any
+    new feature needs room made first. Ways that worked: move work bytes that are set before
+    each use into free RAM (BASIC's input buffer is full; the tape buffer has $037E-$03FB;
+    sprite block 255 is full), split a routine so the rarely used half moves elsewhere, drop
+    debug-only extras no test uses. Measure with a throwaway copy of main.asm whose size
+    `!error`s are `!warn`s (assemble with `-l` and read `tables_end`/`high_end` in the labels:
+    a `high_end` near $0006 means it wrapped past $FFFF).
+
+## Lessons learned (for Claude, from the v0.3 work)
+
+- **Jim's own VICE windows may be open on the same PC** (e.g. VICE 3.8 with the release disk
+  attached): never close or touch them; our tests use their own x64sc on port 6510.
+- **Test runs that stop with "connection refused"** are VICE crashing as it starts (see VICE
+  gotchas), not the editor: check for FAIL lines before suspecting the program; `start_vice`
+  retries now.
+- **The test harness counts key events:** a key held long enough to repeat counts more than
+  once (`mtest.keys` allows that when a hold time is given). Reading a screen row, column 0
+  may show the blinking cursor instead of its character: compare from column 1.
+- **Calling a routine twice can change its answer:** `sel_to_gap` measures the marked text
+  from the cursor, and moves the cursor to the start; a second call sees nothing marked. Use
+  an entry point after it (`delete_at_gap`) instead.
+- **ACME's `!if` needs its labels known in the first pass:** a check using a label defined
+  further down (e.g. `dummy_row`, `BUF_START`) fails "value not defined"; put the check next
+  to that label instead.
+- **Ask Jim in plain text, give him the choice when a feature costs room**, and say plainly
+  where what was built differs from what was described to him (e.g. Replace runs from the top,
+  not from the cursor; "WITH:" not "REPLACE WITH:").
 
 ## Working with Jim
 
@@ -1174,6 +1211,7 @@ Both settings:
 | CTRL-A | Select all |
 | CTRL-S | Save with the current Save menu settings; asks for a file name if none yet |
 | CTRL-F | Find (see Find) |
+| CTRL-R | Find and replace (v0.3; see the phase 12 status) |
 | CTRL-1 … CTRL-8 | Colors: black, white, red, cyan, purple, green, blue, yellow (as in BASIC) |
 | C= 1 … C= 8 | Colors: orange, brown, light red, dark grey, grey, light green, light blue, light grey |
 | CTRL-9 / CTRL-0 | Reverse on / reverse off |
@@ -2054,7 +2092,8 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 
 - Pasting color codes from a loaded BBS file can include cursor-move or CLR codes. They are invisible and
   harmless here, but will take effect if the file is later printed to screen. Leave as is?
-- Find: add Replace later? Case-sensitive option?
+- Find: Replace built in v0.3 (CTRL-R, keeps the match's case). A case-sensitive option: not
+  asked for; no room for it now.
 - SpeedScript return marker and load address (check real files) — skipped for now (Jim, 2026-09-30).
 - Emulator arrow keys: VICE and some modern keyboards fake SHIFT + CRSR for Up/Left. **VICE, as tested by
   Jim (phase 5):** PC Up alone = CRSR DOWN + a *virtual right* SHIFT (`!VSHIFT RSHIFT` in every VICE 3.9
@@ -2067,8 +2106,9 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
 - SHIFT LOCK engages left SHIFT, so it forces marking. Document this in the user notes.
 - **DEL keeps the color and reverse: decided against** (Jim, 2026-10-30, after trying overwrite
   mode: the present DEL logic stays; don't propose it again).
-- **Planned (Claude, 2026-10-30; waiting for Jim's OK): SEQ files carry their color, and word
-  wrap to RETURNs as a Save option.** Work branch `seq-save` (from `main` after 1e78df6; its
+- **Built as v0.3 (planned 2026-10-30, Jim OK'd it; in `main` since 2026-11-01; kept here as
+  the design record): SEQ files carry their color, and word wrap to RETURNs as a Save
+  option.** Work branch `seq-save` (from `main` after 1e78df6; its
   first commit: release builds always packed). Jim's wishes: SEQ files always carry the color of
   all their text, nothing left to the reader's color or the default (magic files may rely on
   the header or carry it too); word wrap to RETURNs as a SEQ save option; 1 KB of document
@@ -2114,4 +2154,4 @@ Each phase passes automated VICE checks (PAL and NTSC), then a Human Test with J
      trips, a file with `[CLR][WHITE]`; WRAP TO RETURN against the Python wrap model, reverse
      across a break, ASCII, a word over 40, a long REU document), the full suite (also
      `MT_REU=128`), test_release, the manual and README (Save menu, SEQ colors), md2mt's limits.
-     Version: ask Jim (v0.3?).
+     Version: v0.3 (Jim).

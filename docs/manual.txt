@@ -69,7 +69,7 @@ A 1351 mouse in port 1 is found by itself the first time you move it. Click to p
 
 {cyan}{rvs} THE MENU {off}{lgrey}
 
-Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. The main menu lists the {rvs}CTRL{off} keys at its foot. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
+Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
 
 {yellow}A{lgrey} Load, {yellow}B{lgrey} Save, {yellow}C{lgrey} Print: their own menus.
 {yellow}D{lgrey} Wordwrap: on, or off (rows are then cut at 40 characters). Also {rvs}SHIFT{off}+{rvs}F7{off}.
@@ -106,7 +106,7 @@ The Load format starts as {yellow}MAGIC{lgrey}: magic files load the way fast lo
 
 With an REU, Magic Typewriter uses it by itself: big moves get faster, and the clipboard lives in the REU.
 
-With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 30 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
+With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than the C64's memory: 30 KB around the cursor are in the C64, the rest waits in the REU. Load, save, print, find, replace, stats and the page marker all work on the whole document. Paging through it, there is a short pause now and then while the next part comes in.
 
 - Marked text can be up to about 20 KB.
 - {rvs}CTRL{off}+{rvs}A{off}, and saving a magic document to tape, need all of it in the C64 (up to 30 KB).

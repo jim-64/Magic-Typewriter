@@ -27,7 +27,7 @@ human, this isn't that, and I'd rather you knew from the start.
 
 ## Getting started
 
-Download **`magictypewriter.d64`** from the [Releases](../../releases) page — no need to build
+Download the **`.d64`** disk image from the [Releases](../../releases) page — no need to build
 anything. Put it on whatever your C64 loads from (an SD2IEC card, a Pi1541, an Ultimate's USB
 stick, a real floppy written with a transfer cable, or just attach it in VICE), then:
 
@@ -118,11 +118,13 @@ the way. The match is marked; **CTRL-F, RETURN** finds the next one.
 **CTRL-R** asks for a word (FIND:) and then for what goes in its place (WITH:; nothing typed
 means the matches are just taken out). It goes through the document once, from the top to the end,
 marking each match and asking **REPLACE Y/N/A=ALL**: Y replaces it, N leaves it, A replaces it and
-all the rest without asking, any other key stops. A box then says how many were replaced. The new text
-gets the color the match had, as when typing over marked text, and its capitals: replacing
-"device" with "mechanism" turns "Device" into "Mechanism" and "DEVICE" into "MECHANISM" (a match
-starting with two capitals counts as all capitals). Capitals typed in the new text stay. CTRL-Z undoes the last one replaced,
-or, after A, everything A replaced (if what was taken out fits in the 1 KB undo log).
+all the rest without asking, any other key stops. A box then says how many were replaced.
+
+The new text gets the color the match had, as when typing over marked text, and its capitals:
+replacing "device" with "mechanism" turns "Device" into "Mechanism" and "DEVICE" into "MECHANISM"
+(a match starting with two capitals counts as all capitals). Capitals typed in the new text stay.
+CTRL-Z undoes the last one replaced, or, after A, everything A replaced (if what was taken out fits
+in the 1 KB undo log).
 
 ## The mouse
 
@@ -210,7 +212,7 @@ itself:
 - **Any size:** faster big moves, and the clipboard lives in the REU.
 - **192 KB or more: long documents.** Only a 30 KB stretch around the cursor is in the C64's
   memory; the rest stays in the REU, so a document can be as long as the REU allows. Loading,
-  saving, printing, Find, Stats and the page marker all work on the whole document. When the
+  saving, printing, Find, Replace, Stats and the page marker all work on the whole document. When the
   cursor gets near the end of that stretch the next part comes in — a short pause (about
   1½ seconds) now and then while you page through.
   - Marked text can be up to about 20 KB.
@@ -242,8 +244,9 @@ Only needed if you want to change the program. You need
 - **Linux:** `./build.sh` or `./build.sh release`, with `acme` and `c1541` on the PATH.
 
 Both write `build/magictypewriter.prg` and a `build/magictypewriter.d64`. The release disk has the
-program packed with [Exomizer](https://bitbucket.org/magli143/exomizer/wiki/Home) (3.1; it must be
-on the PATH, otherwise the program goes on the disk unpacked) and the manual. The debug build's
+program packed with [Exomizer](https://bitbucket.org/magli143/exomizer/wiki/Home) (3.1; on the PATH,
+or on Windows as `C:\bin\exomizer.exe`; without it a release build stops) and the manual; a copy
+of it is kept as `build/magictypewriter-release.d64`, the file for a release. The debug build's
 disk has the program and all the sample files from `test/` (`sample`, `upper`, `long`, and
 `longdoc`, 60 KB, for long documents with an REU). The manual's text is `docs/manual.txt`;
 `python tools/make_manual.py` turns it into `test/manual.prg` (a Magic Typewriter document). The debug build includes a small test mailbox that the automated tests

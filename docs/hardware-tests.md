@@ -3,7 +3,8 @@
 Test whatever you have at hand, in any order; tick items off as you go and tell me what failed.
 For each failure: what you did, what you saw (a photo of the screen helps), and on which machine.
 
-**Which build:** `build.bat release` makes `build\magictypewriter.d64`, the release disk: the
+**Which build:** `build.bat release` makes `build\magictypewriter.d64` (and the same as
+`build\magictypewriter-release.d64`), the release disk: the
 program packed with Exomizer (no test mailbox) and the manual. The sample files used below
 (`sample`, `upper`, `long`, and `longdoc`, 60 KB, for REU tests) are on the disk that `build.bat`
 alone makes (the debug build, which works the same for a person): copy that one too, or its
@@ -28,13 +29,16 @@ files. Copy the .d64 files or their contents to whatever the machine reads from.
 - [ ] **Marking (C=):** C= + cursor keys mark; C= + SHIFT + CRSR marks up/left; CTRL-C, move,
       CTRL-V pastes. Then menu F → LEFT SHIFT and try left SHIFT + cursor keys, and left SHIFT +
       right SHIFT + CRSR for up/left (put it back to COMMODORE after).
+- [ ] **Undo, Find, Replace:** cut some marked text, CTRL-Z: it comes back. CTRL-F a word: it is
+      marked; CTRL-F RETURN: the next one. CTRL-R a word with another: Y, N, A at the question
+      (a capitalized match gets a capitalized replacement); CTRL-Z after A brings them all back.
 - [ ] **Menu:** F1, RUN/STOP and RESTORE all open it; X backs out; ← closes.
 - [ ] **Disk:** load `sample`; save it under a new name as PETSCII and as MAGIC; CLEAR ALL; load
       both back. Disk directory (Load menu D), Disk command (E, e.g. `I`, or empty for the status).
 - [ ] **Save defaults:** change the background (G), Save defaults (J), Quit, load and RUN again:
       the background comes back. (Then put it back and save defaults again, or scratch
       `MAGIC T DEFAULTS`.)
-- [ ] **Quit:** Q → READY. `PRINT "A"+"B"` prints AB; the cursor and RETURN work normally.
+- [ ] **Quit:** Q → the C64 resets to its power-up screen. `PRINT "A"+"B"` prints AB.
 
 ## B. Real C64 (PAL and/or NTSC)
 
