@@ -1,29 +1,20 @@
 # Magic Typewriter
 
-A small, modern-feeling text editor for the Commodore 64, written in 6502 assembly.
+A small, modern-feeling text editor for the Commodore 64, written in 6502 assembly. Designed by
+a human, coded by AI (see [How it was made](#how-it-was-made-with-ai)).
 
 Magic Typewriter edits **PETSCII text files** — the kind BBSes, disk magazines and `PRINT#` produce
 — with their colors and reverse text shown as they look, not as control symbols. It adds what a
 modern editor has: marking text, cut/copy/paste, word wrap, a menu, find and replace, and a 1351
 mouse. With a large REU it edits documents far bigger than the C64's memory.
 
-It runs on PAL, NTSC, old NTSC and Drean (PAL-N) machines, works with any drive that the KERNAL
-can talk to (1541, 1571, 1581, SD2IEC, Pi1541, Ultimate…), and also with tape and printers.
+It is made for PAL, NTSC, old NTSC and Drean (PAL-N) machines and uses only the KERNAL for disk,
+tape and printer, so it should work with any drive the KERNAL can talk to (1541, 1571, 1581,
+Pi1541, Ultimate…) and with a Datasette.
 
-## How it was made: with AI
-
-I want to be upfront about this: **I didn't write the code of Magic Typewriter myself. Claude,
-Anthropic's AI, wrote it**, working in Claude Code. That covers the 6502 assembly, the test tools
-and most of this documentation.
-
-My part was the rest. I decided what the editor should be and do, drew the screen and the border
-icons, chose how every key, menu and setting should work, and asked for changes until it felt
-right. I tested every step in VICE, and the finished program on my real Commodore hardware
-(C64, 1702 monitor, 1351 mouse, SD2IEC, printer), and reported what was wrong. Claude also wrote automated tests that
-drive the editor in VICE; they run after every change.
-
-So: my design, my testing, the AI's code. If you came here to read hand-written 6502 by a
-human, this isn't that, and I'd rather you knew from the start.
+**Tried so far on real hardware:** an NTSC C64 with a 1702 monitor, a 1351 mouse, an SD2IEC and
+a printer, and editing on a C64 Ultimate. All four video systems, emulated 1541 and 1581 drives
+and the REU were tested in VICE. If you try it on something else, I'd like to hear how it goes.
 
 ## Getting started
 
@@ -37,10 +28,10 @@ RUN
 ```
 
 The program is packed to load faster: after `RUN` it unpacks itself for a moment (the border
-flashes). It loads from tape the same way. You get an empty page. Just type. Press **F1** (or
+flashes). It should load from tape the same way. You get an empty page. Just type. Press **F1** (or
 RUN/STOP) for the menu.
 
-The disk also holds `MANUAL`: this manual as a Magic Typewriter document, in color. To read it:
+The disk also holds `MANUAL`: an instruction manual as a Magic Typewriter document, in color. To read it:
 F1, A, A, type `manual`, RETURN.
 
 What you see:
@@ -94,10 +85,12 @@ RETURN in the middle of reversed text keeps the rest of the line reversed.
 ### Marking text
 
 Hold the **mark key** while moving the cursor: the text you pass over is marked (shown reversed).
-The mark key is **C=** (the default) or **left SHIFT** (main menu, F).
+The mark key is **C=** (the default) or **left SHIFT** (main menu, F). Left SHIFT works great on a real C64, but not in VICE (see Emulators).
 
 - C= + cursor keys mark; C= + SHIFT + cursor marks up or left.
 - Mark key + F3/F5 marks a page at a time; with SHIFT too, all the way to the top or the end.
+- With left SHIFT as the mark key, it takes the place of C= above and right SHIFT the place of
+  SHIFT: both SHIFT keys + cursor mark up or left.
 - With text marked: typing replaces it, INST/DEL deletes it, CTRL-X/C cut or copy it, and **a
   color or reverse key recolors all of it**.
 - Any cursor move without the mark key unmarks.
@@ -109,15 +102,17 @@ or the last run of typing or deleting. It undoes one change (pressing it again s
 UNDO"). A change that removed more than about 1,000 characters can't be undone ("TOO BIG TO
 UNDO"), and neither can CLEAR ALL. Undo keeps its notes in 1 KB at the top of the text buffer.
 
-### Find and replace
+### Find
 
 CTRL-F asks for a word (up to 26 characters) and finds it from the cursor on, round to the top
 once. Capitals and small letters count as the same, and color changes inside a word don't get in
 the way. The match is marked; **CTRL-F, RETURN** finds the next one.
 
-**CTRL-R** asks for a word (FIND:) and then for what goes in its place (WITH:; nothing typed
-means the matches are just taken out). It goes through the document once, from the top to the end,
-marking each match and asking **REPLACE Y/N/A=ALL**: Y replaces it, N leaves it, A replaces it and
+### Find and replace
+
+**CTRL-R** asks for a word (FIND:) and then for what goes in its place (WITH:, also up to 26
+characters; leave it empty to delete the word). It finds words as Find does, going through the
+document once, from the top to the end, marking each match and asking **REPLACE Y/N/A=ALL**: Y replaces it, N leaves it, A replaces it and
 all the rest without asking, any other key stops. A box then says how many were replaced.
 
 The new text gets the color the match had, as when typing over marked text, and its capitals:
@@ -137,7 +132,7 @@ A **1351 mouse in port 1** is found by itself the first time you move it; a joys
 
 ## The menu
 
-Letters choose; **X** goes back one level; RUN/STOP or ← closes the menu. You can also click a
+Letters choose; **X** goes back one level; RUN/STOP or ← closes the menu. You can also mouse click a
 line. Settings show their value and step to the next each time you choose them. The main menu
 also lists the CTRL keys and the function keys at its foot.
 
@@ -168,9 +163,9 @@ magic document, which is always PRG.
   settings (word wrap, background, text color, formats, file type), so it comes back just as you
   left it. A new document saves as magic. Magic files are always **PRG** files: cartridge fast
   loaders such as Epyx FastLoad only speed up LOAD, and there a magic document loads much faster
-  than the same text as a SEQ file (18 s against 8 s in VICE). JiffyDOS speeds up every transfer,
+  than the same text as a SEQ file (8 s against 18 s in VICE). JiffyDOS speeds up every transfer,
   SEQ files included, so with JiffyDOS the difference is smaller.
-- **PETSCII** — the *finished* text, for BBSes, other programs and `PRINT#`: exactly as on the
+- **PETSCII** — the *finished* text, for BBSes, other programs and BASIC's `PRINT`: exactly as on the
   C64, colors and reverse included. The first byte says which character set the text uses ($0E
   upper/lower, $8E upper case/graphics), as BBS files do, and the next one is the text color's
   code, so no text is left to the color of the program that prints the file. Loading takes that
@@ -178,36 +173,40 @@ magic document, which is always PRG.
 - **ASCII** — for files from or for a PC: capitals and small letters swapped, line ends written as
   CR+LF (CR, LF or CR+LF are all read). Colors and reverse can't be kept; it warns you first.
 
-A good habit: work in magic, and save a PETSCII copy when the text is done.
+A good habit: work in magic, and save a PETSCII copy under another name when the text is done.
+(The same name would replace your magic file. CTRL-S then saves to the copy, until you save as
+magic again.)
 
 **Word wrap to return** (Save menu, G): with word wrap on, a PETSCII or ASCII file gets a RETURN
 wherever word wrap ends a row on the screen (in place of the space it ends at; reversed text gets
-an RVS ON after it). Every line is then at most 39 characters, so the file `PRINT`s in BASIC with
-its lines just as you see them. The document itself stays as it is. Magic files keep word wrap as
+an RVS ON after it). Every line is then at most 39 characters (unless one word is longer), so the file
+`PRINT`s in BASIC with its lines just as you see them. Only the saved file gets these
+RETURNs: the document in memory stays as it is. Magic files keep word wrap as
 it is: for them it shows [NO].
 
 **The Load format starts as MAGIC**, and that is the one to use for everything except PC files:
 a magic file loads the way fast loader cartridges speed up (Epyx FastLoad and the like, on any
 drive, SD2IEC too), and any other file - SEQ or PRG - loads as PETSCII text. (A PRG file of
 another program keeps its first two bytes, its load address, as text.) Choose **ASCII** for
-files from a PC. A document saves back in the format it came in - magic if it had the magic
-header, PETSCII otherwise - and the Save menu's Format changes that, e.g. to keep a plain file
-as magic from then on.
+files from a PC. A document by default saves back in the format it came in (loaded with
+Load format MAGIC: magic if it had the magic header, PETSCII otherwise), but any format can be
+selected in the Save menu, e.g. to keep a plain file as magic from then on.
 
 **Saving over a file** scratches the old one first (never the risky `@0:`). Drive errors show as
 the drive reports them, e.g. `62, FILE NOT FOUND,00,00`. A spinner turns while the drive works.
 
 **Tape:** choose TAPE as the device. Magic documents are program files; PETSCII and ASCII are data
-files. Our own box asks you to press PLAY (or RECORD & PLAY); RUN/STOP gives up. A blank name
-loads the next file of the right kind.
+files. Our own box asks you to press PLAY (or RECORD & PLAY); RUN/STOP gives up. To load from tape, the Load format must
+match the file: MAGIC finds only program files, PETSCII and ASCII only data files. A blank name
+loads the next such file. (Not yet tried with a real Datasette.)
 
 **Printing** sends the whole document. For a Commodore printer (Convert to ASCII: no) colors are
 left out and reverse is kept; with ASCII on, it goes as ASCII with CR+LF.
 
 ## REU
 
-With an REU (1700/1764/1750, or the Ultimate's, VICE's, the MEGA65's) Magic Typewriter uses it by
-itself:
+With an REU Magic Typewriter uses it by itself. (Tested with VICE's; a real 1700/1764/1750, or
+the Ultimate's or the MEGA65's, should work the same.)
 
 - **Any size:** faster big moves, and the clipboard lives in the REU.
 - **192 KB or more: long documents.** Only a 30 KB stretch around the cursor is in the C64's
@@ -229,9 +228,17 @@ program's tables).
 **VICE:** turn on Control port 1 → *Mouse (1351)* and grab the PC mouse (Alt+Q or Ctrl+M,
 depending on the version). The REU is under Cartridge/IO settings.
 
-- **Tab is the C= key.** Tab + an arrow key marks in every direction.
+- **Tab is usually the C= key** (Left Ctrl with VICE's positional keymap). That key + an arrow
+  key marks in every direction.
 - With **left SHIFT as the mark key, marking up or left doesn't work in VICE**: VICE sends PC
   Shift + Up as SHIFT + CRSR DOWN, so it marks downward. Use C= (Tab) in VICE.
+- **If the mouse pointer runs into the bottom right corner and sticks** (the F5 badge lit), whichever
+  way you move the mouse: the likely cause is Windows display scaling (e.g. 200%) upsetting the
+  GTK3 versions of VICE. It isn't the program, and a real 1351 on a real C64 doesn't do it. What
+  cured it here: right-click VICE's `x64sc.exe` → Properties → Compatibility → Change high DPI
+  settings → tick *Override high DPI scaling behavior* and choose *System* (*Application* didn't
+  help). It came and went between VICE versions and runs on the same PC, so other machines and
+  installs may react differently. The older VICE 2.4 didn't have the problem here.
 
 **SHIFT LOCK** holds left SHIFT down: with left SHIFT as the mark key, every cursor move then marks.
 
@@ -254,6 +261,23 @@ in `tools/` use (Python 3 and VICE 3.9).
 
 The source is in `src/`, one master file (`main.asm`) and one file per part; `CLAUDE.md` describes
 the design and memory layout in detail.
+
+## How it was made: with AI
+
+Magic Typewriter was made with AI. I designed it and tested it, in VICE and on my real Commodore
+hardware; **Claude, Anthropic's AI, wrote the code**.
+
+My part: I decided what the editor should be and do, drew the screen and the border icons, chose
+how every key, menu and setting should work, and asked for changes until it felt right. I tested
+every step in VICE, and the finished program on my real Commodore hardware (C64, 1702 monitor,
+1351 mouse, SD2IEC, printer), and reported what was wrong.
+
+Claude's part, working in Claude Code: the 6502 assembly, the test tools and most of this
+documentation. It also wrote automated tests that drive the editor in VICE; they run after every
+change.
+
+So: my design, my testing, the AI's code. If you came here to read hand-written 6502 by a human,
+this isn't that.
 
 ## License
 

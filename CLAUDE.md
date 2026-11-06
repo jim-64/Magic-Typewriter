@@ -313,7 +313,7 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     noncommercial use; Jim keeps the right to sell it himself. Its terms say every copy must
     come with the license or its URL plus the Required Notice line, so **the manual on the disk
     has an ABOUT section** with both (and the AI note) — keep it there, and keep the notice
-    the same in both places. README: "How it was made: with AI" near the top (Jim designed and
+    the same in both places. README: "How it was made: with AI" (near the top until v1.0, now just before "License"; Jim designed and
     tested it, Claude wrote the code — Jim wants that clear, so nobody feels misled) and
     "License" at the end (pull requests: Jim may use them under any license).
 - **Version 0.3 (2026-10-30, branch `seq-save`; Jim: compatibility with v0.2 doesn't matter, few
@@ -404,6 +404,17 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
     debug-only extras no test uses. Measure with a throwaway copy of main.asm whose size
     `!error`s are `!warn`s (assemble with `-l` and read `tables_end`/`high_end` in the labels:
     a `high_end` near $0006 means it wrapped past $FFFF).
+
+- **Version 1.0 (2026-11-06, branch `v1.0`; Jim): the first release.** `t_main` "MAGIC TYPEWRITER
+  V1.0" and the manual's version line (same length, no room needed). Manual and README gone
+  through with Jim: Find and Find and Replace are separate sections; the left SHIFT mark key
+  explained (right SHIFT reverses); on tape the Load format must match the file; a PETSCII copy
+  wants another name; Tab is *usually* C= in VICE (VICE 3.9's gtk3_sym.vkm: Tab = C=, Left Ctrl =
+  CTRL; gtk3_pos.vkm: the other way round). The README now says "should work" for what hasn't been
+  tried (Jim: real 1541/1571/1581, Pi1541, Datasette, a real REU, MEGA65) with a "Tried so far
+  on real hardware" list - **update that list as Jim tests more** - and has the VICE mouse/display
+  scaling cure under Emulators. Jim makes the repository public when this is done (the manual's
+  GitHub address and the README's Releases link need that).
 
 ## Lessons learned (for Claude, from the v0.3 work)
 

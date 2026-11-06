@@ -1,7 +1,7 @@
 @banner yellow MAGIC TYPEWRITER
 {lgrey}
 {lgreen}A text editor for the Commodore 64.{lgrey}
-Version 0.3, an early version for review.
+Version 1.0, the first release.
 
 This manual is itself a Magic Typewriter document. Read it with {rvs}F5{off} (page down) and {rvs}F3{off} (page up), or the cursor keys. Press {rvs}HOME{off} twice to come back to the top.
 
@@ -45,10 +45,11 @@ The color codes are kept in the text and saved with it, but take no room on the 
 
 {cyan}{rvs} MARKING TEXT {off}{lgrey}
 
-Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass over is {rvs}marked{off}. The mark key is {rvs}C={off} unless you choose left {rvs}SHIFT{off} in the menu.
+Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass over is {rvs}marked{off}. The mark key is {rvs}C={off} unless you choose left {rvs}SHIFT{off} in the menu. Left {rvs}SHIFT{off} works great on a real C64, but not in VICE (see EMULATORS).
 
 - {rvs}C={off} with the cursor keys marks; {rvs}C={off}+{rvs}SHIFT{off} with a cursor key marks up or left.
 - {rvs}C={off}+{rvs}F3{off} / {rvs}F5{off} marks a page at a time; with {rvs}SHIFT{off} too, to the top or the end.
+- With left {rvs}SHIFT{off} as the mark key, it takes the place of {rvs}C={off} above and right {rvs}SHIFT{off} the place of {rvs}SHIFT{off}: both {rvs}SHIFT{off} keys with a cursor key mark up or left.
 - With text marked, typing replaces it, {rvs}INST/DEL{off} deletes it, {rvs}CTRL{off}+{rvs}X{off} and {rvs}C{off} cut or copy it.
 - {lgreen}Tip:{lgrey} a color or reverse key recolors all of the marked text.
 - Any cursor move without the mark key unmarks.
@@ -57,11 +58,13 @@ Hold the {yellow}mark key{lgrey} while you move the cursor: the text you pass ov
 
 {rvs}CTRL{off}+{rvs}Z{off} undoes the last change: a cut, typing over or deleting marked text, a recolor, a paste, or the last run of typing or deleting. It undoes one change. A change that removed more than about 1000 characters can't be undone, and neither can CLEAR ALL.
 
-{cyan}{rvs} FIND AND REPLACE {off}{lgrey}
+{cyan}{rvs} FIND {off}{lgrey}
 
 {rvs}CTRL{off}+{rvs}F{off} asks for a word (up to 26 characters) and finds it from the cursor on, then once round from the top. Capitals and small letters count as the same, and a color change inside a word doesn't get in the way. The match is marked. {rvs}CTRL{off}+{rvs}F{off} then {rvs}RETURN{off} finds the next one.
 
-{rvs}CTRL{off}+{rvs}R{off} asks for a word (FIND:), then for what goes in its place (WITH:; nothing typed: the word just goes). It goes through the document from the top, marks each match and asks {rvs}REPLACE Y/N/A=ALL{off}: {rvs}Y{off} replaces it, {rvs}N{off} leaves it, {rvs}A{off} replaces it and all the rest without asking, any other key stops. Then it says how many it replaced. The new text gets the color the match had, and its capitals: replacing "device" with "mechanism" turns "Device" into "Mechanism" and "DEVICE" into "MECHANISM". Capitals you type in the new text stay. {rvs}CTRL{off}+{rvs}Z{off} undoes the last one replaced, or after {rvs}A{off} all of those.
+{cyan}{rvs} FIND AND REPLACE {off}{lgrey}
+
+{rvs}CTRL{off}+{rvs}R{off} asks for a word (FIND:), then for what goes in its place (WITH:). Leave WITH: empty to delete the word. It finds words as Find does, going through the document from the top; it marks each match and asks {rvs}REPLACE Y/N/A=ALL{off}: {rvs}Y{off} replaces it, {rvs}N{off} leaves it, {rvs}A{off} replaces it and all the rest without asking, any other key stops. Then it says how many it replaced. The new text gets the color the match had, and its capitals: replacing "device" with "mechanism" turns "Device" into "Mechanism" and "DEVICE" into "MECHANISM". Capitals you type in the new text stay. {rvs}CTRL{off}+{rvs}Z{off} undoes the last one replaced, or after {rvs}A{off} all of those.
 
 {cyan}{rvs} THE MOUSE {off}{lgrey}
 
@@ -69,7 +72,7 @@ A 1351 mouse in port 1 is found by itself the first time you move it. Click to p
 
 {cyan}{rvs} THE MENU {off}{lgrey}
 
-Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. You can click a line too. A setting shows its value and steps to the next one each time you choose it.
+Press a letter to choose; {rvs}X{off} goes back one level, {rvs}RUN/STOP{off} or {rvs}{left}{off} closes the menu. You can mouse click a line too. A setting shows its value and steps to the next one each time you choose it.
 
 {yellow}A{lgrey} Load, {yellow}B{lgrey} Save, {yellow}C{lgrey} Print: their own menus.
 {yellow}D{lgrey} Wordwrap: on, or off (rows are then cut at 40 characters). Also {rvs}SHIFT{off}+{rvs}F7{off}.
@@ -88,21 +91,23 @@ The {yellow}Load{lgrey} menu has the format, the device (8 to 14, or tape), the 
 
 {yellow}Magic{lgrey} is the {yellow}project{lgrey} format: the PETSCII text plus a short header with the document's settings (word wrap, background, text color, formats), so it comes back just as you left it. A new document saves as magic. Magic files are always PRG files, which fast loader cartridges such as Epyx FastLoad speed up a lot.
 
-{yellow}PETSCII{lgrey} is the {yellow}finished{lgrey} text, for BBSes, other programs and {rvs}PRINT#{off}: the text exactly as on the C64, with its colors and reverse. Its first byte tells the character set, as BBS files do, and the next one the text color, so all of the text shows in its own color wherever the file is printed. Loading takes that color back as the Text color.
+{yellow}PETSCII{lgrey} is the {yellow}finished{lgrey} text, for BBSes, other programs and BASIC's {rvs}PRINT{off}: the text exactly as on the C64, with its colors and reverse. Its first byte tells the character set, as BBS files do, and the next one the text color, so all of the text shows in its own color wherever the file is printed. Loading takes that color back as the Text color.
 
-{yellow}Word wrap to return{lgrey} (Save menu): with word wrap on, a PETSCII or ASCII file gets a RETURN wherever word wrap ends a row on the screen, so the file PRINTs in BASIC with its lines just as you see them. Your document itself stays as it is. Magic files keep word wrap as it is, so for them it shows [NO].
+{yellow}Word wrap to return{lgrey} (Save menu): with word wrap on, a PETSCII or ASCII file gets a RETURN wherever word wrap ends a row on the screen, so the file PRINTs in BASIC with its lines just as you see them. Only the saved file gets these RETURNs: the document in memory stays as it is. Magic files keep word wrap as it is, so for them it shows [NO].
 
 {yellow}ASCII{lgrey} is for files from or for a PC. Colors and reverse can't be kept; it asks first.
 
-{lgreen}Tip:{lgrey} work in magic, and save a PETSCII copy when the text is done.
+{lgreen}Tip:{lgrey} work in magic, and save a PETSCII copy under another name when the text is done. (The same name would replace your magic file. {rvs}CTRL{off}+{rvs}S{off} then saves to the copy, until you save as magic again.)
 
-The Load format starts as {yellow}MAGIC{lgrey}: magic files load the way fast loader cartridges speed up, on every drive, and any other file, SEQ or PRG, loads as PETSCII text. Choose {yellow}ASCII{lgrey} for files from a PC. A document saves back in the format it came in (magic only if it had the magic header); the Save menu's Format changes that. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
+The Load format starts as {yellow}MAGIC{lgrey}: magic files load the way fast loader cartridges speed up, on every drive, and any other file, SEQ or PRG, loads as PETSCII text. Choose {yellow}ASCII{lgrey} for files from a PC. A document by default saves back in the format it came in, but any format can be selected in the Save menu. Saving over a file scratches the old one first. Drive errors show as the drive reports them, e.g. 62, FILE NOT FOUND.
 
-{yellow}Tape:{lgrey} choose TAPE as the device. Magic documents become program files, PETSCII and ASCII data files. A box asks you to press PLAY (or RECORD and PLAY); {rvs}RUN/STOP{off} gives up. A blank name loads the next file.
+{yellow}Tape:{lgrey} choose TAPE as the device. Magic documents become program files, PETSCII and ASCII data files. A box asks you to press PLAY (or RECORD and PLAY); {rvs}RUN/STOP{off} gives up. To load from tape, the Load format must match the file: {yellow}MAGIC{lgrey} finds only program files, {yellow}PETSCII{lgrey} and {yellow}ASCII{lgrey} only data files. A blank name loads the next such file.
 
 {yellow}Printing:{lgrey} for a Commodore printer colors are left out and reverse is kept; Convert to ASCII sends ASCII text instead.
 
 {cyan}{rvs} REU {off}{lgrey}
+
+Without an REU a document can be up to 34 KB, shared with the clipboard.
 
 With an REU, Magic Typewriter uses it by itself: big moves get faster, and the clipboard lives in the REU.
 
@@ -114,7 +119,7 @@ With an REU of {yellow}192 KB or more{lgrey}, documents can be far longer than t
 
 {cyan}{rvs} EMULATORS {off}{lgrey}
 
-In VICE, {lred}Tab is the C= key{lgrey}: Tab with the arrow keys marks in every direction. With left SHIFT as the mark key, marking up or left doesn't work in VICE: it sends Shift+Up as SHIFT+CRSR DOWN. Use C= there.
+In VICE, {lred}Tab is usually the C= key{lgrey} (Left Ctrl with VICE's positional keymap): that key with the arrow keys marks in every direction. With left SHIFT as the mark key, marking up or left doesn't work in VICE: it sends Shift+Up as SHIFT+CRSR DOWN. Use C= there.
 
 {rvs}SHIFT LOCK{off} holds left SHIFT down: with left SHIFT as the mark key, every cursor move then marks.
 
