@@ -9,7 +9,8 @@ rem Output in the build folder:
 rem   magictypewriter.prg   the program
 rem   magictypewriter.d64   disk image: debug build - the program and all the
 rem                         test files; release build - the program packed
-rem                         with Exomizer (loads faster) and the manual
+rem                         with Exomizer (loads faster), the manual and
+rem                         the CRX2026 picture
 rem   magictypewriter-packed.prg   (release) the packed program
 rem   magictypewriter-release.d64  (release) a copy of the release disk, for
 rem                         the GitHub release: a debug build later
@@ -64,21 +65,24 @@ exit /b 0
 
 rem The release disk: the program packed by Exomizer into a program that
 rem unpacks itself (a BASIC SYS line, so LOAD and RUN as usual, from disk or
-rem tape; -x1: the border flashes while it unpacks), and the manual.
+rem tape; -x1: the border flashes while it unpacks), the manual and the
+rem CRX2026 picture (test\crx2026.prg, a Magic Typewriter document).
 :release_disk
 "%EXOMIZER%" -v >nul 2>nul
 if errorlevel 1 goto no_exomizer
 echo Packing with Exomizer...
 "%EXOMIZER%" sfx sys -x1 -q -o build\magictypewriter-packed.prg build\magictypewriter.prg
 if errorlevel 1 goto failed
-echo Making disk image (the packed program and the manual)...
+echo Making disk image (the packed program, the manual and CRX2026)...
 "%C1541%" -format "magic typewriter,mt" d64 build\magictypewriter.d64 -write build\magictypewriter-packed.prg "magic typewriter" >nul
 if errorlevel 1 goto failed
 "%C1541%" -attach build\magictypewriter.d64 -write test\manual.prg "manual,p" >nul
 if errorlevel 1 goto failed
+"%C1541%" -attach build\magictypewriter.d64 -write test\crx2026.prg "crx2026,p" >nul
+if errorlevel 1 goto failed
 copy /y build\magictypewriter.d64 build\magictypewriter-release.d64 >nul
 if errorlevel 1 goto failed
-echo Done: build\magictypewriter-release.d64 (release: packed program + manual)
+echo Done: build\magictypewriter-release.d64 (release: packed program, manual, CRX2026)
 exit /b 0
 :no_exomizer
 echo Exomizer was not found (on the PATH or as C:\bin\exomizer.exe).

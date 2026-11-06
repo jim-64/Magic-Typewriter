@@ -10,8 +10,8 @@
 # release is always packed).
 # Output in the build folder, same as build.bat:
 #   magictypewriter.prg, magictypewriter.d64, main.vs, main.lbl, main.lst
-#   (release: magictypewriter-packed.prg; the disk has the packed program
-#   and the manual, and magictypewriter-release.d64 is a copy of it that a
+#   (release: magictypewriter-packed.prg; the disk has the packed program,
+#   the manual and the CRX2026 picture, and magictypewriter-release.d64 is a copy of it that a
 #   later debug build leaves alone; the debug disk has the program and all
 #   the test files)
 #
@@ -32,7 +32,8 @@ acme -f cbm -DDEBUG=$DEBUG -o build/magictypewriter.prg -l build/main.lbl \
 if [ "$DEBUG" = "0" ]; then
     # The release disk: the program packed by Exomizer into a program that
     # unpacks itself (a BASIC SYS line, so LOAD and RUN as usual, from disk
-    # or tape; -x1: the border flashes while it unpacks), and the manual.
+    # or tape; -x1: the border flashes while it unpacks), the manual and the
+    # CRX2026 picture (test/crx2026.prg, a Magic Typewriter document).
     if ! command -v exomizer >/dev/null 2>&1; then
         echo "Exomizer is not on the PATH."
         echo "A release must be packed: install Exomizer, then build again."
@@ -42,12 +43,13 @@ if [ "$DEBUG" = "0" ]; then
     echo "Packing with Exomizer..."
     exomizer sfx sys -x1 -q -o build/magictypewriter-packed.prg \
              build/magictypewriter.prg
-    echo "Making disk image (the packed program and the manual)..."
+    echo "Making disk image (the packed program, the manual and CRX2026)..."
     c1541 -format "magic typewriter,mt" d64 build/magictypewriter.d64 \
           -write build/magictypewriter-packed.prg "magic typewriter" >/dev/null
     c1541 -attach build/magictypewriter.d64 -write test/manual.prg "manual,p" >/dev/null
+    c1541 -attach build/magictypewriter.d64 -write test/crx2026.prg "crx2026,p" >/dev/null
     cp build/magictypewriter.d64 build/magictypewriter-release.d64
-    echo "Done: build/magictypewriter-release.d64 (release: packed program + manual)"
+    echo "Done: build/magictypewriter-release.d64 (release: packed program, manual, CRX2026)"
     exit 0
 fi
 

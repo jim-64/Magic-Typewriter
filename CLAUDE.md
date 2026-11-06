@@ -415,6 +415,16 @@ assembly with ACME. Use the name in the main menu title and as the PRG/disk name
   on real hardware" list - **update that list as Jim tests more** - and has the VICE mouse/display
   scaling cure under Emulators. Jim makes the repository public when this is done (the manual's
   GitHub address and the README's Releases link need that).
+  **CRX2026 on the disk (Jim, 2026-11-06):** the Commodore Retro Expo 2026 logo (Jim may share it).
+  `test/crx2026.prg` is **Jim's own file**, edited and saved in Magic Typewriter: change it the same
+  way and copy it from the disk; nothing generates it (a scratch converter made the first version
+  from a PETSCII export; its character set was the ROM's). Both build scripts put it on the release
+  disk after MANUAL; the debug disk gets it with test/*.prg. **Jim: no mention of it in the README
+  or the manual.**
+  **Where it stands (2026-11-06): v1.0 is done; Jim is happy with it.** Merged into `main` and pushed.
+  Release disk: `build\magic-typewriter-v1.0.d64` (not in git; MAGIC TYPEWRITER 67 blocks packed,
+  MANUAL, CRX2026). **Next:** Jim makes the repository public and the v1.0 GitHub release with that
+  disk. New work: a new branch from `main`.
 
 ## Lessons learned (for Claude, from the v0.3 work)
 
