@@ -1,5 +1,7 @@
 # Magic Typewriter
 
+<img width="3774" height="4019" alt="disk" src="https://github.com/user-attachments/assets/16118558-d4ff-46c6-9078-b3184a517f87" />
+
 A small, modern-feeling text editor for the Commodore 64, written in 6502 assembly. Designed by
 a human, coded by AI (see [How it was made](#how-it-was-made-with-ai)).
 
